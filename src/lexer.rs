@@ -25,6 +25,8 @@ pub enum Token {
     Unquote,
     // ,@
     UnquoteSplicing,
+    // .
+    Dot,
 }
 
 #[derive(Debug)]
@@ -85,6 +87,10 @@ impl<'a> Iterator for Lexer<'a> {
                 '`' => {
                     self.pos += 1;
                     return Some(Ok(Token::Quasiquote));
+                }
+                '.' => {
+                    self.pos += 1;
+                    return Some(Ok(Token::Dot));
                 }
                 ',' => {
                     self.pos += 1;
@@ -239,6 +245,25 @@ mod tests {
                 Token::RParen,
                 Token::UnquoteSplicing,
                 Token::LParen,
+                Token::RParen,
+                Token::RParen,
+            ],
+            tokens.unwrap()
+        )
+    }
+
+    #[test]
+    fn dots() {
+        let tokens = tokenize!("(a . (b .c))");
+        assert_eq!(
+            vec![
+                Token::LParen,
+                Token::Identifier("a".to_owned()),
+                Token::Dot,
+                Token::LParen,
+                Token::Identifier("b".to_owned()),
+                Token::Dot,
+                Token::Identifier("c".to_owned()),
                 Token::RParen,
                 Token::RParen,
             ],
