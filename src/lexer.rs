@@ -59,13 +59,14 @@ impl<'a> Iterator for Lexer<'a> {
     fn next(&mut self) -> Option<Result<Token, LexerError>> {
         const INITIAL: &str = r"a-zA-Z!$%&*:<=>?^_~/";
         lazy_static! {
-            static ref ATMOSPHERE: Regex = Regex::new(r"\A(\s+|;.*)").unwrap();
+            static ref ATMOSPHERE: Regex = Regex::new(r"\A(?:\s+|;.*)").unwrap();
             static ref IDENTIFIER: Regex = Regex::new(&format!(
-                r"\A([{INITIAL}][{INITIAL}0-9+\-\.@]*|\+|-|\.{{3}})"
+                r"\A(?:[{INITIAL}][{INITIAL}0-9+\-\.@]*|\+|-|\.{{3}})"
             ))
             .unwrap();
             static ref CHARACTER: Regex =
                 Regex::new(r#"\A#\\(space|newline|[^a-zA-Z]|[a-zA-z](?:[\s\(\)";]|$))"#).unwrap();
+            static ref STRING: Regex = Regex::new(r#"\A"((?:\\.|[^\\"])*)""#).unwrap();
         }
 
         while self.pos < self.exp.len() {
@@ -123,6 +124,16 @@ impl<'a> Iterator for Lexer<'a> {
                             })),
                         }
                     }
+                }
+                '"' => {
+                    return if let Some(c) = STRING.captures(rest) {
+                        self.pos += c.get(0).unwrap().end();
+                        Some(Ok(Token::String(c.get(1).unwrap().as_str().to_owned())))
+                    } else {
+                        Some(Err(LexerError {
+                            message: format!("unclosed string literal at pos {}", self.pos),
+                        }))
+                    };
                 }
                 _ => {
                     if let Some(m) = ATMOSPHERE.find(rest) {
@@ -228,6 +239,20 @@ mod tests {
     fn characters_invalid() {
         let tokens = tokenize!(r"#\ab");
         assert!(tokens.is_err());
+    }
+
+    #[test]
+    fn strings() {
+        let tokens = tokenize!(r#""foo bar" "foo\\bar" "foo\"bar" "foo\nbar""#);
+        assert_eq!(
+            vec![
+                Token::String("foo bar".to_owned()),
+                Token::String(r"foo\\bar".to_owned()),
+                Token::String(r#"foo\"bar"#.to_owned()),
+                Token::String(r"foo\nbar".to_owned()),
+            ],
+            tokens.unwrap()
+        );
     }
 
     #[test]
