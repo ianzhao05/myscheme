@@ -67,6 +67,10 @@ impl<'a> Iterator for Lexer<'a> {
             static ref CHARACTER: Regex =
                 Regex::new(r#"\A#\\(space|newline|[^a-zA-Z]|[a-zA-z](?:[\s\(\)";]|$))"#).unwrap();
             static ref STRING: Regex = Regex::new(r#"\A"((?:\\.|[^\\"])*)""#).unwrap();
+            static ref NUMBER: Regex = Regex::new(
+                r"\A[+-]?(?:[0-9]+/[0-9]+|(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:e[+-]?[0-9]+)?)"
+            )
+            .unwrap();
         }
 
         while self.pos < self.exp.len() {
@@ -138,6 +142,9 @@ impl<'a> Iterator for Lexer<'a> {
                 _ => {
                     if let Some(m) = ATMOSPHERE.find(rest) {
                         self.pos += m.end();
+                    } else if let Some(m) = NUMBER.find(rest) {
+                        self.pos += m.end();
+                        return Some(Ok(Token::Number(m.as_str().to_owned())));
                     } else if let Some(m) = IDENTIFIER.find(rest) {
                         self.pos += m.end();
                         return Some(Ok(Token::Identifier(m.as_str().to_owned())));
@@ -199,11 +206,11 @@ mod tests {
 
     #[test]
     fn comments() {
-        let tokens = tokenize!("foo ; this is a comment\n bar");
+        let tokens = tokenize!("foo ; this is a comment\n 69");
         assert_eq!(
             vec![
                 Token::Identifier("foo".to_owned()),
-                Token::Identifier("bar".to_owned())
+                Token::Number("69".to_owned())
             ],
             tokens.unwrap()
         );
@@ -250,6 +257,24 @@ mod tests {
                 Token::String(r"foo\\bar".to_owned()),
                 Token::String(r#"foo\"bar"#.to_owned()),
                 Token::String(r"foo\nbar".to_owned()),
+            ],
+            tokens.unwrap()
+        );
+    }
+
+    #[test]
+    fn numbers() {
+        let tokens = tokenize!("1 +2.3 -4.5 6. -.7 8.9e-1 -1.e+3 1/2");
+        assert_eq!(
+            vec![
+                Token::Number("1".to_owned()),
+                Token::Number("+2.3".to_owned()),
+                Token::Number("-4.5".to_owned()),
+                Token::Number("6.".to_owned()),
+                Token::Number("-.7".to_owned()),
+                Token::Number("8.9e-1".to_owned()),
+                Token::Number("-1.e+3".to_owned()),
+                Token::Number("1/2".to_owned()),
             ],
             tokens.unwrap()
         );
