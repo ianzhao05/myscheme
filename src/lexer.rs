@@ -42,12 +42,17 @@ impl fmt::Display for LexerError {
     }
 }
 
+/// Iterator over the lexical tokens in a string.
+/// No additional parsing is done except for the removal of
+/// outer double quotes for strings and the substitution
+/// of character literals for their corresponding characters.
 pub struct Lexer<'a> {
     exp: &'a str,
     pos: usize,
 }
 
 impl<'a> Lexer<'a> {
+    /// Create a new lexer iterator for the given expression.
     pub fn new(exp: &'a str) -> Self {
         Lexer { exp, pos: 0 }
     }
@@ -58,19 +63,27 @@ impl<'a> Iterator for Lexer<'a> {
 
     fn next(&mut self) -> Option<Result<Token, LexerError>> {
         const INITIAL: &str = r"a-zA-Z!$%&*:<=>?^_~/";
+        const DELIMITER: &str = r#"[\s\(\)";]|$"#;
         lazy_static! {
             static ref ATMOSPHERE: Regex = Regex::new(r"\A(?:\s+|;.*)").unwrap();
             static ref IDENTIFIER: Regex = Regex::new(&format!(
-                r"\A(?:[{INITIAL}][{INITIAL}0-9+\-\.@]*|\+|-|\.{{3}})"
+                r"\A([{INITIAL}][{INITIAL}0-9+\-\.@]*|\+|-|\.{{3}})(?:{DELIMITER})"
             ))
             .unwrap();
-            static ref CHARACTER: Regex =
-                Regex::new(r#"\A#\\(space|newline|[^a-zA-Z]|[a-zA-z](?:[\s\(\)";]|$))"#).unwrap();
-            static ref STRING: Regex = Regex::new(r#"\A"((?:\\.|[^\\"])*)""#).unwrap();
-            static ref NUMBER: Regex = Regex::new(
-                r"\A[+-]?(?:[0-9]+/[0-9]+|(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:e[+-]?[0-9]+)?)"
-            )
+            static ref CHARACTER: Regex = Regex::new(&format!(
+                r"\A#\\(space|newline|[^a-zA-Z]|[a-zA-z](?:{DELIMITER}))"
+            ))
             .unwrap();
+            static ref STRING: Regex = Regex::new(r#"\A"((?:\\.|[^\\"])*)""#).unwrap();
+            static ref NUMBER: Regex = Regex::new(&format!(
+                r"(?x)\A
+                ([+-]?
+                    (?:[0-9]+/[0-9]+|(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)
+                    (?:[eE][+-]?[0-9]+)?)
+                )(?:{DELIMITER})"
+            ))
+            .unwrap();
+            static ref DOT: Regex = Regex::new(&format!(r"\A\.(?:{DELIMITER})")).unwrap();
         }
 
         while self.pos < self.exp.len() {
@@ -92,10 +105,6 @@ impl<'a> Iterator for Lexer<'a> {
                 '`' => {
                     self.pos += 1;
                     return Some(Ok(Token::Quasiquote));
-                }
-                '.' => {
-                    self.pos += 1;
-                    return Some(Ok(Token::Dot));
                 }
                 ',' => {
                     self.pos += 1;
@@ -119,15 +128,15 @@ impl<'a> Iterator for Lexer<'a> {
                         })))
                     } else {
                         self.pos += 2;
-                        match it.next().unwrap() {
-                            't' => Some(Ok(Token::Boolean(true))),
-                            'f' => Some(Ok(Token::Boolean(false))),
-                            '#' => Some(Ok(Token::Vector)),
-                            _ => Some(Err(LexerError {
+                        Some(match it.next().unwrap() {
+                            't' => Ok(Token::Boolean(true)),
+                            'f' => Ok(Token::Boolean(false)),
+                            '#' => Ok(Token::Vector),
+                            _ => Err(LexerError {
                                 message: format!("invalid sequence at pos {}", self.pos - 2),
-                            })),
-                        }
-                    }
+                            }),
+                        })
+                    };
                 }
                 '"' => {
                     return if let Some(c) = STRING.captures(rest) {
@@ -142,12 +151,17 @@ impl<'a> Iterator for Lexer<'a> {
                 _ => {
                     if let Some(m) = ATMOSPHERE.find(rest) {
                         self.pos += m.end();
-                    } else if let Some(m) = NUMBER.find(rest) {
+                    } else if let Some(c) = NUMBER.captures(rest) {
+                        let m = c.get(1).unwrap();
                         self.pos += m.end();
                         return Some(Ok(Token::Number(m.as_str().to_owned())));
-                    } else if let Some(m) = IDENTIFIER.find(rest) {
+                    } else if let Some(c) = IDENTIFIER.captures(rest) {
+                        let m = c.get(1).unwrap();
                         self.pos += m.end();
                         return Some(Ok(Token::Identifier(m.as_str().to_owned())));
+                    } else if DOT.is_match(rest) {
+                        self.pos += 1;
+                        return Some(Ok(Token::Dot));
                     } else {
                         return Some(Err(LexerError {
                             message: format!("invalid token at pos {}", self.pos),
@@ -187,7 +201,7 @@ mod tests {
 
     #[test]
     fn parens() {
-        let tokens = tokenize!(" ( (a   b c) () )");
+        let tokens = tokenize!(" ( (a   b c) (+ 1 2) )");
         assert_eq!(
             vec![
                 Token::LParen,
@@ -197,6 +211,9 @@ mod tests {
                 Token::Identifier("c".to_owned()),
                 Token::RParen,
                 Token::LParen,
+                Token::Identifier("+".to_owned()),
+                Token::Number("1".to_owned()),
+                Token::Number("2".to_owned()),
                 Token::RParen,
                 Token::RParen,
             ],
@@ -264,16 +281,16 @@ mod tests {
 
     #[test]
     fn numbers() {
-        let tokens = tokenize!("1 +2.3 -4.5 6. -.7 8.9e-1 -1.e+3 1/2");
+        let tokens = tokenize!("1 +2.3 -4.5 -6. .7 8.9e-1 -1.E+3 1/2");
         assert_eq!(
             vec![
                 Token::Number("1".to_owned()),
                 Token::Number("+2.3".to_owned()),
                 Token::Number("-4.5".to_owned()),
-                Token::Number("6.".to_owned()),
-                Token::Number("-.7".to_owned()),
+                Token::Number("-6.".to_owned()),
+                Token::Number(".7".to_owned()),
                 Token::Number("8.9e-1".to_owned()),
-                Token::Number("-1.e+3".to_owned()),
+                Token::Number("-1.E+3".to_owned()),
                 Token::Number("1/2".to_owned()),
             ],
             tokens.unwrap()
@@ -304,7 +321,7 @@ mod tests {
 
     #[test]
     fn dots() {
-        let tokens = tokenize!("(a . (b .c))");
+        let tokens = tokenize!("(a . (b .;\nc))");
         assert_eq!(
             vec![
                 Token::LParen,
