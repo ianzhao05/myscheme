@@ -29,6 +29,26 @@ pub enum Token {
     Dot,
 }
 
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Token::Identifier(s) => write!(f, "{s}"),
+            Token::Boolean(b) => write!(f, "{b}"),
+            Token::Number(s) => write!(f, "{s}"),
+            Token::Character(c) => write!(f, "{c}"),
+            Token::String(s) => write!(f, "{s}"),
+            Token::LParen => write!(f, "("),
+            Token::RParen => write!(f, ")"),
+            Token::Vector => write!(f, "#("),
+            Token::Quote => write!(f, "'"),
+            Token::Quasiquote => write!(f, "`"),
+            Token::Unquote => write!(f, ","),
+            Token::UnquoteSplicing => write!(f, ",@"),
+            Token::Dot => write!(f, "."),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct LexerError {
     message: String,
@@ -54,14 +74,14 @@ pub struct Lexer<'a> {
 impl<'a> Lexer<'a> {
     /// Create a new lexer iterator for the given expression.
     pub fn new(exp: &'a str) -> Self {
-        Lexer { exp, pos: 0 }
+        Self { exp, pos: 0 }
     }
 }
 
 impl<'a> Iterator for Lexer<'a> {
     type Item = Result<Token, LexerError>;
 
-    fn next(&mut self) -> Option<Result<Token, LexerError>> {
+    fn next(&mut self) -> Option<Self::Item> {
         const INITIAL: &str = r"a-zA-Z!$%&*:<=>?^_~/";
         const DELIMITER: &str = r#"[\s\(\)";]|$"#;
         lazy_static! {
@@ -75,6 +95,7 @@ impl<'a> Iterator for Lexer<'a> {
             ))
             .unwrap();
             static ref STRING: Regex = Regex::new(r#"\A"((?:\\.|[^\\"])*)""#).unwrap();
+            // TODO: implement complex numbers and other bases
             static ref NUMBER: Regex = Regex::new(&format!(
                 r"(?x)\A
                 ([+-]?
@@ -116,6 +137,7 @@ impl<'a> Iterator for Lexer<'a> {
                     });
                 }
                 '#' => {
+                    // TODO: Vectors
                     return if let Some(c) = CHARACTER.captures(rest) {
                         let m = c.get(0).unwrap();
                         self.pos += if m.end() == 4 { 3 } else { m.end() };
