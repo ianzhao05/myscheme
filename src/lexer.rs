@@ -137,7 +137,6 @@ impl<'a> Iterator for Lexer<'a> {
                     });
                 }
                 '#' => {
-                    // TODO: Vectors
                     return if let Some(c) = CHARACTER.captures(rest) {
                         let m = c.get(0).unwrap();
                         self.pos += if m.end() == 4 { 3 } else { m.end() };
@@ -153,7 +152,7 @@ impl<'a> Iterator for Lexer<'a> {
                         Some(match it.next().unwrap() {
                             't' => Ok(Token::Boolean(true)),
                             'f' => Ok(Token::Boolean(false)),
-                            '#' => Ok(Token::Vector),
+                            '(' => Ok(Token::Vector),
                             _ => Err(LexerError {
                                 message: format!("invalid sequence at pos {}", self.pos - 2),
                             }),
@@ -354,6 +353,21 @@ mod tests {
                 Token::Dot,
                 Token::Identifier("c".to_owned()),
                 Token::RParen,
+                Token::RParen,
+            ],
+            tokens.unwrap()
+        )
+    }
+
+    #[test]
+    fn vector() {
+        let tokens = tokenize!("#(1 2 3)");
+        assert_eq!(
+            vec![
+                Token::Vector,
+                Token::Number("1".to_owned()),
+                Token::Number("2".to_owned()),
+                Token::Number("3".to_owned()),
                 Token::RParen,
             ],
             tokens.unwrap()
