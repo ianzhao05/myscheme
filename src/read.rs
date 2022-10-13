@@ -166,12 +166,14 @@ fn read_impl<'a, I: Iterator<Item = &'a Token>>(
 
 pub struct Reader<'a, I: Iterator<Item = &'a Token>> {
     token_iter: Peekable<I>,
+    error: bool,
 }
 
 impl<'a, I: Iterator<Item = &'a Token>> Reader<'a, I> {
     pub fn new(token_iter: I) -> Reader<'a, I> {
         Reader {
             token_iter: token_iter.peekable(),
+            error: false,
         }
     }
 }
@@ -180,10 +182,14 @@ impl<'a, I: Iterator<Item = &'a Token>> Iterator for Reader<'a, I> {
     type Item = Result<Datum, ReaderError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.token_iter.peek().is_none() {
+        if self.error || self.token_iter.peek().is_none() {
             None
         } else {
-            Some(read_impl(&mut self.token_iter))
+            let datum = read_impl(&mut self.token_iter);
+            if datum.is_err() {
+                self.error = true;
+            }
+            Some(datum)
         }
     }
 }
@@ -527,20 +533,6 @@ mod tests {
                 kind: ReaderErrorKind::UnexpectedToken(Token::RParen)
             })
         );
-        // assert_eq!(
-        //     read(
-        //         &mut vec![
-        //             Token::LParen,
-        //             Token::Number("123".to_owned()),
-        //             Token::RParen,
-        //             Token::RParen,
-        //         ]
-        //         .iter()
-        //     ),
-        //     Err(ReaderError {
-        //         kind: ReaderErrorKind::UnexpectedToken(Token::RParen)
-        //     })
-        // );
         assert_eq!(
             read(&mut vec![Token::Dot].iter()),
             Err(ReaderError {
@@ -601,6 +593,31 @@ mod tests {
             Some(Ok(Datum::Compound(CompoundDatumKind::List(
                 ListKind::Proper(vec![integer(456)])
             ))))
+        );
+        assert_eq!(reader.next(), None);
+    }
+
+    #[test]
+    fn read_iterator_error() {
+        let tokens = vec![
+            Token::LParen,
+            Token::Number("123".to_owned()),
+            Token::RParen,
+            Token::RParen,
+            Token::RParen,
+        ];
+        let mut reader = Reader::new(tokens.iter());
+        assert_eq!(
+            reader.next(),
+            Some(Ok(Datum::Compound(CompoundDatumKind::List(
+                ListKind::Proper(vec![integer(123)])
+            ))))
+        );
+        assert_eq!(
+            reader.next(),
+            Some(Err(ReaderError {
+                kind: ReaderErrorKind::UnexpectedToken(Token::RParen)
+            }))
         );
         assert_eq!(reader.next(), None);
     }
