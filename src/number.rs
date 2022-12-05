@@ -4,14 +4,14 @@ use std::str::FromStr;
 
 use num::{BigInt, BigRational, Complex};
 
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum RealKind {
     Real(f64),
     Rational(BigRational),
     Integer(BigInt),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 
 pub enum ComplexKind {
     Real(Complex<f64>),
@@ -19,7 +19,7 @@ pub enum ComplexKind {
     Integer(Complex<BigInt>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Number {
     Complex(ComplexKind), // unused
     Real(RealKind),

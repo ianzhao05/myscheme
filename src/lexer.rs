@@ -49,16 +49,28 @@ impl fmt::Display for Token {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
+pub enum LexerErrorKind {
+    InvalidToken,
+    InvalidSequence,
+    UnclosedString,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct LexerError {
-    message: String,
+    kind: LexerErrorKind,
+    pos: usize,
 }
 
 impl Error for LexerError {}
 
 impl fmt::Display for LexerError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.message)
+        match self.kind {
+            LexerErrorKind::InvalidToken => write!(f, "Invalid token at pos {}", self.pos),
+            LexerErrorKind::InvalidSequence => write!(f, "Invalid sequence at pos {}", self.pos),
+            LexerErrorKind::UnclosedString => write!(f, "Unclosed string at pos {}", self.pos),
+        }
     }
 }
 
@@ -154,7 +166,8 @@ impl<'a> Iterator for Lexer<'a> {
                             'f' => Ok(Token::Boolean(false)),
                             '(' => Ok(Token::Vector),
                             _ => Err(LexerError {
-                                message: format!("invalid sequence at pos {}", self.pos - 2),
+                                kind: LexerErrorKind::InvalidSequence,
+                                pos: self.pos - 2,
                             }),
                         })
                     };
@@ -165,7 +178,8 @@ impl<'a> Iterator for Lexer<'a> {
                         Some(Ok(Token::String(c.get(1).unwrap().as_str().to_owned())))
                     } else {
                         Some(Err(LexerError {
-                            message: format!("unclosed string literal at pos {}", self.pos),
+                            kind: LexerErrorKind::UnclosedString,
+                            pos: self.pos,
                         }))
                     };
                 }
@@ -185,7 +199,8 @@ impl<'a> Iterator for Lexer<'a> {
                         return Some(Ok(Token::Dot));
                     } else {
                         return Some(Err(LexerError {
-                            message: format!("invalid token at pos {}", self.pos),
+                            kind: LexerErrorKind::InvalidToken,
+                            pos: self.pos,
                         }));
                     }
                 }
@@ -208,23 +223,29 @@ mod tests {
 
     #[test]
     fn identifiers() {
-        let tokens = tokenize!("foo bar2 _baz !w@w");
         assert_eq!(
-            vec![
+            tokenize!("foo bar2 _baz !w@w"),
+            Ok(vec![
                 Token::Identifier("foo".to_owned()),
                 Token::Identifier("bar2".to_owned()),
                 Token::Identifier("_baz".to_owned()),
                 Token::Identifier("!w@w".to_owned()),
-            ],
-            tokens.unwrap()
+            ]),
         );
+        assert_eq!(
+            tokenize!("@"),
+            Err(LexerError {
+                kind: LexerErrorKind::InvalidToken,
+                pos: 0,
+            }),
+        )
     }
 
     #[test]
     fn parens() {
-        let tokens = tokenize!(" ( (a   b c) (+ 1 2) )");
         assert_eq!(
-            vec![
+            tokenize!(" ( (a   b c) (+ 1 2) )"),
+            Ok(vec![
                 Token::LParen,
                 Token::LParen,
                 Token::Identifier("a".to_owned()),
@@ -237,37 +258,34 @@ mod tests {
                 Token::Number("2".to_owned()),
                 Token::RParen,
                 Token::RParen,
-            ],
-            tokens.unwrap()
+            ]),
         )
     }
 
     #[test]
     fn comments() {
-        let tokens = tokenize!("foo ; this is a comment\n 69");
         assert_eq!(
-            vec![
+            tokenize!("foo ; this is a comment\n 69"),
+            Ok(vec![
                 Token::Identifier("foo".to_owned()),
                 Token::Number("69".to_owned())
-            ],
-            tokens.unwrap()
+            ]),
         );
     }
 
     #[test]
     fn booleans() {
-        let tokens = tokenize!("#t #f");
         assert_eq!(
-            vec![Token::Boolean(true), Token::Boolean(false),],
-            tokens.unwrap()
+            tokenize!("#t #f"),
+            Ok(vec![Token::Boolean(true), Token::Boolean(false)]),
         );
     }
 
     #[test]
     fn characters() {
-        let tokens = tokenize!(r"#\a( #\!f #\ #\space #\newline");
         assert_eq!(
-            vec![
+            tokenize!(r"#\a( #\!f #\ #\space #\newline"),
+            Ok(vec![
                 Token::Character('a'),
                 Token::LParen,
                 Token::Character('!'),
@@ -275,36 +293,42 @@ mod tests {
                 Token::Character(' '),
                 Token::Character(' '),
                 Token::Character('\n')
-            ],
-            tokens.unwrap()
+            ]),
+        );
+        assert_eq!(
+            tokenize!(r"#\ab"),
+            Err(LexerError {
+                kind: LexerErrorKind::InvalidSequence,
+                pos: 0,
+            }),
         );
     }
 
     #[test]
-    fn characters_invalid() {
-        let tokens = tokenize!(r"#\ab");
-        assert!(tokens.is_err());
-    }
-
-    #[test]
     fn strings() {
-        let tokens = tokenize!(r#""foo bar" "foo\\bar" "foo\"bar" "foo\nbar""#);
         assert_eq!(
-            vec![
+            tokenize!(r#""foo bar" "foo\\bar" "foo\"bar" "foo\nbar""#),
+            Ok(vec![
                 Token::String("foo bar".to_owned()),
                 Token::String(r"foo\\bar".to_owned()),
                 Token::String(r#"foo\"bar"#.to_owned()),
                 Token::String(r"foo\nbar".to_owned()),
-            ],
-            tokens.unwrap()
+            ]),
+        );
+        assert_eq!(
+            tokenize!(r#""foo bar"#),
+            Err(LexerError {
+                kind: LexerErrorKind::UnclosedString,
+                pos: 0,
+            }),
         );
     }
 
     #[test]
     fn numbers() {
-        let tokens = tokenize!("1 +2.3 -4.5 -6. .7 8.9e-1 -1.E+3 1/2");
         assert_eq!(
-            vec![
+            tokenize!("1 +2.3 -4.5 -6. .7 8.9e-1 -1.E+3 1/2"),
+            Ok(vec![
                 Token::Number("1".to_owned()),
                 Token::Number("+2.3".to_owned()),
                 Token::Number("-4.5".to_owned()),
@@ -313,16 +337,15 @@ mod tests {
                 Token::Number("8.9e-1".to_owned()),
                 Token::Number("-1.E+3".to_owned()),
                 Token::Number("1/2".to_owned()),
-            ],
-            tokens.unwrap()
+            ]),
         );
     }
 
     #[test]
     fn quotes() {
-        let tokens = tokenize!("'()`(,(),@())");
         assert_eq!(
-            vec![
+            tokenize!("'()`(,(),@())"),
+            Ok(vec![
                 Token::Quote,
                 Token::LParen,
                 Token::RParen,
@@ -335,16 +358,15 @@ mod tests {
                 Token::LParen,
                 Token::RParen,
                 Token::RParen,
-            ],
-            tokens.unwrap()
+            ]),
         )
     }
 
     #[test]
     fn dots() {
-        let tokens = tokenize!("(a . (b .;\nc))");
         assert_eq!(
-            vec![
+            tokenize!("(a . (b .;\nc))"),
+            Ok(vec![
                 Token::LParen,
                 Token::Identifier("a".to_owned()),
                 Token::Dot,
@@ -354,23 +376,21 @@ mod tests {
                 Token::Identifier("c".to_owned()),
                 Token::RParen,
                 Token::RParen,
-            ],
-            tokens.unwrap()
+            ]),
         )
     }
 
     #[test]
     fn vector() {
-        let tokens = tokenize!("#(1 2 3)");
         assert_eq!(
-            vec![
+            tokenize!("#(1 2 3)"),
+            Ok(vec![
                 Token::Vector,
                 Token::Number("1".to_owned()),
                 Token::Number("2".to_owned()),
                 Token::Number("3".to_owned()),
                 Token::RParen,
-            ],
-            tokens.unwrap()
+            ]),
         )
     }
 }
