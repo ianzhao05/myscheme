@@ -38,7 +38,9 @@ pub fn read<'a, I: Iterator<Item = &'a Token>>(token_iter: I) -> Result<Datum, R
 fn read_impl<'a, I: Iterator<Item = &'a Token>>(
     tip: &mut Peekable<I>,
 ) -> Result<Datum, ReaderError> {
-    let token = tip.next().unwrap();
+    let token = tip.next().ok_or(ReaderError {
+        kind: ReaderErrorKind::UnexpectedEndOfInput,
+    })?;
     match token {
         Token::Boolean(b) => Ok(Datum::Simple(SimpleDatumKind::Boolean(*b))),
         Token::Character(c) => Ok(Datum::Simple(SimpleDatumKind::Character(*c))),
@@ -498,6 +500,12 @@ mod tests {
                 ]
                 .iter()
             ),
+            Err(ReaderError {
+                kind: ReaderErrorKind::UnexpectedEndOfInput
+            })
+        );
+        assert_eq!(
+            read(&mut vec![Token::Quote,].iter()),
             Err(ReaderError {
                 kind: ReaderErrorKind::UnexpectedEndOfInput
             })
