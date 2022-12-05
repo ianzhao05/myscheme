@@ -42,13 +42,13 @@ fn read_impl<'a, I: Iterator<Item = &'a Token>>(
         kind: ReaderErrorKind::UnexpectedEndOfInput,
     })?;
     match token {
-        Token::Boolean(b) => Ok(Datum::Simple(SimpleDatumKind::Boolean(*b))),
-        Token::Character(c) => Ok(Datum::Simple(SimpleDatumKind::Character(*c))),
-        Token::String(s) => Ok(Datum::Simple(SimpleDatumKind::String(s.clone()))),
-        Token::Identifier(s) => Ok(Datum::Simple(SimpleDatumKind::Symbol(s.clone()))),
+        Token::Boolean(b) => Ok(Datum::Simple(SimpleDatum::Boolean(*b))),
+        Token::Character(c) => Ok(Datum::Simple(SimpleDatum::Character(*c))),
+        Token::String(s) => Ok(Datum::Simple(SimpleDatum::String(s.clone()))),
+        Token::Identifier(s) => Ok(Datum::Simple(SimpleDatum::Symbol(s.clone()))),
         Token::Number(n) => {
             let number = Number::from_str(n).unwrap();
-            Ok(Datum::Simple(SimpleDatumKind::Number(number)))
+            Ok(Datum::Simple(SimpleDatum::Number(number)))
         }
         Token::LParen => {
             let mut list = Vec::new();
@@ -63,9 +63,7 @@ fn read_impl<'a, I: Iterator<Item = &'a Token>>(
                         return if first {
                             Ok(Datum::EmptyList)
                         } else {
-                            Ok(Datum::Compound(CompoundDatumKind::List(ListKind::Proper(
-                                list,
-                            ))))
+                            Ok(Datum::Compound(CompoundDatum::List(ListKind::Proper(list))))
                         };
                     }
                     Token::Dot => {
@@ -80,9 +78,10 @@ fn read_impl<'a, I: Iterator<Item = &'a Token>>(
                             kind: ReaderErrorKind::UnexpectedEndOfInput,
                         })?;
                         return if let Token::RParen = next_token {
-                            Ok(Datum::Compound(CompoundDatumKind::List(
-                                ListKind::Improper(list, Box::new(datum)),
-                            )))
+                            Ok(Datum::Compound(CompoundDatum::List(ListKind::Improper(
+                                list,
+                                Box::new(datum),
+                            ))))
                         } else {
                             Err(ReaderError {
                                 kind: ReaderErrorKind::IllegalDot,
@@ -96,25 +95,25 @@ fn read_impl<'a, I: Iterator<Item = &'a Token>>(
         }
         Token::Quote => {
             let datum = read_impl(tip)?;
-            Ok(Datum::Compound(CompoundDatumKind::List(
+            Ok(Datum::Compound(CompoundDatum::List(
                 ListKind::Abbreviation(AbbreviationPrefix::Quote, Box::new(datum)),
             )))
         }
         Token::Quasiquote => {
             let datum = read_impl(tip)?;
-            Ok(Datum::Compound(CompoundDatumKind::List(
+            Ok(Datum::Compound(CompoundDatum::List(
                 ListKind::Abbreviation(AbbreviationPrefix::Quasiquote, Box::new(datum)),
             )))
         }
         Token::Unquote => {
             let datum = read_impl(tip)?;
-            Ok(Datum::Compound(CompoundDatumKind::List(
+            Ok(Datum::Compound(CompoundDatum::List(
                 ListKind::Abbreviation(AbbreviationPrefix::Unquote, Box::new(datum)),
             )))
         }
         Token::UnquoteSplicing => {
             let datum = read_impl(tip)?;
-            Ok(Datum::Compound(CompoundDatumKind::List(
+            Ok(Datum::Compound(CompoundDatum::List(
                 ListKind::Abbreviation(AbbreviationPrefix::UnquoteSplicing, Box::new(datum)),
             )))
         }
@@ -132,7 +131,7 @@ fn read_impl<'a, I: Iterator<Item = &'a Token>>(
                 })?;
                 if let Token::RParen = token {
                     tip.next();
-                    return Ok(Datum::Compound(CompoundDatumKind::Vector(vector)));
+                    return Ok(Datum::Compound(CompoundDatum::Vector(vector)));
                 } else {
                     vector.push(read_impl(tip)?);
                 }
@@ -174,33 +173,33 @@ impl<'a, I: Iterator<Item = &'a Token>> Iterator for Reader<'a, I> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::integer_datum;
+    use crate::test_util::*;
 
     #[test]
     fn simple_datum() {
         assert_eq!(
             read(&mut vec![Token::Boolean(true)].iter()),
-            Ok(Datum::Simple(SimpleDatumKind::Boolean(true)))
+            Ok(bool_datum!(true))
         );
 
         assert_eq!(
             read(&mut vec![Token::Number("123".to_owned())].iter()),
-            Ok(integer_datum(123))
+            Ok(int_datum!(123))
         );
 
         assert_eq!(
             read(&mut vec![Token::Character('a')].iter()),
-            Ok(Datum::Simple(SimpleDatumKind::Character('a')))
+            Ok(char_datum!('a'))
         );
 
         assert_eq!(
             read(&mut vec![Token::String("foo".to_owned())].iter()),
-            Ok(Datum::Simple(SimpleDatumKind::String("foo".to_owned())))
+            Ok(str_datum!("foo"))
         );
 
         assert_eq!(
             read(&mut vec![Token::Identifier("foo".to_owned())].iter()).unwrap(),
-            Datum::Simple(SimpleDatumKind::Symbol("foo".to_owned()))
+            symbol_datum!("foo")
         );
     }
 
@@ -223,9 +222,7 @@ mod tests {
                 ]
                 .iter(),
             ),
-            Ok(Datum::Compound(CompoundDatumKind::List(ListKind::Proper(
-                vec![integer_datum(123)]
-            ))))
+            Ok(proper_list_datum![int_datum!(123)])
         );
 
         assert_eq!(
@@ -240,12 +237,10 @@ mod tests {
                 ]
                 .iter(),
             ),
-            Ok(Datum::Compound(CompoundDatumKind::List(
-                ListKind::Improper(
-                    vec![integer_datum(123), integer_datum(456)],
-                    Box::new(Datum::Simple(SimpleDatumKind::Symbol("bar".to_owned()))),
-                )
-            )))
+            Ok(improper_list_datum![
+                int_datum!(123), int_datum!(456);
+                symbol_datum!("bar"),
+            ])
         );
 
         assert_eq!(
@@ -258,14 +253,10 @@ mod tests {
                 ]
                 .iter(),
             ),
-            Ok(Datum::Compound(CompoundDatumKind::List(
-                ListKind::Abbreviation(
-                    AbbreviationPrefix::Quote,
-                    Box::new(Datum::Compound(CompoundDatumKind::List(ListKind::Proper(
-                        vec![integer_datum(123)]
-                    )))),
-                )
-            )))
+            Ok(abbr_list_datum!(
+                AbbreviationPrefix::Quote,
+                proper_list_datum![int_datum!(123)],
+            ))
         );
 
         assert_eq!(
@@ -278,21 +269,18 @@ mod tests {
                 ]
                 .iter(),
             ),
-            Ok(Datum::Compound(CompoundDatumKind::List(
-                ListKind::Abbreviation(
-                    AbbreviationPrefix::Quasiquote,
-                    Box::new(Datum::Compound(CompoundDatumKind::List(ListKind::Proper(
-                        vec![integer_datum(123)]
-                    )))),
-                )
-            )))
+            Ok(abbr_list_datum!(
+                AbbreviationPrefix::Quasiquote,
+                proper_list_datum![int_datum!(123)],
+            ))
         );
 
         assert_eq!(
             read(&mut vec![Token::Unquote, Token::Number("123".to_owned())].iter()),
-            Ok(Datum::Compound(CompoundDatumKind::List(
-                ListKind::Abbreviation(AbbreviationPrefix::Unquote, Box::new(integer_datum(123)),)
-            )))
+            Ok(abbr_list_datum!(
+                AbbreviationPrefix::Unquote,
+                int_datum!(123),
+            ))
         );
 
         assert_eq!(
@@ -305,14 +293,10 @@ mod tests {
                 ]
                 .iter(),
             ),
-            Ok(Datum::Compound(CompoundDatumKind::List(
-                ListKind::Abbreviation(
-                    AbbreviationPrefix::UnquoteSplicing,
-                    Box::new(Datum::Compound(CompoundDatumKind::List(ListKind::Proper(
-                        vec![integer_datum(123)]
-                    )))),
-                )
-            )))
+            Ok(abbr_list_datum!(
+                AbbreviationPrefix::UnquoteSplicing,
+                proper_list_datum![int_datum!(123)],
+            ))
         );
 
         assert_eq!(
@@ -325,10 +309,7 @@ mod tests {
                 ]
                 .iter(),
             ),
-            Ok(Datum::Compound(CompoundDatumKind::Vector(vec![
-                integer_datum(123),
-                integer_datum(456)
-            ])))
+            Ok(vector_datum![int_datum!(123), int_datum!(456)])
         );
     }
 
@@ -345,11 +326,7 @@ mod tests {
                 ]
                 .iter(),
             ),
-            Ok(Datum::Compound(CompoundDatumKind::List(ListKind::Proper(
-                vec![Datum::Compound(CompoundDatumKind::List(ListKind::Proper(
-                    vec![integer_datum(123)]
-                )))]
-            ))))
+            Ok(proper_list_datum![proper_list_datum![int_datum!(123)]])
         );
 
         assert_eq!(
@@ -370,20 +347,10 @@ mod tests {
                 ]
                 .iter(),
             ),
-            Ok(Datum::Compound(CompoundDatumKind::List(ListKind::Proper(
-                vec![
-                    Datum::Compound(CompoundDatumKind::List(ListKind::Proper(vec![
-                        Datum::Simple(SimpleDatumKind::Symbol("a".to_owned())),
-                        Datum::Simple(SimpleDatumKind::Symbol("b".to_owned())),
-                        Datum::Simple(SimpleDatumKind::Symbol("c".to_owned())),
-                    ]))),
-                    Datum::Compound(CompoundDatumKind::List(ListKind::Proper(vec![
-                        Datum::Simple(SimpleDatumKind::Symbol("+".to_owned())),
-                        integer_datum(1),
-                        integer_datum(2),
-                    ]))),
-                ]
-            ))))
+            Ok(proper_list_datum![
+                proper_list_datum![symbol_datum!("a"), symbol_datum!("b"), symbol_datum!("c")],
+                proper_list_datum![symbol_datum!("+"), int_datum!(1), int_datum!(2)],
+            ])
         );
 
         assert_eq!(
@@ -401,17 +368,10 @@ mod tests {
                 ]
                 .iter(),
             ),
-            Ok(Datum::Compound(CompoundDatumKind::List(
-                ListKind::Improper(
-                    vec![Datum::Simple(SimpleDatumKind::Symbol("a".to_owned()))],
-                    Box::new(Datum::Compound(CompoundDatumKind::List(
-                        ListKind::Improper(
-                            vec![Datum::Simple(SimpleDatumKind::Symbol("b".to_owned()))],
-                            Box::new(Datum::Simple(SimpleDatumKind::Symbol("c".to_owned()))),
-                        )
-                    ))),
-                )
-            )))
+            Ok(improper_list_datum![
+                symbol_datum!("a");
+                improper_list_datum![symbol_datum!("b"); symbol_datum!("c")],
+            ])
         );
 
         assert_eq!(
@@ -439,39 +399,21 @@ mod tests {
                 ]
                 .iter(),
             ),
-            Ok(Datum::Compound(CompoundDatumKind::List(
-                ListKind::Abbreviation(
-                    AbbreviationPrefix::Quasiquote,
-                    Box::new(Datum::Compound(CompoundDatumKind::List(ListKind::Proper(
-                        vec![
-                            Datum::Simple(SimpleDatumKind::Symbol("a".to_owned())),
-                            Datum::Compound(CompoundDatumKind::List(ListKind::Abbreviation(
-                                AbbreviationPrefix::Unquote,
-                                Box::new(Datum::Compound(CompoundDatumKind::List(
-                                    ListKind::Proper(vec![
-                                        Datum::Simple(SimpleDatumKind::Boolean(true)),
-                                        Datum::Simple(SimpleDatumKind::Character('c')),
-                                    ])
-                                ))),
-                            ))),
-                            Datum::Compound(CompoundDatumKind::Vector(vec![
-                                integer_datum(123),
-                                integer_datum(456),
-                                integer_datum(789),
-                            ])),
-                            Datum::Compound(CompoundDatumKind::List(ListKind::Abbreviation(
-                                AbbreviationPrefix::UnquoteSplicing,
-                                Box::new(Datum::Compound(CompoundDatumKind::List(
-                                    ListKind::Proper(vec![
-                                        Datum::Simple(SimpleDatumKind::Symbol("b".to_owned())),
-                                        Datum::Simple(SimpleDatumKind::String("str".to_owned())),
-                                    ])
-                                ))),
-                            ))),
-                        ]
-                    )))),
-                )
-            )))
+            Ok(abbr_list_datum!(
+                AbbreviationPrefix::Quasiquote,
+                proper_list_datum![
+                    symbol_datum!("a"),
+                    abbr_list_datum!(
+                        AbbreviationPrefix::Unquote,
+                        proper_list_datum![bool_datum!(true), char_datum!('c')],
+                    ),
+                    vector_datum![int_datum!(123), int_datum!(456), int_datum!(789)],
+                    abbr_list_datum!(
+                        AbbreviationPrefix::UnquoteSplicing,
+                        proper_list_datum![symbol_datum!("b"), str_datum!("str")],
+                    ),
+                ]
+            ))
         );
     }
 
@@ -572,18 +514,8 @@ mod tests {
             Token::RParen,
         ];
         let mut reader = Reader::new(tokens.iter());
-        assert_eq!(
-            reader.next(),
-            Some(Ok(Datum::Compound(CompoundDatumKind::List(
-                ListKind::Proper(vec![integer_datum(123)])
-            ))))
-        );
-        assert_eq!(
-            reader.next(),
-            Some(Ok(Datum::Compound(CompoundDatumKind::List(
-                ListKind::Proper(vec![integer_datum(456)])
-            ))))
-        );
+        assert_eq!(reader.next(), Some(Ok(proper_list_datum![int_datum!(123)])));
+        assert_eq!(reader.next(), Some(Ok(proper_list_datum![int_datum!(456)])));
         assert_eq!(reader.next(), None);
     }
 
@@ -597,12 +529,7 @@ mod tests {
             Token::RParen,
         ];
         let mut reader = Reader::new(tokens.iter());
-        assert_eq!(
-            reader.next(),
-            Some(Ok(Datum::Compound(CompoundDatumKind::List(
-                ListKind::Proper(vec![integer_datum(123)])
-            ))))
-        );
+        assert_eq!(reader.next(), Some(Ok(proper_list_datum![int_datum!(123)])));
         assert_eq!(
             reader.next(),
             Some(Err(ReaderError {

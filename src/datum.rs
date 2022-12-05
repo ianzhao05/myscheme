@@ -1,7 +1,7 @@
 use crate::number::Number;
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum SimpleDatumKind {
+pub enum SimpleDatum {
     Boolean(bool),
     Number(Number),
     Character(char),
@@ -25,14 +25,14 @@ pub enum ListKind {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum CompoundDatumKind {
+pub enum CompoundDatum {
     List(ListKind),
     Vector(Vec<Datum>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Datum {
-    Simple(SimpleDatumKind),
-    Compound(CompoundDatumKind),
+    Simple(SimpleDatum),
+    Compound(CompoundDatum),
     EmptyList,
 }

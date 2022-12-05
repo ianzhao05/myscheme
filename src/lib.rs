@@ -1,17 +1,88 @@
 pub mod datum;
+pub mod expr;
 pub mod lexer;
 pub mod number;
+pub mod parser;
 pub mod read;
 pub mod repl;
 
 #[cfg(test)]
 pub mod test_util {
-    use super::datum::*;
-    use super::number::*;
-
-    pub fn integer_datum(n: i64) -> Datum {
-        Datum::Simple(SimpleDatumKind::Number(Number::Real(RealKind::Integer(
-            num::BigInt::from(n),
-        ))))
+    macro_rules! int_datum {
+        ($n:expr) => {
+            $crate::datum::Datum::Simple($crate::datum::SimpleDatum::Number(
+                $crate::number::Number::Real($crate::number::RealKind::Integer(num::BigInt::from(
+                    $n,
+                ))),
+            ))
+        };
     }
+    pub(crate) use int_datum;
+
+    macro_rules! bool_datum {
+        ($b:expr) => {
+            $crate::datum::Datum::Simple($crate::datum::SimpleDatum::Boolean($b))
+        };
+    }
+    pub(crate) use bool_datum;
+
+    macro_rules! char_datum {
+        ($c:expr) => {
+            $crate::datum::Datum::Simple($crate::datum::SimpleDatum::Character($c))
+        };
+    }
+    pub(crate) use char_datum;
+
+    macro_rules! str_datum {
+        ($s:expr) => {
+            $crate::datum::Datum::Simple($crate::datum::SimpleDatum::String($s.to_owned()))
+        };
+    }
+    pub(crate) use str_datum;
+
+    macro_rules! symbol_datum {
+        ($s:expr) => {
+            $crate::datum::Datum::Simple($crate::datum::SimpleDatum::Symbol($s.to_owned()))
+        };
+    }
+    pub(crate) use symbol_datum;
+
+    macro_rules! proper_list_datum {
+        ($($d:expr),* $(,)?) => {
+            $crate::datum::Datum::Compound($crate::datum::CompoundDatum::List(
+                $crate::datum::ListKind::Proper(
+                    vec![$($d),*],
+                )))
+        };
+    }
+    pub(crate) use proper_list_datum;
+
+    macro_rules! improper_list_datum {
+        ($($d:expr),* ; $l:expr $(,)?) => {
+            $crate::datum::Datum::Compound($crate::datum::CompoundDatum::List(
+                $crate::datum::ListKind::Improper(
+                    vec![$($d),*],
+                    Box::new($l),
+                )))
+        };
+    }
+    pub(crate) use improper_list_datum;
+
+    macro_rules! abbr_list_datum {
+        ($k:expr, $d:expr $(,)?) => {
+            $crate::datum::Datum::Compound($crate::datum::CompoundDatum::List(
+                $crate::datum::ListKind::Abbreviation($k, Box::new($d)),
+            ))
+        };
+    }
+    pub(crate) use abbr_list_datum;
+
+    macro_rules! vector_datum {
+        ($($d:expr),* $(,)?) => {
+            $crate::datum::Datum::Compound($crate::datum::CompoundDatum::Vector(
+                vec![$($d),*],
+            ))
+        };
+    }
+    pub(crate) use vector_datum;
 }
