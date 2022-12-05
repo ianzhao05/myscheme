@@ -42,14 +42,15 @@ fn read_impl<'a, I: Iterator<Item = &'a Token>>(
     match token {
         Token::Boolean(b) => Ok(Datum::Simple(SimpleDatumKind::Boolean(*b))),
         Token::Character(c) => Ok(Datum::Simple(SimpleDatumKind::Character(*c))),
-        Token::String(s) => Ok(Datum::Simple(SimpleDatumKind::String(String::clone(s)))),
-        Token::Identifier(s) => Ok(Datum::Simple(SimpleDatumKind::Symbol(String::clone(s)))),
+        Token::String(s) => Ok(Datum::Simple(SimpleDatumKind::String(s.clone()))),
+        Token::Identifier(s) => Ok(Datum::Simple(SimpleDatumKind::Symbol(s.clone()))),
         Token::Number(n) => {
             let number = Number::from_str(n).unwrap();
             Ok(Datum::Simple(SimpleDatumKind::Number(number)))
         }
         Token::LParen => {
             let mut list = Vec::new();
+            let mut first = true;
             loop {
                 let token = tip.peek().ok_or(ReaderError {
                     kind: ReaderErrorKind::UnexpectedEndOfInput,
@@ -57,12 +58,21 @@ fn read_impl<'a, I: Iterator<Item = &'a Token>>(
                 match token {
                     Token::RParen => {
                         tip.next();
-                        return Ok(Datum::Compound(CompoundDatumKind::List(ListKind::Proper(
-                            list,
-                        ))));
+                        return if first {
+                            Ok(Datum::EmptyList)
+                        } else {
+                            Ok(Datum::Compound(CompoundDatumKind::List(ListKind::Proper(
+                                list,
+                            ))))
+                        };
                     }
                     Token::Dot => {
                         tip.next();
+                        if first {
+                            return Err(ReaderError {
+                                kind: ReaderErrorKind::IllegalDot,
+                            });
+                        }
                         let datum = read_impl(tip)?;
                         let next_token = tip.next().ok_or(ReaderError {
                             kind: ReaderErrorKind::UnexpectedEndOfInput,
@@ -79,6 +89,7 @@ fn read_impl<'a, I: Iterator<Item = &'a Token>>(
                     }
                     _ => list.push(read_impl(tip)?),
                 }
+                first = false;
             }
         }
         Token::Quote => {
@@ -194,13 +205,13 @@ mod tests {
     }
 
     #[test]
-    fn compound_datum() {
+    fn empty_list() {
         let datum = read(&mut vec![Token::LParen, Token::RParen].iter()).unwrap();
-        assert_eq!(
-            datum,
-            Datum::Compound(CompoundDatumKind::List(ListKind::Proper(vec![])))
-        );
+        assert_eq!(datum, Datum::EmptyList);
+    }
 
+    #[test]
+    fn compound_datum() {
         let datum = read(
             &mut vec![
                 Token::LParen,
@@ -531,6 +542,12 @@ mod tests {
             ),
             Err(ReaderError {
                 kind: ReaderErrorKind::UnexpectedToken(Token::RParen)
+            })
+        );
+        assert_eq!(
+            read(&mut vec![Token::LParen, Token::Dot, Token::RParen,].iter()),
+            Err(ReaderError {
+                kind: ReaderErrorKind::IllegalDot
             })
         );
     }
