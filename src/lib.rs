@@ -85,4 +85,49 @@ pub mod test_util {
         };
     }
     pub(crate) use vector_datum;
+
+    macro_rules! int_expr {
+        ($n:expr) => {
+            $crate::expr::Expr::Literal($crate::expr::LiteralKind::SelfEvaluating(
+                $crate::expr::SelfEvaluatingKind::Number($crate::number::Number::Real(
+                    $crate::number::RealKind::Integer(num::BigInt::from($n)),
+                )),
+            ))
+        };
+    }
+    pub(crate) use int_expr;
+
+    macro_rules! bool_expr {
+        ($b:expr) => {
+            $crate::expr::Expr::Literal($crate::expr::LiteralKind::SelfEvaluating(
+                $crate::expr::SelfEvaluatingKind::Boolean($b),
+            ))
+        };
+    }
+    pub(crate) use bool_expr;
+
+    macro_rules! char_expr {
+        ($c:expr) => {
+            $crate::expr::Expr::Literal($crate::expr::LiteralKind::SelfEvaluating(
+                $crate::expr::SelfEvaluatingKind::Character($c),
+            ))
+        };
+    }
+    pub(crate) use char_expr;
+
+    macro_rules! str_expr {
+        ($s:expr) => {
+            $crate::expr::Expr::Literal($crate::expr::LiteralKind::SelfEvaluating(
+                $crate::expr::SelfEvaluatingKind::String($s.to_owned()),
+            ))
+        };
+    }
+    pub(crate) use str_expr;
+
+    macro_rules! var_expr {
+        ($s:expr) => {
+            $crate::expr::Expr::Variable($s.to_owned())
+        };
+    }
+    pub(crate) use var_expr;
 }

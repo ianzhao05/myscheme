@@ -1,6 +1,7 @@
 use std::io;
 use std::io::Write;
 
+use crate::parser::parse;
 use crate::read::Reader;
 use crate::tokenize;
 
@@ -16,6 +17,15 @@ pub fn run() {
             continue;
         }
         let data = Reader::new(tokens.unwrap().iter()).collect::<Result<Vec<_>, _>>();
-        println!("{data:?}");
+        if let Err(e) = data {
+            println!("{e}");
+            continue;
+        }
+        let exprs = data
+            .unwrap()
+            .iter()
+            .map(parse)
+            .collect::<Result<Vec<_>, _>>();
+        println!("{exprs:?}");
     }
 }
