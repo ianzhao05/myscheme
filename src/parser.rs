@@ -10,6 +10,7 @@ pub enum ParserErrorKind {
     IllegalEmptyList,
     IllegalDot,
     IllegalVariableName(String),
+    IllegalDefine,
     MissingExpression,
 }
 
@@ -29,6 +30,7 @@ impl fmt::Display for ParserError {
             ParserErrorKind::IllegalVariableName(s) => {
                 write!(f, "Illegal variable name {s}")
             }
+            ParserErrorKind::IllegalDefine => write!(f, "Definition not allowed here"),
             ParserErrorKind::MissingExpression => write!(f, "Missing expression"),
         }
     }
@@ -63,27 +65,26 @@ fn is_keyword(symb: &str) -> bool {
 fn process_define<'a, I: Iterator<Item = &'a Datum>>(
     var: &Datum,
     mut body: I,
-) -> Result<Expr, ParserError> {
+) -> Result<Definition, ParserError> {
+    let bs_err = || ParserError {
+        kind: ParserErrorKind::BadSyntax("define".to_owned()),
+    };
     match var {
         Datum::Simple(SimpleDatum::Symbol(s)) => {
             if is_keyword(s) {
                 Err(ParserError {
-                    kind: ParserErrorKind::IllegalVariableName(s.to_owned()),
+                    kind: ParserErrorKind::IllegalVariableName(s.clone()),
                 })
             } else {
-                let expr = parse(body.next().ok_or(ParserError {
-                    kind: ParserErrorKind::BadSyntax("define".to_owned()),
-                })?)?;
+                let expr = parse_expr(body.next().ok_or_else(bs_err)?)?;
 
                 if body.next().is_none() {
-                    Ok(Expr::Definition(Definition::Variable {
-                        name: s.to_owned(),
+                    Ok(Definition::Variable {
+                        name: s.clone(),
                         value: Box::new(expr),
-                    }))
-                } else {
-                    Err(ParserError {
-                        kind: ParserErrorKind::BadSyntax("define".to_owned()),
                     })
+                } else {
+                    Err(bs_err())
                 }
             }
         }
@@ -96,62 +97,51 @@ fn process_define<'a, I: Iterator<Item = &'a Datum>>(
                 }
                 let name = match &forms[0] {
                     Datum::Simple(SimpleDatum::Symbol(s)) => s,
-                    _ => {
-                        return Err(ParserError {
-                            kind: ParserErrorKind::BadSyntax("define".to_owned()),
-                        })
-                    }
+                    _ => return Err(bs_err()),
                 };
-                let args = forms[1..]
+                let args = forms
                     .iter()
+                    .skip(1)
                     .map(|d| match d {
                         Datum::Simple(SimpleDatum::Symbol(s)) => {
                             if is_keyword(s) {
                                 Err(ParserError {
-                                    kind: ParserErrorKind::IllegalVariableName(s.to_owned()),
+                                    kind: ParserErrorKind::IllegalVariableName(s.clone()),
                                 })
                             } else {
-                                Ok(s.to_owned())
+                                Ok(s.clone())
                             }
                         }
-                        _ => Err(ParserError {
-                            kind: ParserErrorKind::BadSyntax("define".to_owned()),
-                        }),
+                        _ => Err(bs_err()),
                     })
                     .collect::<Result<Vec<_>, _>>()?;
 
-                Ok(Expr::Definition(Definition::Procedure {
-                    name: name.to_owned(),
+                Ok(Definition::Procedure {
+                    name: name.clone(),
                     args,
                     rest: if let ListKind::Improper(_, rest) = list {
                         match &**rest {
                             Datum::Simple(SimpleDatum::Symbol(s)) => {
                                 if is_keyword(s) {
                                     return Err(ParserError {
-                                        kind: ParserErrorKind::IllegalVariableName(s.to_owned()),
+                                        kind: ParserErrorKind::IllegalVariableName(s.clone()),
                                     });
                                 }
-                                Some(s.to_owned())
+                                Some(s.clone())
                             }
                             _ => {
-                                return Err(ParserError {
-                                    kind: ParserErrorKind::BadSyntax("define".to_owned()),
-                                });
+                                return Err(bs_err());
                             }
                         }
                     } else {
                         None
                     },
                     body: process_body(body)?,
-                }))
+                })
             }
-            _ => Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("define".to_owned()),
-            }),
+            _ => Err(bs_err()),
         },
-        _ => Err(ParserError {
-            kind: ParserErrorKind::BadSyntax("define".to_owned()),
-        }),
+        _ => Err(bs_err()),
     }
 }
 
@@ -161,13 +151,18 @@ fn process_body<'a, I: Iterator<Item = &'a Datum>>(data: I) -> Result<Body, Pars
     let mut last_is_expr = false;
     for d in data {
         match parse(d)? {
-            Expr::Definition(def) => {
+            ExprOrDef::Definition(def) => {
                 defs.push(def);
                 last_is_expr = false;
             }
-            expr => {
+            ExprOrDef::Expr(expr) => {
                 exprs.push(expr);
                 last_is_expr = true;
+            }
+            ExprOrDef::MixedBegin(_) => {
+                return Err(ParserError {
+                    kind: ParserErrorKind::IllegalDefine,
+                })
             }
         }
     }
@@ -183,370 +178,390 @@ fn process_body<'a, I: Iterator<Item = &'a Datum>>(data: I) -> Result<Body, Pars
 fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
     kw: &str,
     mut operands: I,
-) -> Result<Expr, ParserError> {
-    match kw {
-        "define" => {
-            let var = operands.next().ok_or(ParserError {
-                kind: ParserErrorKind::BadSyntax("define".to_owned()),
-            })?;
-            process_define(var, operands)
-        }
-        "quote" => {
-            let operand = operands.next().ok_or(ParserError {
-                kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-            })?;
-            if operands.next().is_none() {
-                Ok(Expr::Literal(LiteralKind::Quotation(operand.clone())))
-            } else {
-                Err(ParserError {
-                    kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-                })
+) -> Result<ExprOrDef, ParserError> {
+    let bs_err = || ParserError {
+        kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+    };
+    if kw == "define" {
+        let var = operands.next().ok_or_else(bs_err)?;
+        Ok(ExprOrDef::Definition(process_define(var, operands)?))
+    } else {
+        match kw {
+            "quote" => {
+                let operand = operands.next().ok_or_else(bs_err)?;
+                if operands.next().is_none() {
+                    Ok(ExprOrDef::Expr(Expr::Literal(LiteralKind::Quotation(
+                        operand.clone(),
+                    ))))
+                } else {
+                    Err(bs_err())
+                }
             }
-        }
-        "lambda" => {
-            let formals = operands.next().ok_or(ParserError {
-                kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-            })?;
-            match formals {
-                Datum::Compound(CompoundDatum::List(list)) => match list {
-                    ListKind::Proper(forms) | ListKind::Improper(forms, _) => {
-                        if forms.is_empty() {
+            "lambda" => {
+                let formals = operands.next().ok_or_else(bs_err)?;
+                match formals {
+                    Datum::Compound(CompoundDatum::List(list)) => match list {
+                        ListKind::Proper(forms) | ListKind::Improper(forms, _) => {
+                            if forms.is_empty() {
+                                return Err(ParserError {
+                                    kind: ParserErrorKind::IllegalEmptyList,
+                                });
+                            }
+                            let args = forms
+                                .iter()
+                                .map(|d| match d {
+                                    Datum::Simple(SimpleDatum::Symbol(s)) => {
+                                        if is_keyword(s) {
+                                            Err(ParserError {
+                                                kind: ParserErrorKind::IllegalVariableName(
+                                                    s.clone(),
+                                                ),
+                                            })
+                                        } else {
+                                            Ok(s.clone())
+                                        }
+                                    }
+                                    _ => Err(bs_err()),
+                                })
+                                .collect::<Result<Vec<_>, _>>()?;
+
+                            Ok(ExprOrDef::Expr(Expr::Lambda {
+                                args,
+                                rest: if let ListKind::Improper(_, rest) = list {
+                                    match &**rest {
+                                        Datum::Simple(SimpleDatum::Symbol(s)) => {
+                                            if is_keyword(s) {
+                                                return Err(ParserError {
+                                                    kind: ParserErrorKind::IllegalVariableName(
+                                                        s.clone(),
+                                                    ),
+                                                });
+                                            }
+                                            Some(s.clone())
+                                        }
+                                        _ => {
+                                            return Err(bs_err());
+                                        }
+                                    }
+                                } else {
+                                    None
+                                },
+                                body: process_body(operands)?,
+                            }))
+                        }
+                        _ => Err(bs_err()),
+                    },
+                    Datum::Simple(SimpleDatum::Symbol(rest)) => {
+                        if is_keyword(rest) {
+                            return Err(ParserError {
+                                kind: ParserErrorKind::IllegalVariableName(rest.clone()),
+                            });
+                        }
+                        Ok(ExprOrDef::Expr(Expr::Lambda {
+                            args: vec![],
+                            rest: Some(rest.clone()),
+                            body: process_body(operands)?,
+                        }))
+                    }
+                    Datum::EmptyList => Ok(ExprOrDef::Expr(Expr::Lambda {
+                        args: vec![],
+                        rest: None,
+                        body: process_body(operands)?,
+                    })),
+                    _ => Err(bs_err()),
+                }
+            }
+            "begin" => {
+                let mut children = vec![];
+                let mut has_def = false;
+                let mut has_expr = false;
+                for operand in operands {
+                    let child = parse(operand)?;
+                    match child {
+                        ExprOrDef::Definition(_) => {
+                            has_def = true;
+                        }
+                        _ => {
+                            has_expr = true;
+                        }
+                    }
+                    children.push(child);
+                }
+                if has_def && has_expr {
+                    Ok(ExprOrDef::MixedBegin(children))
+                } else if has_def {
+                    Ok(ExprOrDef::Definition(Definition::Begin(
+                        children
+                            .into_iter()
+                            .map(|eod| match eod {
+                                ExprOrDef::Definition(d) => d,
+                                _ => unreachable!("should not encounter non-definition"),
+                            })
+                            .collect(),
+                    )))
+                } else {
+                    Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Begin(
+                        children
+                            .into_iter()
+                            .map(|eod| match eod {
+                                ExprOrDef::Expr(e) => e,
+                                _ => unreachable!("should not encounter non-definition"),
+                            })
+                            .collect(),
+                    ))))
+                }
+            }
+            "set!" => {
+                let variable = operands.next().ok_or_else(bs_err)?;
+                let value = operands.next().ok_or_else(bs_err)?;
+                if operands.next().is_none() {
+                    Ok(ExprOrDef::Expr(Expr::Assignment {
+                        variable: match variable {
+                            Datum::Simple(SimpleDatum::Symbol(s)) => s.clone(),
+                            _ => {
+                                return Err(bs_err());
+                            }
+                        },
+                        value: Box::new(parse_expr(value)?),
+                    }))
+                } else {
+                    Err(bs_err())
+                }
+            }
+            "if" => {
+                let test = operands.next().ok_or_else(bs_err)?;
+                let consequent = operands.next().ok_or_else(bs_err)?;
+                let alternate = operands.next();
+                if operands.next().is_none() {
+                    Ok(ExprOrDef::Expr(Expr::Conditional {
+                        test: Box::new(parse_expr(test)?),
+                        consequent: Box::new(parse_expr(consequent)?),
+                        alternate: if let Some(a) = alternate {
+                            Some(Box::new(parse_expr(a)?))
+                        } else {
+                            None
+                        },
+                    }))
+                } else {
+                    Err(bs_err())
+                }
+            }
+            "cond" => {
+                let mut clauses = vec![];
+                let mut else_present = false;
+                for clause in operands {
+                    if else_present {
+                        return Err(bs_err());
+                    }
+                    if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = clause {
+                        if parts.is_empty() {
                             return Err(ParserError {
                                 kind: ParserErrorKind::IllegalEmptyList,
                             });
                         }
-                        let args = forms
-                            .iter()
-                            .map(|d| match d {
-                                Datum::Simple(SimpleDatum::Symbol(s)) => {
-                                    if is_keyword(s) {
-                                        Err(ParserError {
-                                            kind: ParserErrorKind::IllegalVariableName(
-                                                s.to_owned(),
-                                            ),
-                                        })
-                                    } else {
-                                        Ok(s.to_owned())
-                                    }
+                        match &parts[0] {
+                            Datum::Simple(SimpleDatum::Symbol(s)) if s == "else" => {
+                                if parts.len() < 2 {
+                                    return Err(bs_err());
                                 }
-                                _ => Err(ParserError {
-                                    kind: ParserErrorKind::BadSyntax("lambda".to_owned()),
-                                }),
-                            })
-                            .collect::<Result<Vec<_>, _>>()?;
-
-                        Ok(Expr::Lambda {
-                            args,
-                            rest: if let ListKind::Improper(_, rest) = list {
-                                match &**rest {
-                                    Datum::Simple(SimpleDatum::Symbol(s)) => {
-                                        if is_keyword(s) {
-                                            return Err(ParserError {
-                                                kind: ParserErrorKind::IllegalVariableName(
-                                                    s.to_owned(),
-                                                ),
-                                            });
+                                let seq = parts
+                                    .iter()
+                                    .skip(1)
+                                    .map(parse_expr)
+                                    .collect::<Result<Vec<_>, _>>()?;
+                                clauses.push(CondClause::Else(seq));
+                                else_present = true;
+                            }
+                            _ => {
+                                let test = parse_expr(&parts[0])?;
+                                if parts.len() == 1 {
+                                    clauses.push(CondClause::Normal(test, vec![]));
+                                    continue;
+                                }
+                                match &parts[1] {
+                                    Datum::Simple(SimpleDatum::Symbol(s)) if s == "=>" => {
+                                        if parts.len() != 3 {
+                                            return Err(bs_err());
                                         }
-                                        Some(s.to_owned())
+                                        let recipient = parse_expr(&parts[2])?;
+                                        clauses.push(CondClause::Arrow(test, recipient));
                                     }
                                     _ => {
-                                        return Err(ParserError {
-                                            kind: ParserErrorKind::BadSyntax("lambda".to_owned()),
-                                        });
+                                        let seq = parts
+                                            .iter()
+                                            .skip(1)
+                                            .map(parse_expr)
+                                            .collect::<Result<Vec<_>, _>>()?;
+                                        clauses.push(CondClause::Normal(test, seq));
                                     }
                                 }
-                            } else {
-                                None
-                            },
-                            body: process_body(operands)?,
-                        })
-                    }
-                    _ => Err(ParserError {
-                        kind: ParserErrorKind::BadSyntax("define".to_owned()),
-                    }),
-                },
-                Datum::Simple(SimpleDatum::Symbol(rest)) => {
-                    if is_keyword(rest) {
-                        return Err(ParserError {
-                            kind: ParserErrorKind::IllegalVariableName(rest.to_owned()),
-                        });
-                    }
-                    Ok(Expr::Lambda {
-                        args: vec![],
-                        rest: Some(rest.to_owned()),
-                        body: process_body(operands)?,
-                    })
-                }
-                Datum::EmptyList => Ok(Expr::Lambda {
-                    args: vec![],
-                    rest: None,
-                    body: process_body(operands)?,
-                }),
-                _ => Err(ParserError {
-                    kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-                }),
-            }
-        }
-        "begin" => {
-            let mut children = vec![];
-            let mut has_def = false;
-            let mut has_expr = false;
-            for operand in operands {
-                let child = parse(operand)?;
-                match child {
-                    Expr::Definition(_) => {
-                        has_def = true;
-                    }
-                    _ => {
-                        has_expr = true;
+                            }
+                        }
+                    } else {
+                        return Err(bs_err());
                     }
                 }
-                children.push(child);
+                Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Cond(
+                    clauses,
+                ))))
             }
-            if has_def && has_expr {
-                Ok(Expr::MixedBegin(children))
-            } else if has_def {
-                Ok(Expr::Definition(Definition::Begin(
-                    children
-                        .into_iter()
-                        .map(|e| match e {
-                            Expr::Definition(d) => d,
-                            _ => unreachable!("should not encounter non-definition"),
-                        })
-                        .collect(),
-                )))
-            } else {
-                Ok(Expr::DerivedExpr(DerivedExprKind::Begin(children)))
-            }
-        }
-        "set!" => {
-            let variable = operands.next().ok_or(ParserError {
-                kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-            })?;
-            let value = operands.next().ok_or(ParserError {
-                kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-            })?;
-            if operands.next().is_none() {
-                Ok(Expr::Assignment {
-                    variable: match variable {
-                        Datum::Simple(SimpleDatum::Symbol(s)) => s.to_owned(),
-                        _ => {
+            "else" | "kw" => Err(bs_err()),
+            "and" => Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::And(
+                operands.map(parse_expr).collect::<Result<Vec<_>, _>>()?,
+            )))),
+            "or" => Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Or(
+                operands.map(parse_expr).collect::<Result<Vec<_>, _>>()?,
+            )))),
+            "case" => {
+                let key = parse_expr(operands.next().ok_or_else(bs_err)?)?;
+                let mut clauses = vec![];
+                let mut else_present = false;
+                for clause in operands {
+                    if else_present {
+                        return Err(bs_err());
+                    }
+                    if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = clause {
+                        if parts.is_empty() {
                             return Err(ParserError {
-                                kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+                                kind: ParserErrorKind::IllegalEmptyList,
                             });
                         }
-                    },
-                    value: Box::new(parse(value)?),
-                })
-            } else {
-                Err(ParserError {
-                    kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-                })
-            }
-        }
-        "if" => {
-            let test = operands.next().ok_or(ParserError {
-                kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-            })?;
-            let consequent = operands.next().ok_or(ParserError {
-                kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-            })?;
-            let alternate = operands.next();
-            if operands.next().is_none() {
-                Ok(Expr::Conditional {
-                    test: Box::new(parse(test)?),
-                    consequent: Box::new(parse(consequent)?),
-                    alternate: if let Some(a) = alternate {
-                        Some(Box::new(parse(a)?))
+                        match &parts[0] {
+                            Datum::Simple(SimpleDatum::Symbol(s)) if s == "else" => {
+                                if parts.len() < 2 {
+                                    return Err(bs_err());
+                                }
+                                let seq = parts
+                                    .iter()
+                                    .skip(1)
+                                    .map(parse_expr)
+                                    .collect::<Result<Vec<_>, _>>()?;
+                                clauses.push(CaseClause::Else(seq));
+                                else_present = true;
+                            }
+                            _ => {
+                                if let Datum::Compound(CompoundDatum::List(ListKind::Proper(
+                                    keys,
+                                ))) = &parts[0]
+                                {
+                                    clauses.push(CaseClause::Normal(
+                                        keys.clone(),
+                                        parts
+                                            .iter()
+                                            .skip(1)
+                                            .map(parse_expr)
+                                            .collect::<Result<Vec<_>, _>>()?,
+                                    ));
+                                } else {
+                                    return Err(bs_err());
+                                }
+                            }
+                        }
                     } else {
-                        None
-                    },
-                })
-            } else {
-                Err(ParserError {
-                    kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-                })
+                        return Err(bs_err());
+                    }
+                }
+                Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Case {
+                    key: Box::new(key),
+                    clauses,
+                })))
             }
-        }
-        "cond" => {
-            let mut clauses = vec![];
-            let mut else_present = false;
-            for clause in operands {
-                if else_present {
-                    return Err(ParserError {
-                        kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-                    });
-                }
-                if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = clause {
-                    if parts.is_empty() {
-                        return Err(ParserError {
-                            kind: ParserErrorKind::IllegalEmptyList,
-                        });
+            "let" | "let*" | "letrec" => {
+                let mut first = operands.next().ok_or_else(bs_err)?;
+                let mut name: Option<String> = None;
+                if let Datum::Simple(SimpleDatum::Symbol(n)) = first {
+                    if kw == "let" {
+                        first = operands.next().ok_or_else(bs_err)?;
+                        name = Some(n.clone());
+                    } else {
+                        return Err(bs_err());
                     }
-                    match &parts[0] {
-                        Datum::Simple(SimpleDatum::Symbol(s)) if s == "else" => {
-                            if parts.len() < 2 {
-                                return Err(ParserError {
-                                    kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-                                });
-                            }
-                            let seq = parts
-                                .iter()
-                                .skip(1)
-                                .map(parse)
-                                .collect::<Result<Vec<_>, _>>()?;
-                            clauses.push(CondClause::Else(seq));
-                            else_present = true;
-                        }
-                        _ => {
-                            let test = parse(&parts[0])?;
-                            if parts.len() == 1 {
-                                clauses.push(CondClause::Normal(test, vec![]));
-                                continue;
-                            }
-                            match &parts[1] {
-                                Datum::Simple(SimpleDatum::Symbol(s)) if s == "=>" => {
-                                    if parts.len() != 3 {
-                                        return Err(ParserError {
-                                            kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-                                        });
-                                    }
-                                    let recipient = parse(&parts[2])?;
-                                    clauses.push(CondClause::Arrow(test, recipient));
-                                }
-                                _ => {
-                                    let seq = parts
-                                        .iter()
-                                        .skip(1)
-                                        .map(parse)
-                                        .collect::<Result<Vec<_>, _>>()?;
-                                    clauses.push(CondClause::Normal(test, seq));
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    return Err(ParserError {
-                        kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-                    });
                 }
-            }
-            Ok(Expr::DerivedExpr(DerivedExprKind::Cond(clauses)))
-        }
-        "else" | "kw" => Err(ParserError {
-            kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-        }),
-        "and" => Ok(Expr::DerivedExpr(DerivedExprKind::And(
-            operands.map(parse).collect::<Result<Vec<_>, _>>()?,
-        ))),
-        "or" => Ok(Expr::DerivedExpr(DerivedExprKind::Or(
-            operands.map(parse).collect::<Result<Vec<_>, _>>()?,
-        ))),
-        "case" => {
-            let key = parse(operands.next().ok_or(ParserError {
-                kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-            })?)?;
-            let mut clauses = vec![];
-            let mut else_present = false;
-            for clause in operands {
-                if else_present {
-                    return Err(ParserError {
-                        kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-                    });
-                }
-                if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = clause {
-                    if parts.is_empty() {
-                        return Err(ParserError {
-                            kind: ParserErrorKind::IllegalEmptyList,
-                        });
-                    }
-                    match &parts[0] {
-                        Datum::Simple(SimpleDatum::Symbol(s)) if s == "else" => {
-                            if parts.len() < 2 {
-                                return Err(ParserError {
-                                    kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-                                });
-                            }
-                            let seq = parts
-                                .iter()
-                                .skip(1)
-                                .map(parse)
-                                .collect::<Result<Vec<_>, _>>()?;
-                            clauses.push(CaseClause::Else(seq));
-                            else_present = true;
-                        }
-                        _ => {
-                            if let Datum::Compound(CompoundDatum::List(ListKind::Proper(keys))) =
-                                &parts[0]
+                if let Datum::Compound(CompoundDatum::List(ListKind::Proper(binding_data))) = first
+                {
+                    let bindings = binding_data
+                        .iter()
+                        .map(|binding| {
+                            if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) =
+                                binding
                             {
-                                clauses.push(CaseClause::Normal(
-                                    keys.clone(),
-                                    parts
-                                        .iter()
-                                        .skip(1)
-                                        .map(parse)
-                                        .collect::<Result<Vec<_>, _>>()?,
-                                ));
+                                if parts.len() != 2 {
+                                    return Err(bs_err());
+                                }
+                                if let Datum::Simple(SimpleDatum::Symbol(name)) = &parts[0] {
+                                    Ok((name.clone(), parse_expr(&parts[1])?))
+                                } else {
+                                    Err(bs_err())
+                                }
                             } else {
-                                return Err(ParserError {
-                                    kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-                                });
+                                Err(bs_err())
                             }
-                        }
-                    }
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let body = process_body(operands)?;
+                    Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
+                        kind: match kw {
+                            "let" => {
+                                if let Some(name) = name {
+                                    LetKind::Named(name)
+                                } else {
+                                    LetKind::Normal
+                                }
+                            }
+                            "let*" => LetKind::Star,
+                            "letrec" => LetKind::Rec,
+                            _ => unreachable!(),
+                        },
+                        bindings,
+                        body,
+                    })))
                 } else {
-                    return Err(ParserError {
-                        kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-                    });
+                    Err(bs_err())
                 }
             }
-            Ok(Expr::DerivedExpr(DerivedExprKind::Case {
-                key: Box::new(key),
-                clauses,
-            }))
+            "do" => {
+                todo!()
+            }
+            "delay" => {
+                todo!()
+            }
+            "quasiquote" => {
+                todo!()
+            }
+            _ => todo!(),
         }
-        "let" => {
-            todo!()
-        }
-        "let*" => {
-            todo!()
-        }
-        "letrec" => {
-            todo!()
-        }
-        "do" => {
-            todo!()
-        }
-        "delay" => {
-            todo!()
-        }
-        "quasiquote" => {
-            todo!()
-        }
-        _ => todo!(),
     }
 }
 
-pub fn parse(datum: &Datum) -> Result<Expr, ParserError> {
+fn parse_expr(datum: &Datum) -> Result<Expr, ParserError> {
+    match parse(datum)? {
+        ExprOrDef::Expr(expr) => Ok(expr),
+        _ => Err(ParserError {
+            kind: ParserErrorKind::IllegalDefine,
+        }),
+    }
+}
+
+pub fn parse(datum: &Datum) -> Result<ExprOrDef, ParserError> {
     match datum {
         Datum::Simple(simple) => match simple {
-            SimpleDatum::Boolean(b) => Ok(Expr::Literal(LiteralKind::SelfEvaluating(
-                SelfEvaluatingKind::Boolean(*b),
+            SimpleDatum::Boolean(b) => Ok(ExprOrDef::Expr(Expr::Literal(
+                LiteralKind::SelfEvaluating(SelfEvaluatingKind::Boolean(*b)),
             ))),
-            SimpleDatum::Number(n) => Ok(Expr::Literal(LiteralKind::SelfEvaluating(
-                SelfEvaluatingKind::Number(n.clone()),
+            SimpleDatum::Number(n) => Ok(ExprOrDef::Expr(Expr::Literal(
+                LiteralKind::SelfEvaluating(SelfEvaluatingKind::Number(n.clone())),
             ))),
-            SimpleDatum::Character(c) => Ok(Expr::Literal(LiteralKind::SelfEvaluating(
-                SelfEvaluatingKind::Character(*c),
+            SimpleDatum::Character(c) => Ok(ExprOrDef::Expr(Expr::Literal(
+                LiteralKind::SelfEvaluating(SelfEvaluatingKind::Character(*c)),
             ))),
-            SimpleDatum::String(s) => Ok(Expr::Literal(LiteralKind::SelfEvaluating(
-                SelfEvaluatingKind::String(s.clone()),
+            SimpleDatum::String(s) => Ok(ExprOrDef::Expr(Expr::Literal(
+                LiteralKind::SelfEvaluating(SelfEvaluatingKind::String(s.clone())),
             ))),
             SimpleDatum::Symbol(symb) => match symb.as_str() {
                 kw if is_keyword(kw) => Err(ParserError {
                     kind: ParserErrorKind::BadSyntax(kw.to_owned()),
                 }),
-                _ => Ok(Expr::Variable(symb.clone())),
+                _ => Ok(ExprOrDef::Expr(Expr::Variable(symb.clone()))),
             },
         },
         Datum::Compound(compound) => match compound {
@@ -557,13 +572,15 @@ pub fn parse(datum: &Datum) -> Result<Expr, ParserError> {
                     })?;
                     match first {
                         Datum::Simple(simple) => {
-                            let operator = parse(first);
+                            let operator = parse_expr(first);
                             let operands = list.iter().skip(1);
                             match operator {
-                                Ok(se) => Ok(Expr::ProcCall {
+                                Ok(se) => Ok(ExprOrDef::Expr(Expr::ProcCall {
                                     operator: Box::new(se),
-                                    operands: operands.map(parse).collect::<Result<Vec<_>, _>>()?,
-                                }),
+                                    operands: operands
+                                        .map(parse_expr)
+                                        .collect::<Result<Vec<_>, _>>()?,
+                                })),
                                 Err(_) => {
                                     if let SimpleDatum::Symbol(kw) = simple {
                                         process_keyword(kw, operands)
@@ -574,16 +591,16 @@ pub fn parse(datum: &Datum) -> Result<Expr, ParserError> {
                             }
                         }
                         Datum::Compound(_) | Datum::Void => {
-                            let operator = parse(first)?;
+                            let operator = parse_expr(first)?;
                             let rest = list
                                 .iter()
                                 .skip(1)
-                                .map(parse)
+                                .map(parse_expr)
                                 .collect::<Result<Vec<_>, _>>()?;
-                            Ok(Expr::ProcCall {
+                            Ok(ExprOrDef::Expr(Expr::ProcCall {
                                 operator: Box::new(operator),
                                 operands: rest,
-                            })
+                            }))
                         }
                         Datum::EmptyList => Err(ParserError {
                             kind: ParserErrorKind::IllegalEmptyList,
@@ -606,14 +623,19 @@ pub fn parse(datum: &Datum) -> Result<Expr, ParserError> {
                 }
             },
             CompoundDatum::Vector(vector) => {
-                let elements = vector.iter().map(parse).collect::<Result<Vec<_>, _>>()?;
-                Ok(Expr::Literal(LiteralKind::Vector(elements)))
+                let elements = vector
+                    .iter()
+                    .map(parse_expr)
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(ExprOrDef::Expr(Expr::Literal(LiteralKind::Vector(
+                    elements,
+                ))))
             }
         },
         Datum::EmptyList => Err(ParserError {
             kind: ParserErrorKind::IllegalEmptyList,
         }),
-        Datum::Void => Ok(Expr::Literal(LiteralKind::Void)),
+        Datum::Void => Ok(ExprOrDef::Expr(Expr::Literal(LiteralKind::Void))),
     }
 }
 
@@ -624,20 +646,29 @@ mod tests {
 
     #[test]
     fn literals() {
-        assert_eq!(parse(&bool_datum!(true)), Ok(bool_expr!(true)));
-        assert_eq!(parse(&int_datum!(42)), Ok(int_expr!(42)));
-        assert_eq!(parse(&char_datum!('c')), Ok(char_expr!('c')));
-        assert_eq!(parse(&str_datum!("foo")), Ok(str_expr!("foo")));
+        assert_eq!(
+            parse(&bool_datum!(true)),
+            Ok(ExprOrDef::Expr(bool_expr!(true)))
+        );
+        assert_eq!(parse(&int_datum!(42)), Ok(ExprOrDef::Expr(int_expr!(42))));
+        assert_eq!(
+            parse(&char_datum!('c')),
+            Ok(ExprOrDef::Expr(char_expr!('c')))
+        );
+        assert_eq!(
+            parse(&str_datum!("foo")),
+            Ok(ExprOrDef::Expr(str_expr!("foo")))
+        );
     }
 
     #[test]
     fn proc_calls() {
         assert_eq!(
             parse(&proper_list_datum![symbol_datum!("f")]),
-            Ok(Expr::ProcCall {
+            Ok(ExprOrDef::Expr(Expr::ProcCall {
                 operator: Box::new(var_expr!("f")),
                 operands: vec![],
-            })
+            }))
         );
 
         assert_eq!(
@@ -646,10 +677,10 @@ mod tests {
                 int_datum!(1),
                 int_datum!(2),
             ]),
-            Ok(Expr::ProcCall {
+            Ok(ExprOrDef::Expr(Expr::ProcCall {
                 operator: Box::new(var_expr!("g")),
                 operands: vec![int_expr!(1), int_expr!(2)],
-            })
+            }))
         );
     }
 
@@ -677,7 +708,7 @@ mod tests {
                 symbol_datum!("x"),
                 int_datum!(42),
             ]),
-            Ok(Expr::Definition(Definition::Variable {
+            Ok(ExprOrDef::Definition(Definition::Variable {
                 name: "x".to_owned(),
                 value: Box::new(int_expr!(42)),
             }))
@@ -690,7 +721,7 @@ mod tests {
                 proper_list_datum![symbol_datum!("define"), symbol_datum!("y"), int_datum!(1)],
                 proper_list_datum![symbol_datum!("+"), symbol_datum!("x"), symbol_datum!("y")],
             ]),
-            Ok(Expr::Definition(Definition::Procedure {
+            Ok(ExprOrDef::Definition(Definition::Procedure {
                 name: "f".to_owned(),
                 args: vec!["x".to_owned()],
                 rest: None,
@@ -718,7 +749,7 @@ mod tests {
                 ],
                 symbol_datum!("z"),
             ]),
-            Ok(Expr::Definition(Definition::Procedure {
+            Ok(ExprOrDef::Definition(Definition::Procedure {
                 name: "f".to_owned(),
                 args: vec!["x".to_owned(), "y".to_owned()],
                 rest: Some("z".to_owned()),
@@ -813,7 +844,7 @@ mod tests {
                 proper_list_datum![symbol_datum!("x"), symbol_datum!("y")],
                 proper_list_datum![symbol_datum!("+"), symbol_datum!("x"), symbol_datum!("y")],
             ]),
-            Ok(Expr::Lambda {
+            Ok(ExprOrDef::Expr(Expr::Lambda {
                 args: vec!["x".to_owned(), "y".to_owned()],
                 rest: None,
                 body: Body {
@@ -823,7 +854,7 @@ mod tests {
                         operands: vec![var_expr!("x"), var_expr!("y")],
                     }],
                 }
-            })
+            }))
         );
 
         assert_eq!(
@@ -842,7 +873,7 @@ mod tests {
                     proper_list_datum![symbol_datum!("car"), symbol_datum!("z")],
                 ],
             ]),
-            Ok(Expr::Lambda {
+            Ok(ExprOrDef::Expr(Expr::Lambda {
                 args: vec!["x".to_owned(), "y".to_owned()],
                 rest: Some("z".to_owned()),
                 body: Body {
@@ -862,7 +893,7 @@ mod tests {
                         ],
                     }],
                 }
-            })
+            }))
         );
 
         assert_eq!(
@@ -871,14 +902,14 @@ mod tests {
                 symbol_datum!("args"),
                 int_datum!(1)
             ]),
-            Ok(Expr::Lambda {
+            Ok(ExprOrDef::Expr(Expr::Lambda {
                 args: vec![],
                 rest: Some("args".to_owned()),
                 body: Body {
                     defs: vec![],
                     exprs: vec![int_expr!(1)],
                 }
-            })
+            }))
         );
 
         assert_eq!(
@@ -887,14 +918,14 @@ mod tests {
                 Datum::EmptyList,
                 int_datum!(1)
             ]),
-            Ok(Expr::Lambda {
+            Ok(ExprOrDef::Expr(Expr::Lambda {
                 args: vec![],
                 rest: None,
                 body: Body {
                     defs: vec![],
                     exprs: vec![int_expr!(1)],
                 }
-            })
+            }))
         );
 
         assert_eq!(
@@ -934,10 +965,9 @@ mod tests {
                 symbol_datum!("quote"),
                 proper_list_datum![symbol_datum!("a"), symbol_datum!("b")],
             ]),
-            Ok(Expr::Literal(LiteralKind::Quotation(proper_list_datum![
-                symbol_datum!("a"),
-                symbol_datum!("b")
-            ],)))
+            Ok(ExprOrDef::Expr(Expr::Literal(LiteralKind::Quotation(
+                proper_list_datum![symbol_datum!("a"), symbol_datum!("b")],
+            ))))
         );
 
         assert_eq!(
@@ -956,10 +986,10 @@ mod tests {
                 symbol_datum!("x"),
                 int_datum!(1),
             ]),
-            Ok(Expr::Assignment {
+            Ok(ExprOrDef::Expr(Expr::Assignment {
                 variable: "x".to_owned(),
                 value: Box::new(int_expr!(1)),
-            })
+            }))
         );
 
         assert_eq!(
@@ -993,15 +1023,15 @@ mod tests {
                 int_datum!(2),
                 int_datum!(3),
             ]),
-            Ok(Expr::MixedBegin(vec![
-                Expr::Definition(Definition::Variable {
+            Ok(ExprOrDef::MixedBegin(vec![
+                ExprOrDef::Definition(Definition::Variable {
                     name: "x".to_owned(),
                     value: Box::new(int_expr!(42))
                 }),
-                str_expr!("hello"),
-                int_expr!(1),
-                int_expr!(2),
-                int_expr!(3),
+                ExprOrDef::Expr(str_expr!("hello")),
+                ExprOrDef::Expr(int_expr!(1)),
+                ExprOrDef::Expr(int_expr!(2)),
+                ExprOrDef::Expr(int_expr!(3)),
             ]))
         );
 
@@ -1011,7 +1041,7 @@ mod tests {
                 proper_list_datum![symbol_datum!("define"), symbol_datum!("x"), int_datum!(42)],
                 proper_list_datum![symbol_datum!("define"), symbol_datum!("y"), int_datum!(43)],
             ]),
-            Ok(Expr::Definition(Definition::Begin(vec![
+            Ok(ExprOrDef::Definition(Definition::Begin(vec![
                 Definition::Variable {
                     name: "x".to_owned(),
                     value: Box::new(int_expr!(42)),
@@ -1025,7 +1055,9 @@ mod tests {
 
         assert_eq!(
             parse(&proper_list_datum![symbol_datum!("begin")]),
-            Ok(Expr::DerivedExpr(DerivedExprKind::Begin(vec![])))
+            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Begin(
+                vec![]
+            ))))
         );
 
         assert_eq!(
@@ -1035,11 +1067,9 @@ mod tests {
                 symbol_datum!("y"),
                 symbol_datum!("z"),
             ]),
-            Ok(Expr::DerivedExpr(DerivedExprKind::Begin(vec![
-                var_expr!("x"),
-                var_expr!("y"),
-                var_expr!("z"),
-            ])))
+            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Begin(
+                vec![var_expr!("x"), var_expr!("y"), var_expr!("z"),]
+            ))))
         )
     }
 
@@ -1061,24 +1091,26 @@ mod tests {
                 ],
                 proper_list_datum![symbol_datum!("else"), int_datum!(3)],
             ]),
-            Ok(Expr::DerivedExpr(DerivedExprKind::Cond(vec![
-                CondClause::Normal(bool_expr!(false), vec![int_expr!(0)]),
-                CondClause::Normal(
-                    Expr::ProcCall {
-                        operator: Box::new(var_expr!("=")),
-                        operands: vec![int_expr!(1), int_expr!(2)],
-                    },
-                    vec![int_expr!(3), int_expr!(4)],
-                ),
-                CondClause::Arrow(
-                    Expr::ProcCall {
-                        operator: Box::new(var_expr!("cons")),
-                        operands: vec![int_expr!(5), int_expr!(6)],
-                    },
-                    var_expr!("car"),
-                ),
-                CondClause::Else(vec![int_expr!(3)]),
-            ])))
+            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Cond(
+                vec![
+                    CondClause::Normal(bool_expr!(false), vec![int_expr!(0)]),
+                    CondClause::Normal(
+                        Expr::ProcCall {
+                            operator: Box::new(var_expr!("=")),
+                            operands: vec![int_expr!(1), int_expr!(2)],
+                        },
+                        vec![int_expr!(3), int_expr!(4)],
+                    ),
+                    CondClause::Arrow(
+                        Expr::ProcCall {
+                            operator: Box::new(var_expr!("cons")),
+                            operands: vec![int_expr!(5), int_expr!(6)],
+                        },
+                        var_expr!("car"),
+                    ),
+                    CondClause::Else(vec![int_expr!(3)]),
+                ]
+            ))))
         );
 
         assert_eq!(
@@ -1112,10 +1144,9 @@ mod tests {
                 bool_datum!(true),
                 bool_datum!(false),
             ]),
-            Ok(Expr::DerivedExpr(DerivedExprKind::And(vec![
-                bool_expr!(true),
-                bool_expr!(false),
-            ])))
+            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::And(
+                vec![bool_expr!(true), bool_expr!(false),]
+            ))))
         );
 
         assert_eq!(
@@ -1124,20 +1155,23 @@ mod tests {
                 bool_datum!(true),
                 bool_datum!(false),
             ]),
-            Ok(Expr::DerivedExpr(DerivedExprKind::Or(vec![
-                bool_expr!(true),
-                bool_expr!(false),
-            ])))
+            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Or(
+                vec![bool_expr!(true), bool_expr!(false),]
+            ))))
         );
 
         assert_eq!(
             parse(&proper_list_datum![symbol_datum!("and")]),
-            Ok(Expr::DerivedExpr(DerivedExprKind::And(vec![])))
+            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::And(
+                vec![]
+            ))))
         );
 
         assert_eq!(
             parse(&proper_list_datum![symbol_datum!("or")]),
-            Ok(Expr::DerivedExpr(DerivedExprKind::Or(vec![])))
+            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Or(
+                vec![]
+            ))))
         );
     }
 
@@ -1154,14 +1188,14 @@ mod tests {
                 ],
                 proper_list_datum![symbol_datum!("else"), int_datum!(6)],
             ]),
-            Ok(Expr::DerivedExpr(DerivedExprKind::Case {
+            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Case {
                 key: Box::new(int_expr!(42)),
                 clauses: vec![
                     CaseClause::Normal(vec![int_datum!(1)], vec![int_expr!(2)]),
                     CaseClause::Normal(vec![int_datum!(3), int_datum!(4)], vec![int_expr!(5)]),
                     CaseClause::Else(vec![int_expr!(6)]),
                 ],
-            }))
+            })))
         );
 
         assert_eq!(
@@ -1185,6 +1219,121 @@ mod tests {
             ]),
             Err(ParserError {
                 kind: ParserErrorKind::BadSyntax("case".to_owned())
+            })
+        );
+    }
+
+    #[test]
+    fn lets() {
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("let"),
+                proper_list_datum![proper_list_datum![symbol_datum!("x"), int_datum!(1)]],
+                proper_list_datum![symbol_datum!("define"), symbol_datum!("y"), int_datum!(2)],
+                proper_list_datum![symbol_datum!("+"), symbol_datum!("x"), symbol_datum!("y")],
+            ]),
+            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
+                kind: LetKind::Normal,
+                bindings: vec![("x".to_owned(), int_expr!(1))],
+                body: Body {
+                    defs: vec![Definition::Variable {
+                        name: "y".to_owned(),
+                        value: Box::new(int_expr!(2)),
+                    }],
+                    exprs: vec![Expr::ProcCall {
+                        operator: Box::new(var_expr!("+")),
+                        operands: vec![var_expr!("x"), var_expr!("y")],
+                    }],
+                }
+            })))
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("let*"),
+                proper_list_datum![proper_list_datum![symbol_datum!("x"), int_datum!(1)]],
+                symbol_datum!("x"),
+            ]),
+            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
+                kind: LetKind::Star,
+                bindings: vec![("x".to_owned(), int_expr!(1))],
+                body: Body {
+                    defs: vec![],
+                    exprs: vec![var_expr!("x")],
+                }
+            })))
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("letrec"),
+                proper_list_datum![proper_list_datum![symbol_datum!("x"), int_datum!(1)]],
+                symbol_datum!("x"),
+            ]),
+            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
+                kind: LetKind::Rec,
+                bindings: vec![("x".to_owned(), int_expr!(1))],
+                body: Body {
+                    defs: vec![],
+                    exprs: vec![var_expr!("x")],
+                }
+            })))
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("let"),
+                symbol_datum!("foo"),
+                proper_list_datum![proper_list_datum![symbol_datum!("x"), int_datum!(1)]],
+                proper_list_datum![symbol_datum!("foo"), symbol_datum!("x")],
+            ]),
+            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
+                kind: LetKind::Named("foo".to_owned()),
+                bindings: vec![("x".to_owned(), int_expr!(1))],
+                body: Body {
+                    defs: vec![],
+                    exprs: vec![Expr::ProcCall {
+                        operator: Box::new(var_expr!("foo")),
+                        operands: vec![var_expr!("x")],
+                    }],
+                }
+            })))
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("let*"),
+                symbol_datum!("foo"),
+                proper_list_datum![proper_list_datum![symbol_datum!("x"), int_datum!(1)]],
+                proper_list_datum![symbol_datum!("foo"), symbol_datum!("x")],
+            ]),
+            Err(ParserError {
+                kind: ParserErrorKind::BadSyntax("let*".to_owned())
+            })
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![symbol_datum!("let")]),
+            Err(ParserError {
+                kind: ParserErrorKind::BadSyntax("let".to_owned())
+            })
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![symbol_datum!("let"), int_datum!(1)]),
+            Err(ParserError {
+                kind: ParserErrorKind::BadSyntax("let".to_owned())
+            })
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("let"),
+                proper_list_datum![symbol_datum!("x"), int_datum!(1)],
+                symbol_datum!("x")
+            ]),
+            Err(ParserError {
+                kind: ParserErrorKind::BadSyntax("let".to_owned())
             })
         );
     }

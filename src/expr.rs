@@ -58,8 +58,6 @@ pub enum LetKind {
     Star,
     Rec,
 }
-type Bindings = Vec<(String, Expr)>;
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct IterationSpec {
     pub variable: String,
@@ -78,12 +76,12 @@ pub enum DerivedExprKind {
     Or(Vec<Expr>),
     Let {
         kind: LetKind,
-        bindings: Bindings,
+        bindings: Vec<(String, Expr)>,
         body: Body,
     },
     Begin(Vec<Expr>),
     Do {
-        spec: Vec<IterationSpec>,
+        specs: Vec<IterationSpec>,
         term: (Box<Expr>, Vec<Expr>),
         body: Vec<Expr>,
     },
@@ -120,7 +118,6 @@ pub struct QuasiquotationKind {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
-    Definition(Definition),
     Variable(String),
     Literal(LiteralKind),
     ProcCall {
@@ -143,5 +140,11 @@ pub enum Expr {
     },
     DerivedExpr(DerivedExprKind),
     Quasiquotation(QuasiquotationKind),
-    MixedBegin(Vec<Expr>),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ExprOrDef {
+    Expr(Expr),
+    Definition(Definition),
+    MixedBegin(Vec<ExprOrDef>),
 }
