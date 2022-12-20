@@ -361,14 +361,14 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                         }
                         match &parts[0] {
                             Datum::Simple(SimpleDatum::Symbol(s)) if s == "else" => {
-                                if parts.len() < 2 {
-                                    return Err(bs_err());
-                                }
                                 let seq = parts
                                     .iter()
                                     .skip(1)
                                     .map(parse_expr)
                                     .collect::<Result<Vec<_>, _>>()?;
+                                if seq.is_empty() {
+                                    return Err(bs_err());
+                                }
                                 clauses.push(CondClause::Else(seq));
                                 else_present = true;
                             }
@@ -392,6 +392,9 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                                             .skip(1)
                                             .map(parse_expr)
                                             .collect::<Result<Vec<_>, _>>()?;
+                                        if seq.is_empty() {
+                                            return Err(bs_err());
+                                        }
                                         clauses.push(CondClause::Normal(test, seq));
                                     }
                                 }
@@ -428,14 +431,14 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                         }
                         match &parts[0] {
                             Datum::Simple(SimpleDatum::Symbol(s)) if s == "else" => {
-                                if parts.len() < 2 {
-                                    return Err(bs_err());
-                                }
                                 let seq = parts
                                     .iter()
                                     .skip(1)
                                     .map(parse_expr)
                                     .collect::<Result<Vec<_>, _>>()?;
+                                if seq.is_empty() {
+                                    return Err(bs_err());
+                                }
                                 clauses.push(CaseClause::Else(seq));
                                 else_present = true;
                             }
@@ -444,14 +447,15 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                                     keys,
                                 ))) = &parts[0]
                                 {
-                                    clauses.push(CaseClause::Normal(
-                                        keys.clone(),
-                                        parts
-                                            .iter()
-                                            .skip(1)
-                                            .map(parse_expr)
-                                            .collect::<Result<Vec<_>, _>>()?,
-                                    ));
+                                    let seq = parts
+                                        .iter()
+                                        .skip(1)
+                                        .map(parse_expr)
+                                        .collect::<Result<Vec<_>, _>>()?;
+                                    if seq.is_empty() {
+                                        return Err(bs_err());
+                                    }
+                                    clauses.push(CaseClause::Normal(keys.clone(), seq));
                                 } else {
                                     return Err(bs_err());
                                 }
@@ -477,55 +481,134 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                         return Err(bs_err());
                     }
                 }
-                if let Datum::Compound(CompoundDatum::List(ListKind::Proper(binding_data))) = first
-                {
-                    let bindings = binding_data
-                        .iter()
-                        .map(|binding| {
-                            if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) =
-                                binding
-                            {
-                                if parts.len() != 2 {
-                                    return Err(bs_err());
+                match first {
+                    Datum::Compound(CompoundDatum::List(ListKind::Proper(_)))
+                    | Datum::EmptyList => {
+                        let bindings = if let Datum::Compound(CompoundDatum::List(
+                            ListKind::Proper(binding_data),
+                        )) = first
+                        {
+                            binding_data
+                                .iter()
+                                .map(|binding| {
+                                    if let Datum::Compound(CompoundDatum::List(ListKind::Proper(
+                                        parts,
+                                    ))) = binding
+                                    {
+                                        if parts.len() != 2 {
+                                            return Err(bs_err());
+                                        }
+                                        if let Datum::Simple(SimpleDatum::Symbol(name)) = &parts[0]
+                                        {
+                                            Ok((name.clone(), parse_expr(&parts[1])?))
+                                        } else {
+                                            Err(bs_err())
+                                        }
+                                    } else {
+                                        Err(bs_err())
+                                    }
+                                })
+                                .collect::<Result<Vec<_>, _>>()?
+                        } else {
+                            vec![]
+                        };
+                        let body = process_body(operands)?;
+                        Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
+                            kind: match kw {
+                                "let" => {
+                                    if let Some(name) = name {
+                                        LetKind::Named(name)
+                                    } else {
+                                        LetKind::Normal
+                                    }
                                 }
-                                if let Datum::Simple(SimpleDatum::Symbol(name)) = &parts[0] {
-                                    Ok((name.clone(), parse_expr(&parts[1])?))
-                                } else {
-                                    Err(bs_err())
-                                }
-                            } else {
-                                Err(bs_err())
-                            }
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let body = process_body(operands)?;
-                    Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
-                        kind: match kw {
-                            "let" => {
-                                if let Some(name) = name {
-                                    LetKind::Named(name)
-                                } else {
-                                    LetKind::Normal
-                                }
-                            }
-                            "let*" => LetKind::Star,
-                            "letrec" => LetKind::Rec,
-                            _ => unreachable!(),
-                        },
-                        bindings,
-                        body,
-                    })))
-                } else {
-                    Err(bs_err())
+                                "let*" => LetKind::Star,
+                                "letrec" => LetKind::Rec,
+                                _ => unreachable!(),
+                            },
+                            bindings,
+                            body,
+                        })))
+                    }
+                    _ => Err(bs_err()),
                 }
             }
             "do" => {
-                todo!()
+                let first = operands.next().ok_or_else(bs_err)?;
+                match first {
+                    Datum::Compound(CompoundDatum::List(ListKind::Proper(_)))
+                    | Datum::EmptyList => {
+                        let specs = if let Datum::Compound(CompoundDatum::List(ListKind::Proper(
+                            spec_data,
+                        ))) = first
+                        {
+                            spec_data
+                                .iter()
+                                .map(|spec| {
+                                    if let Datum::Compound(CompoundDatum::List(ListKind::Proper(
+                                        parts,
+                                    ))) = spec
+                                    {
+                                        if parts.len() != 2 && parts.len() != 3 {
+                                            return Err(bs_err());
+                                        }
+                                        if let Datum::Simple(SimpleDatum::Symbol(name)) = &parts[0]
+                                        {
+                                            Ok(IterationSpec {
+                                                variable: name.clone(),
+                                                init: parse_expr(&parts[1])?,
+                                                step: match parts.len() {
+                                                    2 => None,
+                                                    3 => Some(parse_expr(&parts[2])?),
+                                                    _ => unreachable!("parts len should be 2 or 3"),
+                                                },
+                                            })
+                                        } else {
+                                            Err(bs_err())
+                                        }
+                                    } else {
+                                        Err(bs_err())
+                                    }
+                                })
+                                .collect::<Result<Vec<_>, _>>()?
+                        } else {
+                            vec![]
+                        };
+                        let second = operands.next().ok_or_else(bs_err)?;
+                        if let Datum::Compound(CompoundDatum::List(ListKind::Proper(term))) = second
+                        {
+                            if term.is_empty() {
+                                return Err(bs_err());
+                            }
+                            let test = parse_expr(&term[0])?;
+                            let seq = term
+                                .iter()
+                                .skip(1)
+                                .map(parse_expr)
+                                .collect::<Result<Vec<_>, _>>()?;
+                            let body = operands.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
+                            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Do {
+                                specs,
+                                term: (Box::new(test), seq),
+                                body,
+                            })))
+                        } else {
+                            Err(bs_err())
+                        }
+                    }
+                    _ => Err(bs_err()),
+                }
             }
             "delay" => {
                 todo!()
             }
             "quasiquote" => {
+                todo!()
+            }
+            "unquote" => {
+                todo!()
+            }
+            "unquote-splicing" => {
                 todo!()
             }
             _ => todo!(),
@@ -712,6 +795,17 @@ mod tests {
                 name: "x".to_owned(),
                 value: Box::new(int_expr!(42)),
             }))
+        );
+
+        assert_eq!(
+            parse_expr(&proper_list_datum![
+                symbol_datum!("define"),
+                symbol_datum!("x"),
+                int_datum!(42),
+            ]),
+            Err(ParserError {
+                kind: ParserErrorKind::IllegalDefine,
+            })
         );
 
         assert_eq!(
@@ -1228,6 +1322,22 @@ mod tests {
         assert_eq!(
             parse(&proper_list_datum![
                 symbol_datum!("let"),
+                Datum::EmptyList,
+                int_datum!(0)
+            ]),
+            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
+                kind: LetKind::Normal,
+                bindings: vec![],
+                body: Body {
+                    defs: vec![],
+                    exprs: vec![int_expr!(0)],
+                },
+            })))
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("let"),
                 proper_list_datum![proper_list_datum![symbol_datum!("x"), int_datum!(1)]],
                 proper_list_datum![symbol_datum!("define"), symbol_datum!("y"), int_datum!(2)],
                 proper_list_datum![symbol_datum!("+"), symbol_datum!("x"), symbol_datum!("y")],
@@ -1335,6 +1445,72 @@ mod tests {
             Err(ParserError {
                 kind: ParserErrorKind::BadSyntax("let".to_owned())
             })
+        );
+    }
+
+    #[test]
+    fn dos() {
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("do"),
+                proper_list_datum![
+                    proper_list_datum![
+                        symbol_datum!("x"),
+                        int_datum!(1),
+                        proper_list_datum![symbol_datum!("+"), int_datum!(1), symbol_datum!("x")],
+                    ],
+                    proper_list_datum![symbol_datum!("y"), int_datum!(5),]
+                ],
+                proper_list_datum![
+                    proper_list_datum![symbol_datum!("="), symbol_datum!("x"), symbol_datum!("y")],
+                    proper_list_datum![symbol_datum!("+"), symbol_datum!("x"), symbol_datum!("y")],
+                ],
+            ]),
+            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Do {
+                specs: vec![
+                    IterationSpec {
+                        variable: "x".to_owned(),
+                        init: int_expr!(1),
+                        step: Some(Expr::ProcCall {
+                            operator: Box::new(var_expr!("+")),
+                            operands: vec![int_expr!(1), var_expr!("x")],
+                        }),
+                    },
+                    IterationSpec {
+                        variable: "y".to_owned(),
+                        init: int_expr!(5),
+                        step: None,
+                    },
+                ],
+                term: (
+                    Box::new(Expr::ProcCall {
+                        operator: Box::new(var_expr!("=")),
+                        operands: vec![var_expr!("x"), var_expr!("y")],
+                    }),
+                    vec![Expr::ProcCall {
+                        operator: Box::new(var_expr!("+")),
+                        operands: vec![var_expr!("x"), var_expr!("y")],
+                    }],
+                ),
+                body: vec![]
+            })))
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("do"),
+                Datum::EmptyList,
+                proper_list_datum![bool_datum!(false)],
+                proper_list_datum![symbol_datum!("f")],
+            ]),
+            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Do {
+                specs: vec![],
+                term: (Box::new(bool_expr!(false)), vec![],),
+                body: vec![Expr::ProcCall {
+                    operator: Box::new(var_expr!("f")),
+                    operands: vec![],
+                }],
+            })))
         );
     }
 }
