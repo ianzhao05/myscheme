@@ -14,6 +14,7 @@ pub enum LiteralKind {
     Quotation(Datum),
     Vector(Vec<Expr>),
     SelfEvaluating(SelfEvaluatingKind),
+    Void,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -69,7 +70,10 @@ pub struct IterationSpec {
 #[derive(Debug, PartialEq, Clone)]
 pub enum DerivedExprKind {
     Cond(Vec<CondClause>),
-    Case(Vec<CaseClause>),
+    Case {
+        key: Box<Expr>,
+        clauses: Vec<CaseClause>,
+    },
     And(Vec<Expr>),
     Or(Vec<Expr>),
     Let {

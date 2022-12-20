@@ -372,6 +372,11 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
             let mut clauses = vec![];
             let mut else_present = false;
             for clause in operands {
+                if else_present {
+                    return Err(ParserError {
+                        kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+                    });
+                }
                 if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = clause {
                     if parts.is_empty() {
                         return Err(ParserError {
@@ -394,11 +399,6 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                             else_present = true;
                         }
                         _ => {
-                            if else_present {
-                                return Err(ParserError {
-                                    kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-                                });
-                            }
                             let test = parse(&parts[0])?;
                             if parts.len() == 1 {
                                 clauses.push(CondClause::Normal(test, vec![]));
@@ -443,7 +443,67 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
             operands.map(parse).collect::<Result<Vec<_>, _>>()?,
         ))),
         "case" => {
-            todo!()
+            let key = parse(operands.next().ok_or(ParserError {
+                kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+            })?)?;
+            let mut clauses = vec![];
+            let mut else_present = false;
+            for clause in operands {
+                if else_present {
+                    return Err(ParserError {
+                        kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+                    });
+                }
+                if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = clause {
+                    if parts.is_empty() {
+                        return Err(ParserError {
+                            kind: ParserErrorKind::IllegalEmptyList,
+                        });
+                    }
+                    match &parts[0] {
+                        Datum::Simple(SimpleDatum::Symbol(s)) if s == "else" => {
+                            if parts.len() < 2 {
+                                return Err(ParserError {
+                                    kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+                                });
+                            }
+                            let seq = parts
+                                .iter()
+                                .skip(1)
+                                .map(parse)
+                                .collect::<Result<Vec<_>, _>>()?;
+                            clauses.push(CaseClause::Else(seq));
+                            else_present = true;
+                        }
+                        _ => {
+                            if let Datum::Compound(CompoundDatum::List(ListKind::Proper(keys))) =
+                                &parts[0]
+                            {
+                                clauses.push(CaseClause::Normal(
+                                    keys.clone(),
+                                    parts
+                                        .iter()
+                                        .skip(1)
+                                        .map(parse)
+                                        .collect::<Result<Vec<_>, _>>()?,
+                                ));
+                            } else {
+                                return Err(ParserError {
+                                    kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+                                });
+                            }
+                        }
+                    }
+                } else {
+                    return Err(ParserError {
+                        kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+                    });
+                }
+            }
+            Ok(Expr::DerivedExpr(DerivedExprKind::Case {
+                key: Box::new(key),
+                clauses,
+            }))
         }
         "let" => {
             todo!()
@@ -513,7 +573,7 @@ pub fn parse(datum: &Datum) -> Result<Expr, ParserError> {
                                 }
                             }
                         }
-                        Datum::Compound(_) => {
+                        Datum::Compound(_) | Datum::Void => {
                             let operator = parse(first)?;
                             let rest = list
                                 .iter()
@@ -553,6 +613,7 @@ pub fn parse(datum: &Datum) -> Result<Expr, ParserError> {
         Datum::EmptyList => Err(ParserError {
             kind: ParserErrorKind::IllegalEmptyList,
         }),
+        Datum::Void => Ok(Expr::Literal(LiteralKind::Void)),
     }
 }
 
@@ -1030,6 +1091,17 @@ mod tests {
                 kind: ParserErrorKind::BadSyntax("cond".to_owned())
             })
         );
+
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("cond"),
+                proper_list_datum![symbol_datum!("else"), int_datum!(0)],
+                proper_list_datum![symbol_datum!("else"), int_datum!(1)],
+            ]),
+            Err(ParserError {
+                kind: ParserErrorKind::BadSyntax("cond".to_owned())
+            })
+        );
     }
 
     #[test]
@@ -1066,6 +1138,54 @@ mod tests {
         assert_eq!(
             parse(&proper_list_datum![symbol_datum!("or")]),
             Ok(Expr::DerivedExpr(DerivedExprKind::Or(vec![])))
+        );
+    }
+
+    #[test]
+    fn cases() {
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("case"),
+                int_datum!(42),
+                proper_list_datum![proper_list_datum![int_datum!(1)], int_datum!(2)],
+                proper_list_datum![
+                    proper_list_datum![int_datum!(3), int_datum!(4)],
+                    int_datum!(5),
+                ],
+                proper_list_datum![symbol_datum!("else"), int_datum!(6)],
+            ]),
+            Ok(Expr::DerivedExpr(DerivedExprKind::Case {
+                key: Box::new(int_expr!(42)),
+                clauses: vec![
+                    CaseClause::Normal(vec![int_datum!(1)], vec![int_expr!(2)]),
+                    CaseClause::Normal(vec![int_datum!(3), int_datum!(4)], vec![int_expr!(5)]),
+                    CaseClause::Else(vec![int_expr!(6)]),
+                ],
+            }))
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("case"),
+                int_datum!(42),
+                proper_list_datum![symbol_datum!("else"), int_datum!(0)],
+                proper_list_datum![int_datum!(1), int_datum!(2)],
+            ]),
+            Err(ParserError {
+                kind: ParserErrorKind::BadSyntax("case".to_owned())
+            })
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("case"),
+                int_datum!(42),
+                proper_list_datum![symbol_datum!("else"), int_datum!(0)],
+                proper_list_datum![symbol_datum!("else"), int_datum!(1)],
+            ]),
+            Err(ParserError {
+                kind: ParserErrorKind::BadSyntax("case".to_owned())
+            })
         );
     }
 }
