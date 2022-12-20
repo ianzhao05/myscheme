@@ -287,28 +287,36 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                 }),
             }
         }
-        "if" => {
-            let test = operands.next().ok_or(ParserError {
-                kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-            })?;
-            let consequent = operands.next().ok_or(ParserError {
-                kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-            })?;
-            let alternate = operands.next();
-            if operands.next().is_none() {
-                Ok(Expr::Conditional {
-                    test: Box::new(parse(test)?),
-                    consequent: Box::new(parse(consequent)?),
-                    alternate: if let Some(a) = alternate {
-                        Some(Box::new(parse(a)?))
-                    } else {
-                        None
-                    },
-                })
+        "begin" => {
+            let mut children = vec![];
+            let mut has_def = false;
+            let mut has_expr = false;
+            for operand in operands {
+                let child = parse(operand)?;
+                match child {
+                    Expr::Definition(_) => {
+                        has_def = true;
+                    }
+                    _ => {
+                        has_expr = true;
+                    }
+                }
+                children.push(child);
+            }
+            if has_def && has_expr {
+                Ok(Expr::MixedBegin(children))
+            } else if has_def {
+                Ok(Expr::Definition(Definition::Begin(
+                    children
+                        .into_iter()
+                        .map(|e| match e {
+                            Expr::Definition(d) => d,
+                            _ => unreachable!("should not encounter non-definition"),
+                        })
+                        .collect(),
+                )))
             } else {
-                Err(ParserError {
-                    kind: ParserErrorKind::BadSyntax(kw.to_owned()),
-                })
+                Ok(Expr::DerivedExpr(DerivedExprKind::Begin(children)))
             }
         }
         "set!" => {
@@ -335,6 +343,125 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                     kind: ParserErrorKind::BadSyntax(kw.to_owned()),
                 })
             }
+        }
+        "if" => {
+            let test = operands.next().ok_or(ParserError {
+                kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+            })?;
+            let consequent = operands.next().ok_or(ParserError {
+                kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+            })?;
+            let alternate = operands.next();
+            if operands.next().is_none() {
+                Ok(Expr::Conditional {
+                    test: Box::new(parse(test)?),
+                    consequent: Box::new(parse(consequent)?),
+                    alternate: if let Some(a) = alternate {
+                        Some(Box::new(parse(a)?))
+                    } else {
+                        None
+                    },
+                })
+            } else {
+                Err(ParserError {
+                    kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+                })
+            }
+        }
+        "cond" => {
+            let mut clauses = vec![];
+            let mut else_present = false;
+            for clause in operands {
+                if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = clause {
+                    if parts.is_empty() {
+                        return Err(ParserError {
+                            kind: ParserErrorKind::IllegalEmptyList,
+                        });
+                    }
+                    match &parts[0] {
+                        Datum::Simple(SimpleDatum::Symbol(s)) if s == "else" => {
+                            if parts.len() < 2 {
+                                return Err(ParserError {
+                                    kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+                                });
+                            }
+                            let seq = parts
+                                .iter()
+                                .skip(1)
+                                .map(parse)
+                                .collect::<Result<Vec<_>, _>>()?;
+                            clauses.push(CondClause::Else(seq));
+                            else_present = true;
+                        }
+                        _ => {
+                            if else_present {
+                                return Err(ParserError {
+                                    kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+                                });
+                            }
+                            let test = parse(&parts[0])?;
+                            if parts.len() == 1 {
+                                clauses.push(CondClause::Normal(test, vec![]));
+                                continue;
+                            }
+                            match &parts[1] {
+                                Datum::Simple(SimpleDatum::Symbol(s)) if s == "=>" => {
+                                    if parts.len() != 3 {
+                                        return Err(ParserError {
+                                            kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+                                        });
+                                    }
+                                    let recipient = parse(&parts[2])?;
+                                    clauses.push(CondClause::Arrow(test, recipient));
+                                }
+                                _ => {
+                                    let seq = parts
+                                        .iter()
+                                        .skip(1)
+                                        .map(parse)
+                                        .collect::<Result<Vec<_>, _>>()?;
+                                    clauses.push(CondClause::Normal(test, seq));
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    return Err(ParserError {
+                        kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+                    });
+                }
+            }
+            Ok(Expr::DerivedExpr(DerivedExprKind::Cond(clauses)))
+        }
+        "else" | "kw" => Err(ParserError {
+            kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+        }),
+        "and" => Ok(Expr::DerivedExpr(DerivedExprKind::And(
+            operands.map(parse).collect::<Result<Vec<_>, _>>()?,
+        ))),
+        "or" => Ok(Expr::DerivedExpr(DerivedExprKind::Or(
+            operands.map(parse).collect::<Result<Vec<_>, _>>()?,
+        ))),
+        "case" => {
+            todo!()
+        }
+        "let" => {
+            todo!()
+        }
+        "let*" => {
+            todo!()
+        }
+        "letrec" => {
+            todo!()
+        }
+        "do" => {
+            todo!()
+        }
+        "delay" => {
+            todo!()
+        }
+        "quasiquote" => {
+            todo!()
         }
         _ => todo!(),
     }
@@ -791,6 +918,154 @@ mod tests {
             Err(ParserError {
                 kind: ParserErrorKind::BadSyntax("set!".to_owned())
             })
+        );
+    }
+
+    #[test]
+    fn begins() {
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("begin"),
+                proper_list_datum![symbol_datum!("define"), symbol_datum!("x"), int_datum!(42)],
+                str_datum!("hello"),
+                int_datum!(1),
+                int_datum!(2),
+                int_datum!(3),
+            ]),
+            Ok(Expr::MixedBegin(vec![
+                Expr::Definition(Definition::Variable {
+                    name: "x".to_owned(),
+                    value: Box::new(int_expr!(42))
+                }),
+                str_expr!("hello"),
+                int_expr!(1),
+                int_expr!(2),
+                int_expr!(3),
+            ]))
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("begin"),
+                proper_list_datum![symbol_datum!("define"), symbol_datum!("x"), int_datum!(42)],
+                proper_list_datum![symbol_datum!("define"), symbol_datum!("y"), int_datum!(43)],
+            ]),
+            Ok(Expr::Definition(Definition::Begin(vec![
+                Definition::Variable {
+                    name: "x".to_owned(),
+                    value: Box::new(int_expr!(42)),
+                },
+                Definition::Variable {
+                    name: "y".to_owned(),
+                    value: Box::new(int_expr!(43)),
+                },
+            ])))
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![symbol_datum!("begin")]),
+            Ok(Expr::DerivedExpr(DerivedExprKind::Begin(vec![])))
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("begin"),
+                symbol_datum!("x"),
+                symbol_datum!("y"),
+                symbol_datum!("z"),
+            ]),
+            Ok(Expr::DerivedExpr(DerivedExprKind::Begin(vec![
+                var_expr!("x"),
+                var_expr!("y"),
+                var_expr!("z"),
+            ])))
+        )
+    }
+
+    #[test]
+    fn conds() {
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("cond"),
+                proper_list_datum![bool_datum!(false), int_datum!(0)],
+                proper_list_datum![
+                    proper_list_datum![symbol_datum!("="), int_datum!(1), int_datum!(2)],
+                    int_datum!(3),
+                    int_datum!(4),
+                ],
+                proper_list_datum![
+                    proper_list_datum![symbol_datum!("cons"), int_datum!(5), int_datum!(6)],
+                    symbol_datum!("=>"),
+                    symbol_datum!("car"),
+                ],
+                proper_list_datum![symbol_datum!("else"), int_datum!(3)],
+            ]),
+            Ok(Expr::DerivedExpr(DerivedExprKind::Cond(vec![
+                CondClause::Normal(bool_expr!(false), vec![int_expr!(0)]),
+                CondClause::Normal(
+                    Expr::ProcCall {
+                        operator: Box::new(var_expr!("=")),
+                        operands: vec![int_expr!(1), int_expr!(2)],
+                    },
+                    vec![int_expr!(3), int_expr!(4)],
+                ),
+                CondClause::Arrow(
+                    Expr::ProcCall {
+                        operator: Box::new(var_expr!("cons")),
+                        operands: vec![int_expr!(5), int_expr!(6)],
+                    },
+                    var_expr!("car"),
+                ),
+                CondClause::Else(vec![int_expr!(3)]),
+            ])))
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("cond"),
+                proper_list_datum![symbol_datum!("else"), int_datum!(0)],
+                proper_list_datum![bool_datum!(true), int_datum!(1)],
+            ]),
+            Err(ParserError {
+                kind: ParserErrorKind::BadSyntax("cond".to_owned())
+            })
+        );
+    }
+
+    #[test]
+    fn ands_ors() {
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("and"),
+                bool_datum!(true),
+                bool_datum!(false),
+            ]),
+            Ok(Expr::DerivedExpr(DerivedExprKind::And(vec![
+                bool_expr!(true),
+                bool_expr!(false),
+            ])))
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("or"),
+                bool_datum!(true),
+                bool_datum!(false),
+            ]),
+            Ok(Expr::DerivedExpr(DerivedExprKind::Or(vec![
+                bool_expr!(true),
+                bool_expr!(false),
+            ])))
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![symbol_datum!("and")]),
+            Ok(Expr::DerivedExpr(DerivedExprKind::And(vec![])))
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![symbol_datum!("or")]),
+            Ok(Expr::DerivedExpr(DerivedExprKind::Or(vec![])))
         );
     }
 }

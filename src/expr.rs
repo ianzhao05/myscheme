@@ -139,4 +139,5 @@ pub enum Expr {
     },
     DerivedExpr(DerivedExprKind),
     Quasiquotation(QuasiquotationKind),
+    MixedBegin(Vec<Expr>),
 }
