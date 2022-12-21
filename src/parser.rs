@@ -600,7 +600,14 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                 }
             }
             "delay" => {
-                todo!()
+                let expr = parse_expr(operands.next().ok_or_else(bs_err)?)?;
+                if operands.next().is_none() {
+                    Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Delay(
+                        Box::new(expr),
+                    ))))
+                } else {
+                    Err(bs_err())
+                }
             }
             "quasiquote" => {
                 todo!()
@@ -1511,6 +1518,40 @@ mod tests {
                     operands: vec![],
                 }],
             })))
+        );
+    }
+
+    #[test]
+    fn delays() {
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("delay"),
+                proper_list_datum![symbol_datum!("f"), int_datum!(1)]
+            ]),
+            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Delay(
+                Box::new(Expr::ProcCall {
+                    operator: Box::new(var_expr!("f")),
+                    operands: vec![int_expr!(1)],
+                })
+            ))))
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![symbol_datum!("delay")]),
+            Err(ParserError {
+                kind: ParserErrorKind::BadSyntax("delay".to_owned())
+            })
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("delay"),
+                int_datum!(1),
+                int_datum!(2)
+            ]),
+            Err(ParserError {
+                kind: ParserErrorKind::BadSyntax("delay".to_owned())
+            })
         );
     }
 }
