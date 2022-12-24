@@ -17,6 +17,17 @@ pub enum AbbreviationPrefix {
     UnquoteSplicing,
 }
 
+impl AbbreviationPrefix {
+    pub fn to_keyword(&self) -> &str {
+        match self {
+            AbbreviationPrefix::Quote => "quote",
+            AbbreviationPrefix::Quasiquote => "quasiquote",
+            AbbreviationPrefix::Unquote => "unquote",
+            AbbreviationPrefix::UnquoteSplicing => "unquote-splicing",
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum ListKind {
     Proper(Vec<Datum>),

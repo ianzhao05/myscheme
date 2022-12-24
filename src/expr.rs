@@ -91,29 +91,29 @@ pub enum DerivedExprKind {
 #[derive(Debug, PartialEq, Clone)]
 pub enum QQTemplateData {
     Datum(Datum),
-    Unquotation(Box<QQTemplate>),
-    SplicingUnquotation(Box<QQTemplate>),
+    Unquotation(QQTemplate),
     List(ListQQTemplate),
-    Vector(Vec<QQTemplate>),
+    Vector(Vec<QQTemplateOrSplice>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum QQTemplate {
     Level0(Box<Expr>),
-    LevelD(Box<QQTemplateData>),
+    LevelD(usize, Box<QQTemplateData>),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum QQTemplateOrSplice {
+    Template(QQTemplate),
+    Splice(QQTemplate),
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ListQQTemplate {
-    Proper(Vec<QQTemplate>),
-    Improper(Vec<QQTemplate>, Box<QQTemplate>),
-    QQ(QuasiquotationKind),
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct QuasiquotationKind {
-    pub level: u32,
-    pub body: QQTemplate,
+    Proper(Vec<QQTemplateOrSplice>),
+    Improper(Vec<QQTemplateOrSplice>, QQTemplate),
+    Quote(QQTemplate),
+    QQ(QQTemplate),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -139,7 +139,7 @@ pub enum Expr {
         value: Box<Expr>,
     },
     DerivedExpr(DerivedExprKind),
-    Quasiquotation(QuasiquotationKind),
+    Quasiquotation(QQTemplate),
 }
 
 #[derive(Debug, PartialEq, Clone)]

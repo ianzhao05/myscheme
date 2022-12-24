@@ -11,6 +11,8 @@ pub enum ParserErrorKind {
     IllegalDot,
     IllegalVariableName(String),
     IllegalDefine,
+    IllegalUnquote,
+    IllegalUnquoteSplicing,
     MissingExpression,
 }
 
@@ -31,6 +33,10 @@ impl fmt::Display for ParserError {
                 write!(f, "Illegal variable name {s}")
             }
             ParserErrorKind::IllegalDefine => write!(f, "Definition not allowed here"),
+            ParserErrorKind::IllegalUnquote => write!(f, "Unquote not allowed here"),
+            ParserErrorKind::IllegalUnquoteSplicing => {
+                write!(f, "Unquote-splicing not allowed here")
+            }
             ParserErrorKind::MissingExpression => write!(f, "Missing expression"),
         }
     }
@@ -173,6 +179,116 @@ fn process_body<'a, I: Iterator<Item = &'a Datum>>(data: I) -> Result<Body, Pars
             kind: ParserErrorKind::MissingExpression,
         })
     }
+}
+
+fn process_qq_template_or_splice(
+    datum: &Datum,
+    qq_level: usize,
+) -> Result<QQTemplateOrSplice, ParserError> {
+    if qq_level == 0 {
+        Err(ParserError {
+            kind: ParserErrorKind::IllegalUnquote,
+        })
+    } else {
+        match datum {
+            Datum::Compound(CompoundDatum::List(ListKind::Abbreviation(
+                AbbreviationPrefix::UnquoteSplicing,
+                arg,
+            ))) => Ok(QQTemplateOrSplice::Splice(process_qq_template(
+                arg,
+                qq_level - 1,
+            )?)),
+            Datum::Compound(CompoundDatum::List(ListKind::Proper(list))) => match list[..] {
+                [Datum::Simple(SimpleDatum::Symbol(ref s)), ref arg] if s == "unquote-splicing" => {
+                    Ok(QQTemplateOrSplice::Splice(process_qq_template(
+                        arg,
+                        qq_level - 1,
+                    )?))
+                }
+                _ => Ok(QQTemplateOrSplice::Template(process_qq_template(
+                    datum, qq_level,
+                )?)),
+            },
+            _ => Ok(QQTemplateOrSplice::Template(process_qq_template(
+                datum, qq_level,
+            )?)),
+        }
+    }
+}
+
+fn process_qq_template(datum: &Datum, qq_level: usize) -> Result<QQTemplate, ParserError> {
+    if qq_level == 0 {
+        return Ok(QQTemplate::Level0(Box::new(parse_expr(datum)?)));
+    }
+    Ok(QQTemplate::LevelD(
+        qq_level,
+        match datum {
+            Datum::Simple(_) | Datum::EmptyList => Box::new(QQTemplateData::Datum(datum.clone())),
+            Datum::Compound(CompoundDatum::List(list)) => match list {
+                ListKind::Proper(list) => match list[0] {
+                    Datum::Simple(SimpleDatum::Symbol(ref s))
+                        if s == "unquote" || s == "quasiquote" =>
+                    {
+                        if list.len() != 2 {
+                            return Err(ParserError {
+                                kind: ParserErrorKind::BadSyntax(s.to_owned()),
+                            });
+                        }
+                        if s == "unquote" {
+                            Box::new(QQTemplateData::Unquotation(process_qq_template(
+                                &list[1],
+                                qq_level - 1,
+                            )?))
+                        } else {
+                            Box::new(QQTemplateData::List(ListQQTemplate::QQ(
+                                process_qq_template(&list[1], qq_level + 1)?,
+                            )))
+                        }
+                    }
+                    _ => Box::new(QQTemplateData::List(ListQQTemplate::Proper(
+                        list.iter()
+                            .map(|d| process_qq_template_or_splice(d, qq_level))
+                            .collect::<Result<Vec<_>, _>>()?,
+                    ))),
+                },
+                ListKind::Improper(list, last) => {
+                    Box::new(QQTemplateData::List(ListQQTemplate::Improper(
+                        list.iter()
+                            .map(|d| process_qq_template_or_splice(d, qq_level))
+                            .collect::<Result<Vec<_>, _>>()?,
+                        process_qq_template(last, qq_level)?,
+                    )))
+                }
+                ListKind::Abbreviation(abbr, arg) => match abbr {
+                    AbbreviationPrefix::Unquote => Box::new(QQTemplateData::Unquotation(
+                        process_qq_template(arg, qq_level - 1)?,
+                    )),
+                    AbbreviationPrefix::Quote => Box::new(QQTemplateData::List(
+                        ListQQTemplate::Quote(process_qq_template(arg, qq_level)?),
+                    )),
+                    AbbreviationPrefix::Quasiquote => Box::new(QQTemplateData::List(
+                        ListQQTemplate::QQ(process_qq_template(arg, qq_level + 1)?),
+                    )),
+                    AbbreviationPrefix::UnquoteSplicing => {
+                        return Err(ParserError {
+                            kind: ParserErrorKind::IllegalUnquoteSplicing,
+                        });
+                    }
+                },
+            },
+            Datum::Compound(CompoundDatum::Vector(vector)) => Box::new(QQTemplateData::Vector(
+                vector
+                    .iter()
+                    .map(|d| process_qq_template_or_splice(d, qq_level))
+                    .collect::<Result<Vec<_>, _>>()?,
+            )),
+            Datum::Void => {
+                return Err(ParserError {
+                    kind: ParserErrorKind::BadSyntax("quasiquote".to_owned()),
+                });
+            }
+        },
+    ))
 }
 
 fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
@@ -610,15 +726,20 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                 }
             }
             "quasiquote" => {
-                todo!()
+                let template = process_qq_template(operands.next().ok_or_else(bs_err)?, 1)?;
+                if operands.next().is_none() {
+                    Ok(ExprOrDef::Expr(Expr::Quasiquotation(template)))
+                } else {
+                    Err(bs_err())
+                }
             }
-            "unquote" => {
-                todo!()
-            }
-            "unquote-splicing" => {
-                todo!()
-            }
-            _ => todo!(),
+            "unquote" => Err(ParserError {
+                kind: ParserErrorKind::IllegalUnquote,
+            }),
+            "unquote-splicing" => Err(ParserError {
+                kind: ParserErrorKind::IllegalUnquoteSplicing,
+            }),
+            _ => unreachable!("keyword should have been handled"),
         }
     }
 }
@@ -702,14 +823,7 @@ pub fn parse(datum: &Datum) -> Result<ExprOrDef, ParserError> {
                 }),
                 ListKind::Abbreviation(abbr, arg) => {
                     let operands = std::iter::once(&**arg);
-                    match abbr {
-                        AbbreviationPrefix::Quote => process_keyword("quote", operands),
-                        AbbreviationPrefix::Quasiquote => process_keyword("quasiquote", operands),
-                        AbbreviationPrefix::Unquote => process_keyword("unquote", operands),
-                        AbbreviationPrefix::UnquoteSplicing => {
-                            process_keyword("unquote-splicing", operands)
-                        }
-                    }
+                    process_keyword(abbr.to_keyword(), operands)
                 }
             },
             CompoundDatum::Vector(vector) => {
@@ -1561,6 +1675,369 @@ mod tests {
             ]),
             Err(ParserError {
                 kind: ParserErrorKind::BadSyntax("delay".to_owned())
+            })
+        );
+    }
+
+    #[test]
+    fn quasiquotes() {
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("quasiquote"),
+                int_datum!(1),
+            ]),
+            Ok(ExprOrDef::Expr(Expr::Quasiquotation(QQTemplate::LevelD(
+                1,
+                Box::new(QQTemplateData::Datum(int_datum!(1)))
+            )))),
+        );
+
+        let quoted_p12 = || {
+            QQTemplateData::List(ListQQTemplate::Proper(vec![
+                QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                    1,
+                    Box::new(QQTemplateData::Datum(symbol_datum!("+"))),
+                )),
+                QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                    1,
+                    Box::new(QQTemplateData::Datum(int_datum!(1))),
+                )),
+                QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                    1,
+                    Box::new(QQTemplateData::Datum(int_datum!(2))),
+                )),
+            ]))
+        };
+        assert_eq!(
+            parse(&abbr_list_datum!(
+                AbbreviationPrefix::Quasiquote,
+                proper_list_datum![symbol_datum!("+"), int_datum!(1), int_datum!(2)],
+            )),
+            Ok(ExprOrDef::Expr(Expr::Quasiquotation(QQTemplate::LevelD(
+                1,
+                Box::new(quoted_p12()),
+            )))),
+        );
+
+        let with_abbrs = parse(&abbr_list_datum!(
+            AbbreviationPrefix::Quasiquote,
+            proper_list_datum![
+                symbol_datum!("a"),
+                abbr_list_datum!(
+                    AbbreviationPrefix::Unquote,
+                    proper_list_datum![symbol_datum!("+"), int_datum!(1), int_datum!(2)]
+                ),
+                abbr_list_datum!(
+                    AbbreviationPrefix::UnquoteSplicing,
+                    proper_list_datum![
+                        symbol_datum!("map"),
+                        symbol_datum!("abs"),
+                        abbr_list_datum!(
+                            AbbreviationPrefix::Quote,
+                            proper_list_datum![int_datum!(4), int_datum!(-5), int_datum!(6)]
+                        ),
+                    ]
+                ),
+                symbol_datum!("b"),
+            ],
+        ));
+        let with_kws = parse(&proper_list_datum![
+            symbol_datum!("quasiquote"),
+            proper_list_datum![
+                symbol_datum!("a"),
+                proper_list_datum![
+                    symbol_datum!("unquote"),
+                    proper_list_datum![symbol_datum!("+"), int_datum!(1), int_datum!(2)]
+                ],
+                proper_list_datum![
+                    symbol_datum!("unquote-splicing"),
+                    proper_list_datum![
+                        symbol_datum!("map"),
+                        symbol_datum!("abs"),
+                        proper_list_datum![
+                            symbol_datum!("quote"),
+                            proper_list_datum![int_datum!(4), int_datum!(-5), int_datum!(6)]
+                        ],
+                    ]
+                ],
+                symbol_datum!("b"),
+            ],
+        ]);
+        assert_eq!(with_abbrs, with_kws);
+        assert_eq!(
+            with_abbrs,
+            Ok(ExprOrDef::Expr(Expr::Quasiquotation(QQTemplate::LevelD(
+                1,
+                Box::new(QQTemplateData::List(ListQQTemplate::Proper(vec![
+                    QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                        1,
+                        Box::new(QQTemplateData::Datum(symbol_datum!("a")))
+                    )),
+                    QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                        1,
+                        Box::new(QQTemplateData::Unquotation(QQTemplate::Level0(Box::new(
+                            Expr::ProcCall {
+                                operator: Box::new(var_expr!("+")),
+                                operands: vec![int_expr!(1), int_expr!(2)],
+                            }
+                        ))))
+                    )),
+                    QQTemplateOrSplice::Splice(QQTemplate::Level0(Box::new(Expr::ProcCall {
+                        operator: Box::new(var_expr!("map")),
+                        operands: vec![
+                            var_expr!("abs"),
+                            Expr::Literal(LiteralKind::Quotation(proper_list_datum![
+                                int_datum!(4),
+                                int_datum!(-5),
+                                int_datum!(6)
+                            ],))
+                        ],
+                    }))),
+                    QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                        1,
+                        Box::new(QQTemplateData::Datum(symbol_datum!("b")))
+                    )),
+                ]))),
+            ))))
+        );
+
+        assert_eq!(
+            parse(&abbr_list_datum!(
+                AbbreviationPrefix::Quasiquote,
+                vector_datum![
+                    int_datum!(1),
+                    abbr_list_datum!(
+                        AbbreviationPrefix::Unquote,
+                        proper_list_datum![symbol_datum!("sqrt"), int_datum!(4)]
+                    ),
+                    int_datum!(3),
+                    int_datum!(4)
+                ],
+            )),
+            Ok(ExprOrDef::Expr(Expr::Quasiquotation(QQTemplate::LevelD(
+                1,
+                Box::new(QQTemplateData::Vector(vec![
+                    QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                        1,
+                        Box::new(QQTemplateData::Datum(int_datum!(1)))
+                    )),
+                    QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                        1,
+                        Box::new(QQTemplateData::Unquotation(QQTemplate::Level0(Box::new(
+                            Expr::ProcCall {
+                                operator: Box::new(var_expr!("sqrt")),
+                                operands: vec![int_expr!(4)],
+                            }
+                        ))))
+                    )),
+                    QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                        1,
+                        Box::new(QQTemplateData::Datum(int_datum!(3)))
+                    )),
+                    QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                        1,
+                        Box::new(QQTemplateData::Datum(int_datum!(4)))
+                    )),
+                ])),
+            )))),
+        );
+
+        assert_eq!(
+            parse(&abbr_list_datum!(
+                AbbreviationPrefix::Quasiquote,
+                proper_list_datum![
+                    symbol_datum!("a"),
+                    abbr_list_datum!(
+                        AbbreviationPrefix::Quasiquote,
+                        proper_list_datum![
+                            symbol_datum!("b"),
+                            abbr_list_datum!(
+                                AbbreviationPrefix::Unquote,
+                                proper_list_datum![
+                                    symbol_datum!("+"),
+                                    int_datum!(1),
+                                    int_datum!(2)
+                                ]
+                            ),
+                            abbr_list_datum!(
+                                AbbreviationPrefix::Unquote,
+                                proper_list_datum![
+                                    symbol_datum!("foo"),
+                                    abbr_list_datum!(
+                                        AbbreviationPrefix::Unquote,
+                                        proper_list_datum![
+                                            symbol_datum!("+"),
+                                            int_datum!(1),
+                                            int_datum!(3)
+                                        ]
+                                    ),
+                                    symbol_datum!("d")
+                                ]
+                            ),
+                            symbol_datum!("e")
+                        ]
+                    ),
+                    symbol_datum!("f")
+                ]
+            )),
+            Ok(ExprOrDef::Expr(Expr::Quasiquotation(QQTemplate::LevelD(
+                1,
+                Box::new(QQTemplateData::List(ListQQTemplate::Proper(vec![
+                    QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                        1,
+                        Box::new(QQTemplateData::Datum(symbol_datum!("a")))
+                    )),
+                    QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                        1,
+                        Box::new(QQTemplateData::List(ListQQTemplate::QQ(
+                            QQTemplate::LevelD(
+                                2,
+                                Box::new(QQTemplateData::List(ListQQTemplate::Proper(vec![
+                                    QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                                        2,
+                                        Box::new(QQTemplateData::Datum(symbol_datum!("b")))
+                                    )),
+                                    QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                                        2,
+                                        Box::new(QQTemplateData::Unquotation(QQTemplate::LevelD(
+                                            1,
+                                            Box::new(quoted_p12())
+                                        ))),
+                                    )),
+                                    QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                                        2,
+                                        Box::new(QQTemplateData::Unquotation(QQTemplate::LevelD(
+                                            1,
+                                            Box::new(QQTemplateData::List(ListQQTemplate::Proper(
+                                                vec![
+                                                    QQTemplateOrSplice::Template(
+                                                        QQTemplate::LevelD(
+                                                            1,
+                                                            Box::new(QQTemplateData::Datum(
+                                                                symbol_datum!("foo")
+                                                            ))
+                                                        )
+                                                    ),
+                                                    QQTemplateOrSplice::Template(
+                                                        QQTemplate::LevelD(
+                                                            1,
+                                                            Box::new(QQTemplateData::Unquotation(
+                                                                QQTemplate::Level0(Box::new(
+                                                                    Expr::ProcCall {
+                                                                        operator: Box::new(
+                                                                            var_expr!("+")
+                                                                        ),
+                                                                        operands: vec![
+                                                                            int_expr!(1),
+                                                                            int_expr!(3)
+                                                                        ],
+                                                                    }
+                                                                ))
+                                                            ))
+                                                        )
+                                                    ),
+                                                    QQTemplateOrSplice::Template(
+                                                        QQTemplate::LevelD(
+                                                            1,
+                                                            Box::new(QQTemplateData::Datum(
+                                                                symbol_datum!("d")
+                                                            ))
+                                                        )
+                                                    ),
+                                                ]
+                                            )))
+                                        )))
+                                    )),
+                                    QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                                        2,
+                                        Box::new(QQTemplateData::Datum(symbol_datum!("e")))
+                                    ))
+                                ])))
+                            )
+                        )))
+                    )),
+                    QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                        1,
+                        Box::new(QQTemplateData::Datum(symbol_datum!("f")))
+                    ))
+                ])))
+            ))))
+        );
+
+        assert_eq!(
+            parse(&abbr_list_datum!(
+                AbbreviationPrefix::Quasiquote,
+                improper_list_datum![int_datum!(1), int_datum!(2); int_datum!(3)]
+            )),
+            Ok(ExprOrDef::Expr(Expr::Quasiquotation(QQTemplate::LevelD(
+                1,
+                Box::new(QQTemplateData::List(ListQQTemplate::Improper(
+                    vec![
+                        QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                            1,
+                            Box::new(QQTemplateData::Datum(int_datum!(1)))
+                        )),
+                        QQTemplateOrSplice::Template(QQTemplate::LevelD(
+                            1,
+                            Box::new(QQTemplateData::Datum(int_datum!(2)))
+                        )),
+                    ],
+                    QQTemplate::LevelD(1, Box::new(QQTemplateData::Datum(int_datum!(3))))
+                )))
+            ))))
+        );
+    }
+
+    #[test]
+    fn unquote_errs() {
+        assert_eq!(
+            parse(&proper_list_datum![symbol_datum!("unquote")]),
+            Err(ParserError {
+                kind: ParserErrorKind::IllegalUnquote
+            })
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![symbol_datum!("unquote-splicing")]),
+            Err(ParserError {
+                kind: ParserErrorKind::IllegalUnquoteSplicing
+            })
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![symbol_datum!("unquote"), int_datum!(1)]),
+            Err(ParserError {
+                kind: ParserErrorKind::IllegalUnquote
+            })
+        );
+
+        assert_eq!(
+            parse(&proper_list_datum![
+                symbol_datum!("unquote-splicing"),
+                int_datum!(1),
+            ]),
+            Err(ParserError {
+                kind: ParserErrorKind::IllegalUnquoteSplicing
+            })
+        );
+
+        assert_eq!(
+            parse(&abbr_list_datum!(
+                AbbreviationPrefix::Unquote,
+                int_datum!(1),
+            )),
+            Err(ParserError {
+                kind: ParserErrorKind::IllegalUnquote
+            })
+        );
+
+        assert_eq!(
+            parse(&abbr_list_datum!(
+                AbbreviationPrefix::UnquoteSplicing,
+                int_datum!(1),
+            )),
+            Err(ParserError {
+                kind: ParserErrorKind::IllegalUnquoteSplicing
             })
         );
     }
