@@ -1077,6 +1077,16 @@ mod tests {
                 kind: ParserErrorKind::BadSyntax("quote".to_owned())
             })
         );
+
+        assert_eq!(
+            parse(&abbr_list_datum!(
+                AbbreviationPrefix::Quote,
+                proper_list_datum![symbol_datum!("a"), symbol_datum!("b")]
+            )),
+            Ok(ExprOrDef::Expr(Expr::Literal(LiteralKind::Quotation(
+                proper_list_datum![symbol_datum!("a"), symbol_datum!("b")],
+            ))))
+        );
     }
 
     #[test]
