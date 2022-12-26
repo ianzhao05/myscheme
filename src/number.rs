@@ -2,13 +2,44 @@ use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
 
-use num::{BigInt, BigRational, Complex};
+use num::{BigInt, BigRational, Complex, ToPrimitive};
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, Clone)]
 pub enum RealKind {
     Real(f64),
     Rational(BigRational),
     Integer(BigInt),
+}
+
+impl PartialEq for RealKind {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (RealKind::Real(a), RealKind::Real(b)) => a == b,
+            (RealKind::Rational(a), RealKind::Rational(b)) => a == b,
+            (RealKind::Integer(a), RealKind::Integer(b)) => a == b,
+            (RealKind::Rational(a), RealKind::Integer(b)) => a.is_integer() && a.numer() == b,
+            (RealKind::Integer(b), RealKind::Rational(a)) => a.is_integer() && a.numer() == b,
+            _ => false,
+        }
+    }
+}
+
+impl PartialOrd for RealKind {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (RealKind::Real(a), b) => match b {
+                RealKind::Real(b) => a.partial_cmp(b),
+                RealKind::Rational(b) => a.partial_cmp(&b.to_f64().unwrap_or(0.0)),
+                RealKind::Integer(b) => a.partial_cmp(&b.to_f64().unwrap_or(0.0)),
+            },
+            (RealKind::Rational(a), RealKind::Rational(b)) => a.partial_cmp(b),
+            (RealKind::Integer(a), RealKind::Integer(b)) => a.partial_cmp(b),
+            (RealKind::Integer(a), RealKind::Rational(b)) => {
+                BigRational::from(a.clone()).partial_cmp(b)
+            }
+            _ => other.partial_cmp(self).map(|o| o.reverse()),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -21,7 +52,8 @@ pub enum ComplexKind {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Number {
-    Complex(ComplexKind), // unused
+    // unused
+    // Complex(ComplexKind),
     Real(RealKind),
 }
 
@@ -108,5 +140,55 @@ mod tests {
         assert!(Number::from_str("1.0.0").is_err());
         assert!(Number::from_str("1/0").is_err());
         assert!(Number::from_str("1.0/2").is_err());
+    }
+
+    #[test]
+    fn comparison() {
+        assert_eq!(
+            Number::Real(RealKind::Real(2.0)),
+            Number::Real(RealKind::Real(2.0))
+        );
+        assert_eq!(
+            Number::Real(RealKind::Integer(BigInt::from(2))),
+            Number::Real(RealKind::Integer(BigInt::from(2))),
+        );
+        assert_eq!(
+            Number::Real(RealKind::Rational(BigRational::new(
+                BigInt::from(2),
+                BigInt::from(1)
+            ))),
+            Number::Real(RealKind::Rational(BigRational::new(
+                BigInt::from(2),
+                BigInt::from(1)
+            )))
+        );
+        assert_eq!(
+            Number::Real(RealKind::Integer(BigInt::from(2))),
+            Number::Real(RealKind::Rational(BigRational::new(
+                BigInt::from(2),
+                BigInt::from(1)
+            )))
+        );
+        assert_ne!(
+            Number::Real(RealKind::Real(1.0)),
+            Number::Real(RealKind::Integer(BigInt::from(1)))
+        );
+        assert_ne!(
+            Number::Real(RealKind::Real(0.5)),
+            Number::Real(RealKind::Rational(BigRational::new(
+                BigInt::from(1),
+                BigInt::from(2)
+            )))
+        );
+
+        assert!(
+            RealKind::Rational(BigRational::new(BigInt::from(1), BigInt::from(2)))
+                < RealKind::Integer(BigInt::from(1))
+        );
+        assert!(RealKind::Integer(BigInt::from(1)) > RealKind::Real(0.5));
+        assert!(
+            RealKind::Real(0.25)
+                < RealKind::Rational(BigRational::new(BigInt::from(1), BigInt::from(2)))
+        );
     }
 }
