@@ -30,6 +30,13 @@ pub enum CaseClause {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct ProcData {
+    pub args: Vec<String>,
+    pub rest: Option<String>,
+    pub body: Body,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct Body {
     pub defs: Vec<Definition>,
     pub exprs: Vec<Expr>,
@@ -37,16 +44,8 @@ pub struct Body {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Definition {
-    Variable {
-        name: String,
-        value: Box<Expr>,
-    },
-    Procedure {
-        name: String,
-        args: Vec<String>,
-        rest: Option<String>,
-        body: Body,
-    },
+    Variable { name: String, value: Box<Expr> },
+    Procedure { name: String, data: ProcData },
     Begin(Vec<Definition>),
 }
 
@@ -123,11 +122,7 @@ pub enum Expr {
         operator: Box<Expr>,
         operands: Vec<Expr>,
     },
-    Lambda {
-        args: Vec<String>,
-        rest: Option<String>,
-        body: Body,
-    },
+    Lambda(ProcData),
     Conditional {
         test: Box<Expr>,
         consequent: Box<Expr>,

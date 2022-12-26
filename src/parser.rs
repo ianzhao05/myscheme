@@ -124,25 +124,27 @@ fn process_define<'a, I: Iterator<Item = &'a Datum>>(
 
                 Ok(Definition::Procedure {
                     name: name.clone(),
-                    args,
-                    rest: if let ListKind::Improper(_, rest) = list {
-                        match &**rest {
-                            Datum::Simple(SimpleDatum::Symbol(s)) => {
-                                if is_keyword(s) {
-                                    return Err(ParserError {
-                                        kind: ParserErrorKind::IllegalVariableName(s.clone()),
-                                    });
+                    data: ProcData {
+                        args,
+                        rest: if let ListKind::Improper(_, rest) = list {
+                            match &**rest {
+                                Datum::Simple(SimpleDatum::Symbol(s)) => {
+                                    if is_keyword(s) {
+                                        return Err(ParserError {
+                                            kind: ParserErrorKind::IllegalVariableName(s.clone()),
+                                        });
+                                    }
+                                    Some(s.clone())
                                 }
-                                Some(s.clone())
+                                _ => {
+                                    return Err(bs_err());
+                                }
                             }
-                            _ => {
-                                return Err(bs_err());
-                            }
-                        }
-                    } else {
-                        None
+                        } else {
+                            None
+                        },
+                        body: process_body(body)?,
                     },
-                    body: process_body(body)?,
                 })
             }
             _ => Err(bs_err()),
@@ -336,7 +338,7 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                                 })
                                 .collect::<Result<Vec<_>, _>>()?;
 
-                            Ok(ExprOrDef::Expr(Expr::Lambda {
+                            Ok(ExprOrDef::Expr(Expr::Lambda(ProcData {
                                 args,
                                 rest: if let ListKind::Improper(_, rest) = list {
                                     match &**rest {
@@ -358,7 +360,7 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                                     None
                                 },
                                 body: process_body(operands)?,
-                            }))
+                            })))
                         }
                         _ => Err(bs_err()),
                     },
@@ -368,17 +370,17 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                                 kind: ParserErrorKind::IllegalVariableName(rest.clone()),
                             });
                         }
-                        Ok(ExprOrDef::Expr(Expr::Lambda {
+                        Ok(ExprOrDef::Expr(Expr::Lambda(ProcData {
                             args: vec![],
                             rest: Some(rest.clone()),
                             body: process_body(operands)?,
-                        }))
+                        })))
                     }
-                    Datum::EmptyList => Ok(ExprOrDef::Expr(Expr::Lambda {
+                    Datum::EmptyList => Ok(ExprOrDef::Expr(Expr::Lambda(ProcData {
                         args: vec![],
                         rest: None,
                         body: process_body(operands)?,
-                    })),
+                    }))),
                     _ => Err(bs_err()),
                 }
             }
@@ -932,17 +934,19 @@ mod tests {
             ]),
             Ok(ExprOrDef::Definition(Definition::Procedure {
                 name: "f".to_owned(),
-                args: vec!["x".to_owned()],
-                rest: None,
-                body: Body {
-                    defs: vec![Definition::Variable {
-                        name: "y".to_owned(),
-                        value: Box::new(int_expr!(1)),
-                    }],
-                    exprs: vec![Expr::ProcCall {
-                        operator: Box::new(var_expr!("+")),
-                        operands: vec![var_expr!("x"), var_expr!("y")],
-                    }],
+                data: ProcData {
+                    args: vec!["x".to_owned()],
+                    rest: None,
+                    body: Body {
+                        defs: vec![Definition::Variable {
+                            name: "y".to_owned(),
+                            value: Box::new(int_expr!(1)),
+                        }],
+                        exprs: vec![Expr::ProcCall {
+                            operator: Box::new(var_expr!("+")),
+                            operands: vec![var_expr!("x"), var_expr!("y")],
+                        }],
+                    }
                 }
             }))
         );
@@ -960,11 +964,13 @@ mod tests {
             ]),
             Ok(ExprOrDef::Definition(Definition::Procedure {
                 name: "f".to_owned(),
-                args: vec!["x".to_owned(), "y".to_owned()],
-                rest: Some("z".to_owned()),
-                body: Body {
-                    defs: vec![],
-                    exprs: vec![var_expr!("z")],
+                data: ProcData {
+                    args: vec!["x".to_owned(), "y".to_owned()],
+                    rest: Some("z".to_owned()),
+                    body: Body {
+                        defs: vec![],
+                        exprs: vec![var_expr!("z")],
+                    }
                 }
             }))
         );
@@ -1053,7 +1059,7 @@ mod tests {
                 proper_list_datum![symbol_datum!("x"), symbol_datum!("y")],
                 proper_list_datum![symbol_datum!("+"), symbol_datum!("x"), symbol_datum!("y")],
             ]),
-            Ok(ExprOrDef::Expr(Expr::Lambda {
+            Ok(ExprOrDef::Expr(Expr::Lambda(ProcData {
                 args: vec!["x".to_owned(), "y".to_owned()],
                 rest: None,
                 body: Body {
@@ -1063,7 +1069,7 @@ mod tests {
                         operands: vec![var_expr!("x"), var_expr!("y")],
                     }],
                 }
-            }))
+            })))
         );
 
         assert_eq!(
@@ -1082,7 +1088,7 @@ mod tests {
                     proper_list_datum![symbol_datum!("car"), symbol_datum!("z")],
                 ],
             ]),
-            Ok(ExprOrDef::Expr(Expr::Lambda {
+            Ok(ExprOrDef::Expr(Expr::Lambda(ProcData {
                 args: vec!["x".to_owned(), "y".to_owned()],
                 rest: Some("z".to_owned()),
                 body: Body {
@@ -1102,7 +1108,7 @@ mod tests {
                         ],
                     }],
                 }
-            }))
+            })))
         );
 
         assert_eq!(
@@ -1111,14 +1117,14 @@ mod tests {
                 symbol_datum!("args"),
                 int_datum!(1)
             ]),
-            Ok(ExprOrDef::Expr(Expr::Lambda {
+            Ok(ExprOrDef::Expr(Expr::Lambda(ProcData {
                 args: vec![],
                 rest: Some("args".to_owned()),
                 body: Body {
                     defs: vec![],
                     exprs: vec![int_expr!(1)],
                 }
-            }))
+            })))
         );
 
         assert_eq!(
@@ -1127,14 +1133,14 @@ mod tests {
                 Datum::EmptyList,
                 int_datum!(1)
             ]),
-            Ok(ExprOrDef::Expr(Expr::Lambda {
+            Ok(ExprOrDef::Expr(Expr::Lambda(ProcData {
                 args: vec![],
                 rest: None,
                 body: Body {
                     defs: vec![],
                     exprs: vec![int_expr!(1)],
                 }
-            }))
+            })))
         );
 
         assert_eq!(

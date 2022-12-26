@@ -2,6 +2,7 @@ pub mod datum;
 pub mod expr;
 pub mod lexer;
 pub mod number;
+pub mod object;
 pub mod parser;
 pub mod read;
 pub mod repl;
