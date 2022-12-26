@@ -4,7 +4,7 @@ pub mod lexer;
 pub mod number;
 pub mod object;
 pub mod parser;
-pub mod read;
+pub mod reader;
 pub mod repl;
 
 #[cfg(test)]

@@ -2,7 +2,7 @@ use std::io;
 use std::io::Write;
 
 use crate::parser::parse;
-use crate::read::Reader;
+use crate::reader::Reader;
 use crate::tokenize;
 
 pub fn run() {
