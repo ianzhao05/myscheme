@@ -46,5 +46,4 @@ pub enum Datum {
     Simple(SimpleDatum),
     Compound(CompoundDatum),
     EmptyList,
-    Void,
 }

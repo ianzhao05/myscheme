@@ -282,11 +282,6 @@ fn process_qq_template(datum: &Datum, qq_level: usize) -> Result<QQTemplate, Par
                     .map(|d| process_qq_template_or_splice(d, qq_level))
                     .collect::<Result<Vec<_>, _>>()?,
             )),
-            Datum::Void => {
-                return Err(ParserError {
-                    kind: ParserErrorKind::BadSyntax("quasiquote".to_owned()),
-                });
-            }
         },
     ))
 }
@@ -801,7 +796,7 @@ pub fn parse(datum: &Datum) -> Result<ExprOrDef, ParserError> {
                                 }
                             }
                         }
-                        Datum::Compound(_) | Datum::Void => {
+                        Datum::Compound(_) => {
                             let operator = parse_expr(first)?;
                             let rest = list
                                 .iter()
@@ -839,7 +834,6 @@ pub fn parse(datum: &Datum) -> Result<ExprOrDef, ParserError> {
         Datum::EmptyList => Err(ParserError {
             kind: ParserErrorKind::IllegalEmptyList,
         }),
-        Datum::Void => Ok(ExprOrDef::Expr(Expr::Literal(LiteralKind::Void))),
     }
 }
 
