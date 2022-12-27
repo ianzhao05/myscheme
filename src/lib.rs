@@ -1,9 +1,12 @@
 pub mod datum;
+pub mod env;
+pub mod evaler;
 pub mod expr;
 pub mod lexer;
 pub mod number;
 pub mod object;
 pub mod parser;
+pub mod proc;
 pub mod reader;
 pub mod repl;
 
@@ -131,4 +134,32 @@ pub mod test_util {
         };
     }
     pub(crate) use var_expr;
+
+    macro_rules! atom_obj {
+        ($d:expr) => {
+            match $d {
+                $crate::datum::Datum::Simple(s) => $crate::object::Object::Atom(s),
+                _ => panic!("Expected simple datum, got {:?}", $d),
+            }
+        };
+    }
+    pub(crate) use atom_obj;
+
+    macro_rules! pair_obj {
+        ($car:expr, $cdr:expr) => {
+            $crate::object::Object::Pair(std::rc::Rc::new(std::cell::RefCell::new(
+                $crate::object::Pair::new($car, $cdr),
+            )))
+        };
+    }
+    pub(crate) use pair_obj;
+
+    macro_rules! vector_obj {
+        ($($d:expr),* $(,)?) => {
+            $crate::object::Object::Vector(std::rc::Rc::new(
+                std::cell::RefCell::new(vec![$($d),*])
+            ))
+        };
+    }
+    pub(crate) use vector_obj;
 }

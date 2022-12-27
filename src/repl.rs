@@ -1,31 +1,57 @@
 use std::io;
 use std::io::Write;
+use std::{cell::RefCell, rc::Rc};
 
+use crate::env::Env;
+use crate::evaler::{eval, EvalResult};
+use crate::object::Object;
 use crate::parser::parse;
 use crate::reader::Reader;
 use crate::tokenize;
 
 pub fn run() {
+    let env = Rc::new(RefCell::new(Env::new(None)));
     loop {
         let mut line = String::new();
         print!(">>> ");
         io::stdout().flush().unwrap();
-        io::stdin().read_line(&mut line).unwrap();
-        let tokens = tokenize!(&line);
-        if let Err(e) = tokens {
-            println!("{e}");
-            continue;
+        if io::stdin().read_line(&mut line).unwrap() == 0 {
+            break;
         }
-        let data = Reader::new(tokens.unwrap().iter()).collect::<Result<Vec<_>, _>>();
-        if let Err(e) = data {
-            println!("{e}");
-            continue;
+        let tokens = match tokenize!(&line) {
+            Ok(t) => t,
+            Err(e) => {
+                println!("{e}");
+                continue;
+            }
+        };
+        let data = match Reader::new(tokens.iter()).collect::<Result<Vec<_>, _>>() {
+            Ok(d) => d,
+            Err(e) => {
+                println!("{e}");
+                continue;
+            }
+        };
+        let exprs = match data.iter().map(parse).collect::<Result<Vec<_>, _>>() {
+            Ok(e) => e,
+            Err(e) => {
+                println!("{e}");
+                continue;
+            }
+        };
+        for expr in exprs {
+            let res = eval(&expr, env.clone());
+            match res {
+                Ok(EvalResult::Expr(o)) => match o {
+                    Object::Void => (),
+                    _ => println!("{o:?}"),
+                },
+                Ok(EvalResult::Def) => (),
+                Err(e) => {
+                    println!("{e}");
+                    break;
+                }
+            }
         }
-        let exprs = data
-            .unwrap()
-            .iter()
-            .map(parse)
-            .collect::<Result<Vec<_>, _>>();
-        println!("{exprs:?}");
     }
 }
