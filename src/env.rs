@@ -1,6 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::object::Object;
+use crate::primitives::primitives;
 
 #[derive(Debug)]
 pub struct Env {
@@ -13,6 +14,13 @@ impl Env {
         Self {
             parent,
             bindings: HashMap::new(),
+        }
+    }
+
+    pub fn primitives() -> Self {
+        Self {
+            parent: None,
+            bindings: primitives(),
         }
     }
 

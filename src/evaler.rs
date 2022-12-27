@@ -11,11 +11,18 @@ use crate::object::Object;
 pub enum EvalErrorKind {
     ZeroDivision,
     UndefinedVariable(String),
+    ContractViolation(String),
 }
 
 #[derive(Debug, PartialEq)]
 pub struct EvalError {
     kind: EvalErrorKind,
+}
+
+impl EvalError {
+    pub fn new(kind: EvalErrorKind) -> Self {
+        Self { kind }
+    }
 }
 
 impl Error for EvalError {}
@@ -25,6 +32,7 @@ impl fmt::Display for EvalError {
         match &self.kind {
             EvalErrorKind::ZeroDivision => write!(f, "Division by zero"),
             EvalErrorKind::UndefinedVariable(s) => write!(f, "Undefined variable: {s}"),
+            EvalErrorKind::ContractViolation(s) => write!(f, "Contract violation: expected {s}"),
         }
     }
 }
@@ -52,6 +60,18 @@ fn eval_expr(expr: &Expr, env: Rc<RefCell<Env>>) -> Result<Object, EvalError> {
                 SelfEvaluatingKind::String(s) => SimpleDatum::String(s.clone()),
             }),
         }),
+        Expr::ProcCall { operator, operands } => {
+            let operator = eval_expr(operator, env.clone())?;
+            if let Object::Procedure(proc) = operator {
+                let operands = operands
+                    .iter()
+                    .map(|op| eval_expr(op, env.clone()))
+                    .collect::<Result<Vec<_>, _>>()?;
+                proc.call(&operands)
+            } else {
+                todo!()
+            }
+        }
         _ => todo!(),
     }
 }
@@ -135,6 +155,39 @@ mod tests {
                 env
             ),
             Ok(EvalResult::Expr(Object::from(d)))
+        );
+    }
+
+    #[test]
+    fn primitive_calls() {
+        let env = Rc::new(RefCell::new(Env::primitives()));
+
+        assert_eq!(
+            eval(
+                &ExprOrDef::Expr(Expr::ProcCall {
+                    operator: Box::new(var_expr!("+")),
+                    operands: vec![int_expr!(1), int_expr!(2)]
+                }),
+                env.clone()
+            ),
+            Ok(EvalResult::Expr(atom_obj!(int_datum!(3))))
+        );
+
+        assert_eq!(
+            eval(
+                &ExprOrDef::Expr(Expr::ProcCall {
+                    operator: Box::new(var_expr!("+")),
+                    operands: vec![
+                        int_expr!(1),
+                        Expr::ProcCall {
+                            operator: Box::new(var_expr!("+")),
+                            operands: vec![int_expr!(2), int_expr!(3)]
+                        }
+                    ]
+                }),
+                env
+            ),
+            Ok(EvalResult::Expr(atom_obj!(int_datum!(6))))
         );
     }
 

@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt;
+use std::ops::{Add, AddAssign};
 use std::str::FromStr;
 
 use num::{BigInt, BigRational, Complex, ToPrimitive};
@@ -55,6 +56,48 @@ pub enum Number {
     // unused
     // Complex(ComplexKind),
     Real(RealKind),
+}
+
+impl Add for Number {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Number::Real(a), Number::Real(b)) => match (a, b) {
+                (RealKind::Real(a), RealKind::Real(b)) => Number::Real(RealKind::Real(a + b)),
+                (RealKind::Rational(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Rational(a + b))
+                }
+                (RealKind::Integer(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Integer(a + b))
+                }
+                (RealKind::Rational(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Rational(a + BigRational::from(b)))
+                }
+                (RealKind::Integer(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Rational(BigRational::from(a) + b))
+                }
+                (RealKind::Real(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Real(a + b.to_f64().unwrap_or(0.0)))
+                }
+                (RealKind::Rational(a), RealKind::Real(b)) => {
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0) + b))
+                }
+                (RealKind::Real(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Real(a + b.to_f64().unwrap_or(0.0)))
+                }
+                (RealKind::Integer(a), RealKind::Real(b)) => {
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0) + b))
+                }
+            },
+        }
+    }
+}
+
+impl AddAssign for Number {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = self.clone() + rhs;
+    }
 }
 
 impl FromStr for Number {

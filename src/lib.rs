@@ -6,6 +6,7 @@ pub mod lexer;
 pub mod number;
 pub mod object;
 pub mod parser;
+pub mod primitives;
 pub mod proc;
 pub mod reader;
 pub mod repl;

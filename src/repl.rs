@@ -10,7 +10,7 @@ use crate::reader::Reader;
 use crate::tokenize;
 
 pub fn run() {
-    let env = Rc::new(RefCell::new(Env::new(None)));
+    let env = Rc::new(RefCell::new(Env::primitives()));
     loop {
         let mut line = String::new();
         print!(">>> ");
