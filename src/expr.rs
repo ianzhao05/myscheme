@@ -12,7 +12,6 @@ pub enum SelfEvaluatingKind {
 #[derive(Debug, PartialEq, Clone)]
 pub enum LiteralKind {
     Quotation(Datum),
-    Vector(Vec<Expr>),
     SelfEvaluating(SelfEvaluatingKind),
 }
 

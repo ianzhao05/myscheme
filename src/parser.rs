@@ -8,6 +8,7 @@ use crate::expr::*;
 pub enum ParserErrorKind {
     BadSyntax(String),
     IllegalEmptyList,
+    IllegalVector,
     IllegalDot,
     IllegalVariableName(String),
     IllegalDefine,
@@ -28,6 +29,7 @@ impl fmt::Display for ParserError {
         match &self.kind {
             ParserErrorKind::BadSyntax(s) => write!(f, "Bad syntax {s}"),
             ParserErrorKind::IllegalEmptyList => write!(f, "Illegal empty list"),
+            ParserErrorKind::IllegalVector => write!(f, "Vector must be quoted"),
             ParserErrorKind::IllegalDot => write!(f, "Illegal dot"),
             ParserErrorKind::IllegalVariableName(s) => {
                 write!(f, "Illegal variable name {s}")
@@ -823,15 +825,9 @@ pub fn parse(datum: &Datum) -> Result<ExprOrDef, ParserError> {
                     process_keyword(abbr.to_keyword(), operands)
                 }
             },
-            CompoundDatum::Vector(vector) => {
-                let elements = vector
-                    .iter()
-                    .map(parse_expr)
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(ExprOrDef::Expr(Expr::Literal(LiteralKind::Vector(
-                    elements,
-                ))))
-            }
+            CompoundDatum::Vector(_) => Err(ParserError {
+                kind: ParserErrorKind::IllegalVector,
+            }),
         },
         Datum::EmptyList => Err(ParserError {
             kind: ParserErrorKind::IllegalEmptyList,
@@ -885,7 +881,7 @@ mod tests {
     }
 
     #[test]
-    fn illegal_lists() {
+    fn illegal_literals() {
         assert_eq!(
             parse(&Datum::EmptyList),
             Err(ParserError {
@@ -896,6 +892,12 @@ mod tests {
             parse(&improper_list_datum![int_datum!(1); int_datum!(2)]),
             Err(ParserError {
                 kind: ParserErrorKind::IllegalDot,
+            })
+        );
+        assert_eq!(
+            parse(&vector_datum![int_datum!(1), int_datum!(2)]),
+            Err(ParserError {
+                kind: ParserErrorKind::IllegalVector,
             })
         );
     }
