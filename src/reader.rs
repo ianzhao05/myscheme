@@ -12,6 +12,7 @@ pub enum ReaderErrorKind {
     UnexpectedToken(Token),
     UnexpectedEndOfInput,
     IllegalDot,
+    InvalidNumber(String),
 }
 
 #[derive(Debug, PartialEq)]
@@ -27,6 +28,7 @@ impl fmt::Display for ReaderError {
             ReaderErrorKind::UnexpectedToken(t) => write!(f, "Unexpected token {t}"),
             ReaderErrorKind::UnexpectedEndOfInput => write!(f, "Unexpected end of input"),
             ReaderErrorKind::IllegalDot => write!(f, "Illegal use of dot"),
+            ReaderErrorKind::InvalidNumber(n) => write!(f, "Invalid number {n}"),
         }
     }
 }
@@ -47,8 +49,13 @@ fn read_impl<'a, I: Iterator<Item = &'a Token>>(
         Token::String(s) => Ok(Datum::Simple(SimpleDatum::String(s.clone()))),
         Token::Identifier(s) => Ok(Datum::Simple(SimpleDatum::Symbol(s.clone()))),
         Token::Number(n) => {
-            let number = Number::from_str(n).unwrap();
-            Ok(Datum::Simple(SimpleDatum::Number(number)))
+            let number = Number::from_str(n);
+            match number {
+                Ok(n) => Ok(Datum::Simple(SimpleDatum::Number(n))),
+                Err(_) => Err(ReaderError {
+                    kind: ReaderErrorKind::InvalidNumber(n.clone()),
+                }),
+            }
         }
         Token::LParen => {
             let mut list = Vec::new();
@@ -499,6 +506,13 @@ mod tests {
             read(&mut vec![Token::LParen, Token::Dot, Token::RParen,].iter()),
             Err(ReaderError {
                 kind: ReaderErrorKind::IllegalDot
+            })
+        );
+
+        assert_eq!(
+            read(&mut vec![Token::Number("1/0".to_owned())].iter()),
+            Err(ReaderError {
+                kind: ReaderErrorKind::InvalidNumber("1/0".to_owned())
             })
         );
     }

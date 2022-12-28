@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::fmt;
-use std::ops::{Add, AddAssign};
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::str::FromStr;
 
 use num::{BigInt, BigRational, Complex, ToPrimitive};
@@ -117,6 +117,146 @@ impl Add for Number {
 impl AddAssign for Number {
     fn add_assign(&mut self, rhs: Self) {
         *self = self.clone() + rhs;
+    }
+}
+
+impl Sub for Number {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Number::Real(a), Number::Real(b)) => match (a, b) {
+                (RealKind::Real(a), RealKind::Real(b)) => Number::Real(RealKind::Real(a - b)),
+                (RealKind::Rational(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Rational(a - b))
+                }
+                (RealKind::Integer(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Integer(a - b))
+                }
+                (RealKind::Rational(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Rational(a - BigRational::from(b)))
+                }
+                (RealKind::Integer(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Rational(BigRational::from(a) - b))
+                }
+                (RealKind::Real(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Real(a - b.to_f64().unwrap_or(0.0)))
+                }
+                (RealKind::Rational(a), RealKind::Real(b)) => {
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0) - b))
+                }
+                (RealKind::Real(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Real(a - b.to_f64().unwrap_or(0.0)))
+                }
+                (RealKind::Integer(a), RealKind::Real(b)) => {
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0) - b))
+                }
+            },
+        }
+    }
+}
+
+impl SubAssign for Number {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = self.clone() - rhs;
+    }
+}
+
+impl Neg for Number {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        match self {
+            Number::Real(a) => match a {
+                RealKind::Real(a) => Number::Real(RealKind::Real(-a)),
+                RealKind::Rational(a) => Number::Real(RealKind::Rational(-a)),
+                RealKind::Integer(a) => Number::Real(RealKind::Integer(-a)),
+            },
+        }
+    }
+}
+
+impl Mul for Number {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Number::Real(a), Number::Real(b)) => match (a, b) {
+                (RealKind::Real(a), RealKind::Real(b)) => Number::Real(RealKind::Real(a * b)),
+                (RealKind::Rational(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Rational(a * b))
+                }
+                (RealKind::Integer(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Integer(a * b))
+                }
+                (RealKind::Rational(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Rational(a * BigRational::from(b)))
+                }
+                (RealKind::Integer(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Rational(BigRational::from(a) * b))
+                }
+                (RealKind::Real(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Real(a * b.to_f64().unwrap_or(0.0)))
+                }
+                (RealKind::Rational(a), RealKind::Real(b)) => {
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0) * b))
+                }
+                (RealKind::Real(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Real(a * b.to_f64().unwrap_or(0.0)))
+                }
+                (RealKind::Integer(a), RealKind::Real(b)) => {
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0) * b))
+                }
+            },
+        }
+    }
+}
+
+impl MulAssign for Number {
+    fn mul_assign(&mut self, rhs: Self) {
+        *self = self.clone() * rhs;
+    }
+}
+
+impl Div for Number {
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Number::Real(a), Number::Real(b)) => match (a, b) {
+                (RealKind::Real(a), RealKind::Real(b)) => Number::Real(RealKind::Real(a / b)),
+                (RealKind::Rational(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Rational(a / b))
+                }
+                (RealKind::Integer(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Rational(BigRational::new(a, b)))
+                }
+                (RealKind::Rational(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Rational(a / BigRational::from(b)))
+                }
+                (RealKind::Integer(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Rational(BigRational::from(a) / b))
+                }
+                (RealKind::Real(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Real(a / b.to_f64().unwrap_or(1.0)))
+                }
+                (RealKind::Rational(a), RealKind::Real(b)) => {
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0) / b))
+                }
+                (RealKind::Real(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Real(a / b.to_f64().unwrap_or(1.0)))
+                }
+                (RealKind::Integer(a), RealKind::Real(b)) => {
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0) / b))
+                }
+            },
+        }
+    }
+}
+
+impl DivAssign for Number {
+    fn div_assign(&mut self, rhs: Self) {
+        *self = self.clone() / rhs;
     }
 }
 
