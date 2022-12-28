@@ -5,7 +5,7 @@ use std::{cell::RefCell, rc::Rc};
 use crate::datum::SimpleDatum;
 use crate::env::Env;
 use crate::expr::*;
-use crate::object::Object;
+use crate::object::{Object, ObjectRef};
 use crate::proc::{Call, Procedure, UserDefined};
 
 #[derive(Debug, PartialEq)]
@@ -14,7 +14,7 @@ pub enum EvalErrorKind {
     UndefinedVariable(String),
     ContractViolation {
         expected: String,
-        got: Object,
+        got: ObjectRef,
     },
     NotAProcedure(Object),
     DuplicateArg(String),
@@ -66,11 +66,20 @@ impl fmt::Display for EvalError {
 
 #[derive(Debug, PartialEq)]
 pub enum EvalResult {
-    Expr(Object),
+    Expr(ObjectRef),
     Def,
 }
 
-fn eval_expr(expr: &Expr, env: Rc<RefCell<Env>>) -> Result<Object, EvalError> {
+impl EvalResult {
+    pub fn unwrap_expr(self) -> ObjectRef {
+        match self {
+            EvalResult::Expr(o) => o,
+            _ => panic!("Expected an expression"),
+        }
+    }
+}
+
+fn eval_expr(expr: &Expr, env: Rc<RefCell<Env>>) -> Result<ObjectRef, EvalError> {
     match expr {
         Expr::Variable(v) => match env.borrow().get(v) {
             Some(obj) => Ok(obj),
@@ -79,20 +88,20 @@ fn eval_expr(expr: &Expr, env: Rc<RefCell<Env>>) -> Result<Object, EvalError> {
             }),
         },
         Expr::Literal(l) => Ok(match l {
-            LiteralKind::Quotation(d) => Object::from(d.clone()),
-            LiteralKind::SelfEvaluating(s) => Object::Atom(match s {
+            LiteralKind::Quotation(d) => ObjectRef::from(d.clone()),
+            LiteralKind::SelfEvaluating(s) => ObjectRef::new(Object::Atom(match s {
                 SelfEvaluatingKind::Boolean(b) => SimpleDatum::Boolean(*b),
                 SelfEvaluatingKind::Character(c) => SimpleDatum::Character(*c),
                 SelfEvaluatingKind::Number(n) => SimpleDatum::Number(n.clone()),
                 SelfEvaluatingKind::String(s) => SimpleDatum::String(s.clone()),
-            }),
+            })),
         }),
-        Expr::Lambda(data) => Ok(Object::Procedure(Rc::new(Procedure::UserDefined(
+        Expr::Lambda(data) => Ok(ObjectRef::new(Object::Procedure(Procedure::UserDefined(
             UserDefined::new(data.clone(), env)?,
         )))),
         Expr::ProcCall { operator, operands } => {
             let operator = eval_expr(operator, env.clone())?;
-            if let Object::Procedure(proc) = operator {
+            if let Object::Procedure(proc) = &*operator {
                 let operands = operands
                     .iter()
                     .map(|op| eval_expr(op, env.clone()))
@@ -113,10 +122,10 @@ fn eval_expr(expr: &Expr, env: Rc<RefCell<Env>>) -> Result<Object, EvalError> {
             alternate,
         } => {
             let test = eval_expr(test, env.clone())?;
-            match test {
+            match *test {
                 Object::Atom(SimpleDatum::Boolean(false)) => match alternate {
                     Some(alternate) => eval_expr(alternate, env),
-                    None => Ok(Object::Void),
+                    None => Ok(ObjectRef::Void),
                 },
                 _ => eval_expr(consequent, env),
             }
@@ -133,23 +142,23 @@ fn eval_def(def: &Definition, env: Rc<RefCell<Env>>) -> Result<(), EvalError> {
             Ok(())
         }
         Definition::Procedure { name, data } => {
-            let proc = Object::Procedure(Rc::new(Procedure::UserDefined(UserDefined::new(
+            let proc = Object::Procedure(Procedure::UserDefined(UserDefined::new(
                 data.clone(),
                 env.clone(),
-            )?)));
-            env.borrow_mut().insert(name, proc);
+            )?));
+            env.borrow_mut().insert(name, ObjectRef::new(proc));
             Ok(())
         }
         Definition::Begin(_) => todo!(),
     }
 }
 
-pub fn eval_body(body: &Body, env: Rc<RefCell<Env>>) -> Result<Object, EvalError> {
-    let mut res = Object::Void;
+pub fn eval_body(body: &Body, env: Rc<RefCell<Env>>) -> Result<ObjectRef, EvalError> {
+    let mut res = ObjectRef::Void;
     for eod in &body.0 {
         res = match eval(eod, env.clone())? {
             EvalResult::Expr(obj) => obj,
-            EvalResult::Def => Object::Void,
+            EvalResult::Def => ObjectRef::Void,
         };
     }
     Ok(res)
@@ -178,12 +187,14 @@ mod tests {
 
         assert_eq!(
             eval(&ExprOrDef::Expr(int_expr!(1)), env.clone()),
-            Ok(EvalResult::Expr(atom_obj!(int_datum!(1))))
+            Ok(EvalResult::Expr(ObjectRef::new(atom_obj!(int_datum!(1)))))
         );
 
         assert_eq!(
             eval(&ExprOrDef::Expr(bool_expr!(true)), env),
-            Ok(EvalResult::Expr(atom_obj!(bool_datum!(true))))
+            Ok(EvalResult::Expr(ObjectRef::new(atom_obj!(bool_datum!(
+                true
+            )))))
         );
     }
 
@@ -196,7 +207,7 @@ mod tests {
                 &ExprOrDef::Expr(Expr::Literal(LiteralKind::Quotation(int_datum!(1)))),
                 env.clone()
             ),
-            Ok(EvalResult::Expr(atom_obj!(int_datum!(1))))
+            Ok(EvalResult::Expr(ObjectRef::new(atom_obj!(int_datum!(1)))))
         );
 
         assert_eq!(
@@ -204,7 +215,9 @@ mod tests {
                 &ExprOrDef::Expr(Expr::Literal(LiteralKind::Quotation(symbol_datum!("a")))),
                 env.clone()
             ),
-            Ok(EvalResult::Expr(atom_obj!(symbol_datum!("a"))))
+            Ok(EvalResult::Expr(ObjectRef::new(atom_obj!(symbol_datum!(
+                "a"
+            )))))
         );
 
         let d = proper_list_datum![
@@ -218,17 +231,19 @@ mod tests {
             vector_datum![symbol_datum!("g"), symbol_datum!("h")]
         ];
         assert_eq!(
-            eval(
+            *eval(
                 &ExprOrDef::Expr(Expr::Literal(LiteralKind::Quotation(d.clone()))),
                 env
-            ),
-            Ok(EvalResult::Expr(Object::from(d)))
+            )
+            .unwrap()
+            .unwrap_expr(),
+            *ObjectRef::from(d)
         );
     }
 
     #[test]
     fn primitive_calls() {
-        let env = Rc::new(RefCell::new(Env::primitives()));
+        let env = Env::primitives();
 
         assert_eq!(
             eval(
@@ -238,7 +253,7 @@ mod tests {
                 }),
                 env.clone()
             ),
-            Ok(EvalResult::Expr(atom_obj!(int_datum!(3))))
+            Ok(EvalResult::Expr(ObjectRef::new(atom_obj!(int_datum!(3)))))
         );
 
         assert_eq!(
@@ -255,7 +270,7 @@ mod tests {
                 }),
                 env
             ),
-            Ok(EvalResult::Expr(atom_obj!(int_datum!(6))))
+            Ok(EvalResult::Expr(ObjectRef::new(atom_obj!(int_datum!(6)))))
         );
     }
 
@@ -283,7 +298,7 @@ mod tests {
 
         assert_eq!(
             eval(&ExprOrDef::Expr(var_expr!("a")), env),
-            Ok(EvalResult::Expr(atom_obj!(int_datum!(1))))
+            Ok(EvalResult::Expr(ObjectRef::new(atom_obj!(int_datum!(1)))))
         );
     }
 
@@ -313,7 +328,7 @@ mod tests {
                 }),
                 env.clone()
             ),
-            Ok(EvalResult::Expr(atom_obj!(int_datum!(1))))
+            Ok(EvalResult::Expr(ObjectRef::new(atom_obj!(int_datum!(1)))))
         );
         assert_eq!(
             eval(
@@ -370,7 +385,7 @@ mod tests {
                 }),
                 env
             ),
-            Ok(EvalResult::Expr(atom_obj!(int_datum!(2))))
+            Ok(EvalResult::Expr(ObjectRef::new(atom_obj!(int_datum!(2)))))
         );
     }
 }

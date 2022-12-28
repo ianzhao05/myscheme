@@ -145,22 +145,4 @@ pub mod test_util {
         };
     }
     pub(crate) use atom_obj;
-
-    macro_rules! pair_obj {
-        ($car:expr, $cdr:expr) => {
-            $crate::object::Object::Pair(std::rc::Rc::new(std::cell::RefCell::new(
-                $crate::object::Pair::new($car, $cdr),
-            )))
-        };
-    }
-    pub(crate) use pair_obj;
-
-    macro_rules! vector_obj {
-        ($($d:expr),* $(,)?) => {
-            $crate::object::Object::Vector(std::rc::Rc::new(
-                std::cell::RefCell::new(vec![$($d),*])
-            ))
-        };
-    }
-    pub(crate) use vector_obj;
 }

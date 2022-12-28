@@ -1,12 +1,13 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::object::Object;
-use crate::primitives::primitives;
+use crate::evaler::eval;
+use crate::object::ObjectRef;
+use crate::primitives::{prelude, primitives};
 
 #[derive(Debug)]
 pub struct Env {
     parent: Option<Rc<RefCell<Env>>>,
-    bindings: HashMap<String, Object>,
+    bindings: HashMap<String, ObjectRef>,
 }
 
 impl Env {
@@ -17,14 +18,21 @@ impl Env {
         }
     }
 
-    pub fn primitives() -> Self {
-        Self {
+    pub fn primitives() -> Rc<RefCell<Self>> {
+        let env = Rc::new(RefCell::new(Self {
             parent: None,
             bindings: primitives(),
+        }));
+        for eod in prelude() {
+            match eval(eod, env.clone()) {
+                Ok(_) => (),
+                Err(e) => panic!("Error evaluating prelude: {}", e),
+            }
         }
+        env
     }
 
-    pub fn get(&self, name: &str) -> Option<Object> {
+    pub fn get(&self, name: &str) -> Option<ObjectRef> {
         match self.bindings.get(name) {
             Some(obj) => Some(obj.clone()),
             None => match &self.parent {
@@ -34,7 +42,7 @@ impl Env {
         }
     }
 
-    pub fn insert(&mut self, name: &str, val: Object) {
+    pub fn insert(&mut self, name: &str, val: ObjectRef) {
         self.bindings.insert(name.to_owned(), val);
     }
 }

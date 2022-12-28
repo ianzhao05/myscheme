@@ -5,12 +5,12 @@ use std::{cell::RefCell, rc::Rc};
 use crate::env::Env;
 use crate::evaler::{eval_body, EvalError, EvalErrorKind};
 use crate::expr::ProcData;
-use crate::object::{Object, Pair};
+use crate::object::ObjectRef;
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
 pub trait Call {
-    fn call(&self, args: &[Object]) -> Result<Object, EvalError>;
+    fn call(&self, args: &[ObjectRef]) -> Result<ObjectRef, EvalError>;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -20,7 +20,7 @@ pub enum Procedure {
 }
 
 impl Call for Procedure {
-    fn call(&self, args: &[Object]) -> Result<Object, EvalError> {
+    fn call(&self, args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
         match self {
             Procedure::Primitive(p) => p.call(args),
             Procedure::UserDefined(p) => p.call(args),
@@ -31,7 +31,7 @@ impl Call for Procedure {
 #[derive(Clone)]
 pub struct Primitive {
     name: &'static str,
-    func: fn(&[Object]) -> Result<Object, EvalError>,
+    func: fn(&[ObjectRef]) -> Result<ObjectRef, EvalError>,
 }
 
 impl Debug for Primitive {
@@ -43,7 +43,7 @@ impl Debug for Primitive {
 }
 
 impl Primitive {
-    pub fn new(name: &'static str, func: fn(&[Object]) -> Result<Object, EvalError>) -> Self {
+    pub fn new(name: &'static str, func: fn(&[ObjectRef]) -> Result<ObjectRef, EvalError>) -> Self {
         Self { name, func }
     }
 }
@@ -55,7 +55,7 @@ impl PartialEq for Primitive {
 }
 
 impl Call for Primitive {
-    fn call(&self, args: &[Object]) -> Result<Object, EvalError> {
+    fn call(&self, args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
         (self.func)(args)
     }
 }
@@ -101,7 +101,7 @@ impl PartialEq for UserDefined {
 }
 
 impl Call for UserDefined {
-    fn call(&self, args: &[Object]) -> Result<Object, EvalError> {
+    fn call(&self, args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
         if args.len() < self.data.args.len()
             || (self.data.rest.is_none() && args.len() != self.data.args.len())
         {
@@ -120,9 +120,9 @@ impl Call for UserDefined {
         if let Some(rest) = &self.data.rest {
             benv.insert(
                 rest,
-                args_iter.rev().fold(Object::EmptyList, |a, b| {
-                    Object::Pair(Rc::new(RefCell::new(Pair::new(b, a))))
-                }),
+                args_iter
+                    .rev()
+                    .fold(ObjectRef::EmptyList, |a, b| ObjectRef::new_pair(b, a)),
             );
         }
         drop(benv);
