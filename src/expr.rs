@@ -36,10 +36,7 @@ pub struct ProcData {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Body {
-    pub defs: Vec<Definition>,
-    pub exprs: Vec<Expr>,
-}
+pub struct Body(pub Vec<ExprOrDef>);
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Definition {

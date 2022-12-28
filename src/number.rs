@@ -58,6 +58,26 @@ pub enum Number {
     Real(RealKind),
 }
 
+impl Number {
+    pub fn eq_val(this: &Self, other: &Self) -> bool {
+        match (this, other) {
+            (Number::Real(a), Number::Real(b)) => match (a, b) {
+                (RealKind::Real(a), _) => match b {
+                    RealKind::Real(b) => a == b,
+                    RealKind::Rational(b) => a == &b.to_f64().unwrap_or(0.0),
+                    RealKind::Integer(b) => a == &b.to_f64().unwrap_or(0.0),
+                },
+                (_, RealKind::Real(b)) => match a {
+                    RealKind::Real(a) => a == b,
+                    RealKind::Rational(a) => &a.to_f64().unwrap_or(0.0) == b,
+                    RealKind::Integer(a) => &a.to_f64().unwrap_or(0.0) == b,
+                },
+                _ => a == b,
+            },
+        }
+    }
+}
+
 impl Add for Number {
     type Output = Self;
 
@@ -216,6 +236,10 @@ mod tests {
             Number::Real(RealKind::Real(1.0)),
             Number::Real(RealKind::Integer(BigInt::from(1)))
         );
+        assert!(Number::eq_val(
+            &Number::Real(RealKind::Real(1.0)),
+            &Number::Real(RealKind::Integer(BigInt::from(1)))
+        ));
         assert_ne!(
             Number::Real(RealKind::Real(0.5)),
             Number::Real(RealKind::Rational(BigRational::new(
@@ -223,6 +247,13 @@ mod tests {
                 BigInt::from(2)
             )))
         );
+        assert!(Number::eq_val(
+            &Number::Real(RealKind::Real(0.5)),
+            &Number::Real(RealKind::Rational(BigRational::new(
+                BigInt::from(1),
+                BigInt::from(2)
+            )))
+        ));
 
         assert!(
             RealKind::Rational(BigRational::new(BigInt::from(1), BigInt::from(2)))

@@ -34,7 +34,7 @@ impl Env {
         }
     }
 
-    pub fn set(&mut self, name: &str, val: Object) {
+    pub fn insert(&mut self, name: &str, val: Object) {
         self.bindings.insert(name.to_owned(), val);
     }
 }

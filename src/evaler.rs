@@ -6,12 +6,23 @@ use crate::datum::SimpleDatum;
 use crate::env::Env;
 use crate::expr::*;
 use crate::object::Object;
+use crate::proc::{Call, Procedure, UserDefined};
 
 #[derive(Debug, PartialEq)]
 pub enum EvalErrorKind {
     ZeroDivision,
     UndefinedVariable(String),
-    ContractViolation(String),
+    ContractViolation {
+        expected: String,
+        got: Object,
+    },
+    NotAProcedure(Object),
+    DuplicateArg(String),
+    ArityMismatch {
+        expected: usize,
+        got: usize,
+        rest: bool,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -32,7 +43,23 @@ impl fmt::Display for EvalError {
         match &self.kind {
             EvalErrorKind::ZeroDivision => write!(f, "Division by zero"),
             EvalErrorKind::UndefinedVariable(s) => write!(f, "Undefined variable: {s}"),
-            EvalErrorKind::ContractViolation(s) => write!(f, "Contract violation: expected {s}"),
+            EvalErrorKind::ContractViolation { expected, got } => {
+                write!(f, "Contract violation: expected {expected}, got {got:?}")
+            }
+            EvalErrorKind::NotAProcedure(o) => write!(f, "Not a procedure: {o:?}"),
+            EvalErrorKind::DuplicateArg(s) => write!(f, "Duplicate argument name: {s}"),
+            EvalErrorKind::ArityMismatch {
+                expected,
+                got,
+                rest,
+            } => {
+                let expected = if *rest {
+                    format!("at least {}", expected)
+                } else {
+                    expected.to_string()
+                };
+                write!(f, "Arity mismatch: expected {expected}, got {got}")
+            }
         }
     }
 }
@@ -60,6 +87,9 @@ fn eval_expr(expr: &Expr, env: Rc<RefCell<Env>>) -> Result<Object, EvalError> {
                 SelfEvaluatingKind::String(s) => SimpleDatum::String(s.clone()),
             }),
         }),
+        Expr::Lambda(data) => Ok(Object::Procedure(Rc::new(Procedure::UserDefined(
+            UserDefined::new(data.clone(), env)?,
+        )))),
         Expr::ProcCall { operator, operands } => {
             let operator = eval_expr(operator, env.clone())?;
             if let Object::Procedure(proc) = operator {
@@ -69,7 +99,26 @@ fn eval_expr(expr: &Expr, env: Rc<RefCell<Env>>) -> Result<Object, EvalError> {
                     .collect::<Result<Vec<_>, _>>()?;
                 proc.call(&operands)
             } else {
-                todo!()
+                Err(EvalError {
+                    kind: EvalErrorKind::ContractViolation {
+                        expected: "procedure".to_owned(),
+                        got: operator,
+                    },
+                })
+            }
+        }
+        Expr::Conditional {
+            test,
+            consequent,
+            alternate,
+        } => {
+            let test = eval_expr(test, env.clone())?;
+            match test {
+                Object::Atom(SimpleDatum::Boolean(false)) => match alternate {
+                    Some(alternate) => eval_expr(alternate, env),
+                    None => Ok(Object::Void),
+                },
+                _ => eval_expr(consequent, env),
             }
         }
         _ => todo!(),
@@ -80,11 +129,30 @@ fn eval_def(def: &Definition, env: Rc<RefCell<Env>>) -> Result<(), EvalError> {
     match def {
         Definition::Variable { name, value } => {
             let res = eval_expr(value, env.clone())?;
-            env.borrow_mut().set(name, res);
+            env.borrow_mut().insert(name, res);
             Ok(())
         }
-        _ => todo!(),
+        Definition::Procedure { name, data } => {
+            let proc = Object::Procedure(Rc::new(Procedure::UserDefined(UserDefined::new(
+                data.clone(),
+                env.clone(),
+            )?)));
+            env.borrow_mut().insert(name, proc);
+            Ok(())
+        }
+        Definition::Begin(_) => todo!(),
     }
+}
+
+pub fn eval_body(body: &Body, env: Rc<RefCell<Env>>) -> Result<Object, EvalError> {
+    let mut res = Object::Void;
+    for eod in &body.0 {
+        res = match eval(eod, env.clone())? {
+            EvalResult::Expr(obj) => obj,
+            EvalResult::Def => Object::Void,
+        };
+    }
+    Ok(res)
 }
 
 pub fn eval(eod: &ExprOrDef, env: Rc<RefCell<Env>>) -> Result<EvalResult, EvalError> {
@@ -216,6 +284,93 @@ mod tests {
         assert_eq!(
             eval(&ExprOrDef::Expr(var_expr!("a")), env),
             Ok(EvalResult::Expr(atom_obj!(int_datum!(1))))
+        );
+    }
+
+    #[test]
+    fn proc_defines() {
+        let env = Rc::new(RefCell::new(Env::new(None)));
+
+        assert_eq!(
+            eval(
+                &ExprOrDef::Definition(Definition::Procedure {
+                    name: "f".to_owned(),
+                    data: ProcData {
+                        args: vec!["x".to_owned()],
+                        rest: None,
+                        body: Body(vec![ExprOrDef::Expr(var_expr!("x"))]),
+                    }
+                }),
+                env.clone()
+            ),
+            Ok(EvalResult::Def)
+        );
+        assert_eq!(
+            eval(
+                &ExprOrDef::Expr(Expr::ProcCall {
+                    operator: Box::new(var_expr!("f")),
+                    operands: vec![int_expr!(1)]
+                }),
+                env.clone()
+            ),
+            Ok(EvalResult::Expr(atom_obj!(int_datum!(1))))
+        );
+        assert_eq!(
+            eval(
+                &ExprOrDef::Expr(Expr::ProcCall {
+                    operator: Box::new(var_expr!("f")),
+                    operands: vec![int_expr!(1), int_expr!(2)]
+                }),
+                env.clone()
+            ),
+            Err(EvalError {
+                kind: EvalErrorKind::ArityMismatch {
+                    expected: 1,
+                    got: 2,
+                    rest: false
+                }
+            })
+        );
+
+        assert_eq!(
+            eval(
+                &ExprOrDef::Definition(Definition::Variable {
+                    name: "g".to_owned(),
+                    value: Box::new(Expr::Lambda(ProcData {
+                        args: vec!["x".to_owned(), "y".to_owned()],
+                        rest: None,
+                        body: Body(vec![ExprOrDef::Expr(var_expr!("y"))]),
+                    }))
+                }),
+                env.clone()
+            ),
+            Ok(EvalResult::Def)
+        );
+        assert_eq!(
+            eval(
+                &ExprOrDef::Expr(Expr::ProcCall {
+                    operator: Box::new(var_expr!("g")),
+                    operands: vec![int_expr!(1)]
+                }),
+                env.clone()
+            ),
+            Err(EvalError {
+                kind: EvalErrorKind::ArityMismatch {
+                    expected: 2,
+                    got: 1,
+                    rest: false
+                }
+            })
+        );
+        assert_eq!(
+            eval(
+                &ExprOrDef::Expr(Expr::ProcCall {
+                    operator: Box::new(var_expr!("g")),
+                    operands: vec![int_expr!(1), int_expr!(2)]
+                }),
+                env
+            ),
+            Ok(EvalResult::Expr(atom_obj!(int_datum!(2))))
         );
     }
 }

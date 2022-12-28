@@ -156,17 +156,15 @@ fn process_define<'a, I: Iterator<Item = &'a Datum>>(
 }
 
 fn process_body<'a, I: Iterator<Item = &'a Datum>>(data: I) -> Result<Body, ParserError> {
-    let mut defs: Vec<Definition> = vec![];
-    let mut exprs: Vec<Expr> = vec![];
+    let mut eods = Vec::new();
     let mut last_is_expr = false;
     for d in data {
-        match parse(d)? {
-            ExprOrDef::Definition(def) => {
-                defs.push(def);
+        let eod = parse(d)?;
+        match eod {
+            ExprOrDef::Definition(_) => {
                 last_is_expr = false;
             }
-            ExprOrDef::Expr(expr) => {
-                exprs.push(expr);
+            ExprOrDef::Expr(_) => {
                 last_is_expr = true;
             }
             ExprOrDef::MixedBegin(_) => {
@@ -175,9 +173,10 @@ fn process_body<'a, I: Iterator<Item = &'a Datum>>(data: I) -> Result<Body, Pars
                 })
             }
         }
+        eods.push(eod);
     }
     if last_is_expr {
-        Ok(Body { defs, exprs })
+        Ok(Body(eods))
     } else {
         Err(ParserError {
             kind: ParserErrorKind::MissingExpression,
@@ -939,16 +938,16 @@ mod tests {
                 data: ProcData {
                     args: vec!["x".to_owned()],
                     rest: None,
-                    body: Body {
-                        defs: vec![Definition::Variable {
+                    body: Body(vec![
+                        ExprOrDef::Definition(Definition::Variable {
                             name: "y".to_owned(),
                             value: Box::new(int_expr!(1)),
-                        }],
-                        exprs: vec![Expr::ProcCall {
+                        }),
+                        ExprOrDef::Expr(Expr::ProcCall {
                             operator: Box::new(var_expr!("+")),
                             operands: vec![var_expr!("x"), var_expr!("y")],
-                        }],
-                    }
+                        }),
+                    ]),
                 }
             }))
         );
@@ -969,10 +968,7 @@ mod tests {
                 data: ProcData {
                     args: vec!["x".to_owned(), "y".to_owned()],
                     rest: Some("z".to_owned()),
-                    body: Body {
-                        defs: vec![],
-                        exprs: vec![var_expr!("z")],
-                    }
+                    body: Body(vec![ExprOrDef::Expr(var_expr!("z"))]),
                 }
             }))
         );
@@ -1064,13 +1060,10 @@ mod tests {
             Ok(ExprOrDef::Expr(Expr::Lambda(ProcData {
                 args: vec!["x".to_owned(), "y".to_owned()],
                 rest: None,
-                body: Body {
-                    defs: vec![],
-                    exprs: vec![Expr::ProcCall {
-                        operator: Box::new(var_expr!("+")),
-                        operands: vec![var_expr!("x"), var_expr!("y")],
-                    }],
-                }
+                body: Body(vec![ExprOrDef::Expr(Expr::ProcCall {
+                    operator: Box::new(var_expr!("+")),
+                    operands: vec![var_expr!("x"), var_expr!("y")],
+                })]),
             })))
         );
 
@@ -1093,12 +1086,12 @@ mod tests {
             Ok(ExprOrDef::Expr(Expr::Lambda(ProcData {
                 args: vec!["x".to_owned(), "y".to_owned()],
                 rest: Some("z".to_owned()),
-                body: Body {
-                    defs: vec![Definition::Variable {
+                body: Body(vec![
+                    ExprOrDef::Definition(Definition::Variable {
                         name: "a".to_owned(),
                         value: Box::new(int_expr!(42)),
-                    }],
-                    exprs: vec![Expr::ProcCall {
+                    }),
+                    ExprOrDef::Expr(Expr::ProcCall {
                         operator: Box::new(var_expr!("+")),
                         operands: vec![
                             var_expr!("x"),
@@ -1106,10 +1099,10 @@ mod tests {
                             Expr::ProcCall {
                                 operator: Box::new(var_expr!("car")),
                                 operands: vec![var_expr!("z")],
-                            },
+                            }
                         ],
-                    }],
-                }
+                    })
+                ]),
             })))
         );
 
@@ -1122,10 +1115,7 @@ mod tests {
             Ok(ExprOrDef::Expr(Expr::Lambda(ProcData {
                 args: vec![],
                 rest: Some("args".to_owned()),
-                body: Body {
-                    defs: vec![],
-                    exprs: vec![int_expr!(1)],
-                }
+                body: Body(vec![ExprOrDef::Expr(int_expr!(1))]),
             })))
         );
 
@@ -1138,10 +1128,7 @@ mod tests {
             Ok(ExprOrDef::Expr(Expr::Lambda(ProcData {
                 args: vec![],
                 rest: None,
-                body: Body {
-                    defs: vec![],
-                    exprs: vec![int_expr!(1)],
-                }
+                body: Body(vec![ExprOrDef::Expr(int_expr!(1))]),
             })))
         );
 
@@ -1461,10 +1448,7 @@ mod tests {
             Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
                 kind: LetKind::Normal,
                 bindings: vec![],
-                body: Body {
-                    defs: vec![],
-                    exprs: vec![int_expr!(0)],
-                },
+                body: Body(vec![ExprOrDef::Expr(int_expr!(0))]),
             })))
         );
 
@@ -1478,16 +1462,16 @@ mod tests {
             Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
                 kind: LetKind::Normal,
                 bindings: vec![("x".to_owned(), int_expr!(1))],
-                body: Body {
-                    defs: vec![Definition::Variable {
+                body: Body(vec![
+                    ExprOrDef::Definition(Definition::Variable {
                         name: "y".to_owned(),
                         value: Box::new(int_expr!(2)),
-                    }],
-                    exprs: vec![Expr::ProcCall {
-                        operator: Box::new(var_expr!("+")),
+                    }),
+                    ExprOrDef::Expr(Expr::ProcCall {
+                        operator: Box::new(Expr::Variable("+".to_owned())),
                         operands: vec![var_expr!("x"), var_expr!("y")],
-                    }],
-                }
+                    }),
+                ]),
             })))
         );
 
@@ -1500,10 +1484,7 @@ mod tests {
             Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
                 kind: LetKind::Star,
                 bindings: vec![("x".to_owned(), int_expr!(1))],
-                body: Body {
-                    defs: vec![],
-                    exprs: vec![var_expr!("x")],
-                }
+                body: Body(vec![ExprOrDef::Expr(var_expr!("x"))]),
             })))
         );
 
@@ -1516,10 +1497,7 @@ mod tests {
             Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
                 kind: LetKind::Rec,
                 bindings: vec![("x".to_owned(), int_expr!(1))],
-                body: Body {
-                    defs: vec![],
-                    exprs: vec![var_expr!("x")],
-                }
+                body: Body(vec![ExprOrDef::Expr(var_expr!("x"))]),
             })))
         );
 
@@ -1533,13 +1511,10 @@ mod tests {
             Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
                 kind: LetKind::Named("foo".to_owned()),
                 bindings: vec![("x".to_owned(), int_expr!(1))],
-                body: Body {
-                    defs: vec![],
-                    exprs: vec![Expr::ProcCall {
-                        operator: Box::new(var_expr!("foo")),
-                        operands: vec![var_expr!("x")],
-                    }],
-                }
+                body: Body(vec![ExprOrDef::Expr(Expr::ProcCall {
+                    operator: Box::new(var_expr!("foo")),
+                    operands: vec![var_expr!("x")],
+                })])
             })))
         );
 
