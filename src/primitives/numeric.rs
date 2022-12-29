@@ -168,3 +168,222 @@ pub fn primitives() -> PrimitiveMap {
 }
 
 pub const PRELUDE: &str = "";
+
+#[cfg(test)]
+mod tests {
+    use num::BigRational;
+
+    use super::*;
+    use crate::test_util::*;
+
+    #[test]
+    fn arithmetic() {
+        assert_eq!(add(&[]), Ok(ObjectRef::new(atom_obj!(int_datum!(0)))));
+        assert_eq!(
+            add(&[
+                ObjectRef::new(atom_obj!(int_datum!(1))),
+                ObjectRef::new(atom_obj!(int_datum!(2))),
+                ObjectRef::new(atom_obj!(int_datum!(3)))
+            ]),
+            Ok(ObjectRef::new(atom_obj!(int_datum!(6))))
+        );
+        assert_eq!(
+            add(&[
+                ObjectRef::new(atom_obj!(int_datum!(1))),
+                ObjectRef::new(Object::Atom(SimpleDatum::Number(Number::Real(
+                    RealKind::Rational(BigRational::new(BigInt::from(1), BigInt::from(2)))
+                ))))
+            ]),
+            Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
+                Number::Real(RealKind::Rational(BigRational::new(
+                    BigInt::from(3),
+                    BigInt::from(2)
+                )))
+            ))))
+        );
+        assert_eq!(
+            add(&[ObjectRef::new(atom_obj!(bool_datum!(true)))]),
+            Err(EvalError::new(EvalErrorKind::ContractViolation {
+                expected: "number".to_owned(),
+                got: ObjectRef::new(atom_obj!(bool_datum!(true)))
+            }))
+        );
+
+        assert_eq!(
+            sub(&[]),
+            Err(EvalError::new(EvalErrorKind::ArityMismatch {
+                expected: 1,
+                got: 0,
+                rest: true
+            }))
+        );
+        assert_eq!(
+            sub(&[ObjectRef::new(atom_obj!(int_datum!(1)))]),
+            Ok(ObjectRef::new(atom_obj!(int_datum!(-1))))
+        );
+        assert_eq!(
+            sub(&[
+                ObjectRef::new(atom_obj!(int_datum!(1))),
+                ObjectRef::new(atom_obj!(int_datum!(2))),
+                ObjectRef::new(atom_obj!(int_datum!(3)))
+            ]),
+            Ok(ObjectRef::new(atom_obj!(int_datum!(-4))))
+        );
+
+        assert_eq!(mul(&[]), Ok(ObjectRef::new(atom_obj!(int_datum!(1)))));
+        assert_eq!(
+            mul(&[
+                ObjectRef::new(atom_obj!(int_datum!(1))),
+                ObjectRef::new(atom_obj!(int_datum!(2))),
+                ObjectRef::new(atom_obj!(int_datum!(3)))
+            ]),
+            Ok(ObjectRef::new(atom_obj!(int_datum!(6))))
+        );
+
+        assert_eq!(
+            div(&[]),
+            Err(EvalError::new(EvalErrorKind::ArityMismatch {
+                expected: 1,
+                got: 0,
+                rest: true
+            }))
+        );
+        assert_eq!(
+            div(&[ObjectRef::new(atom_obj!(int_datum!(2)))]),
+            Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
+                Number::Real(RealKind::Rational(BigRational::new(
+                    BigInt::from(1),
+                    BigInt::from(2)
+                )))
+            ))))
+        );
+        assert_eq!(
+            div(&[
+                ObjectRef::new(atom_obj!(int_datum!(1))),
+                ObjectRef::new(atom_obj!(int_datum!(2))),
+                ObjectRef::new(atom_obj!(int_datum!(3)))
+            ]),
+            Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
+                Number::Real(RealKind::Rational(BigRational::new(
+                    BigInt::from(1),
+                    BigInt::from(6)
+                )))
+            ))))
+        );
+    }
+
+    #[test]
+    fn comparison() {
+        assert_eq!(
+            eq(&[]),
+            Err(EvalError::new(EvalErrorKind::ArityMismatch {
+                expected: 1,
+                got: 0,
+                rest: true
+            }))
+        );
+        assert_eq!(
+            eq(&[
+                ObjectRef::new(atom_obj!(int_datum!(1))),
+                ObjectRef::new(atom_obj!(int_datum!(1)))
+            ]),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
+        );
+        assert_eq!(
+            eq(&[
+                ObjectRef::new(atom_obj!(int_datum!(1))),
+                ObjectRef::new(atom_obj!(int_datum!(2)))
+            ]),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(false))))
+        );
+        assert_eq!(
+            eq(&[
+                ObjectRef::new(atom_obj!(int_datum!(1))),
+                ObjectRef::new(atom_obj!(int_datum!(1))),
+                ObjectRef::new(atom_obj!(int_datum!(1)))
+            ]),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
+        );
+        assert_eq!(
+            eq(&[
+                ObjectRef::new(atom_obj!(int_datum!(1))),
+                ObjectRef::new(atom_obj!(int_datum!(2))),
+                ObjectRef::new(atom_obj!(int_datum!(1)))
+            ]),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(false))))
+        );
+
+        assert_eq!(
+            cmp(
+                &[
+                    ObjectRef::new(atom_obj!(int_datum!(1))),
+                    ObjectRef::new(atom_obj!(int_datum!(2))),
+                    ObjectRef::new(atom_obj!(int_datum!(3)))
+                ],
+                Ordering::Less,
+                true
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
+        );
+        assert_eq!(
+            cmp(
+                &[
+                    ObjectRef::new(atom_obj!(int_datum!(1))),
+                    ObjectRef::new(atom_obj!(int_datum!(2))),
+                    ObjectRef::new(atom_obj!(int_datum!(2)))
+                ],
+                Ordering::Less,
+                true
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(false))))
+        );
+        assert_eq!(
+            cmp(
+                &[
+                    ObjectRef::new(atom_obj!(int_datum!(1))),
+                    ObjectRef::new(atom_obj!(int_datum!(2))),
+                    ObjectRef::new(atom_obj!(int_datum!(2)))
+                ],
+                Ordering::Less,
+                false
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
+        );
+        assert_eq!(
+            cmp(
+                &[
+                    ObjectRef::new(atom_obj!(int_datum!(3))),
+                    ObjectRef::new(atom_obj!(int_datum!(2))),
+                    ObjectRef::new(atom_obj!(int_datum!(1)))
+                ],
+                Ordering::Greater,
+                false
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
+        );
+        assert_eq!(
+            cmp(
+                &[
+                    ObjectRef::new(atom_obj!(int_datum!(3))),
+                    ObjectRef::new(atom_obj!(int_datum!(2))),
+                    ObjectRef::new(atom_obj!(int_datum!(2)))
+                ],
+                Ordering::Greater,
+                true
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(false))))
+        );
+        assert_eq!(
+            cmp(
+                &[
+                    ObjectRef::new(atom_obj!(int_datum!(3))),
+                    ObjectRef::new(atom_obj!(int_datum!(2))),
+                    ObjectRef::new(atom_obj!(int_datum!(2)))
+                ],
+                Ordering::Greater,
+                false
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
+        );
+    }
+}

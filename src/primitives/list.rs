@@ -48,3 +48,40 @@ pub fn primitives() -> PrimitiveMap {
 pub const PRELUDE: &str = r#"
 (define (list . args) args)
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_util::*;
+
+    #[test]
+    fn test_cons() {
+        assert!(ObjectRef::equal(
+            &cons(&[
+                ObjectRef::new(atom_obj!(int_datum!(1))),
+                ObjectRef::new(atom_obj!(int_datum!(2)))
+            ])
+            .unwrap(),
+            &ObjectRef::new_pair(
+                ObjectRef::new(atom_obj!(int_datum!(1))),
+                ObjectRef::new(atom_obj!(int_datum!(2)))
+            )
+        ));
+    }
+
+    #[test]
+    fn test_car_cdr() {
+        let p = ObjectRef::new_pair(
+            ObjectRef::new(atom_obj!(int_datum!(1))),
+            ObjectRef::new(atom_obj!(int_datum!(2))),
+        );
+        assert_eq!(
+            select(&[p.clone()], true),
+            Ok(ObjectRef::new(atom_obj!(int_datum!(1))))
+        );
+        assert_eq!(
+            select(&[p], false),
+            Ok(ObjectRef::new(atom_obj!(int_datum!(2))))
+        );
+    }
+}
