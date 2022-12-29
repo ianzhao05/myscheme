@@ -8,11 +8,9 @@ use lazy_static::lazy_static;
 
 use crate::evaler::EvalError;
 use crate::expr::ExprOrDef;
+use crate::interpret::parse_str;
 use crate::object::{Object, ObjectRef};
-use crate::parser::parse;
 use crate::proc::{Primitive, Procedure};
-use crate::reader::Reader;
-use crate::tokenize;
 
 pub type PrimitiveMap = HashMap<&'static str, fn(&[ObjectRef]) -> Result<ObjectRef, EvalError>>;
 
@@ -40,20 +38,9 @@ pub fn primitives() -> HashMap<String, ObjectRef> {
 
 pub fn prelude() -> &'static [ExprOrDef] {
     lazy_static! {
-        static ref PRELUDE: Vec<ExprOrDef> = {
-            let prelude = vec![numeric::PRELUDE, eq::PRELUDE, list::PRELUDE].join("");
-            Reader::new(
-                tokenize!(&prelude)
-                    .expect("Error lexing prelude")
-                    .into_iter(),
-            )
-            .collect::<Result<Vec<_>, _>>()
-            .expect("Error reading prelude")
-            .into_iter()
-            .map(parse)
-            .collect::<Result<Vec<_>, _>>()
-            .expect("Error parsing prelude")
-        };
+        static ref PRELUDE: Vec<ExprOrDef> =
+            parse_str(&vec![numeric::PRELUDE, eq::PRELUDE, list::PRELUDE].join(""))
+                .expect("Prelude should parse without error");
     }
     &PRELUDE
 }
