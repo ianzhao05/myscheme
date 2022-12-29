@@ -24,14 +24,14 @@ pub fn run() {
                 continue;
             }
         };
-        let data = match Reader::new(tokens.iter()).collect::<Result<Vec<_>, _>>() {
+        let data = match Reader::new(tokens.into_iter()).collect::<Result<Vec<_>, _>>() {
             Ok(d) => d,
             Err(e) => {
                 println!("{e}");
                 continue;
             }
         };
-        let exprs = match data.iter().map(parse).collect::<Result<Vec<_>, _>>() {
+        let exprs = match data.into_iter().map(parse).collect::<Result<Vec<_>, _>>() {
             Ok(e) => e,
             Err(e) => {
                 println!("{e}");

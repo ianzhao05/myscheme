@@ -70,8 +70,85 @@ fn is_keyword(symb: &str) -> bool {
     )
 }
 
-fn process_define<'a, I: Iterator<Item = &'a Datum>>(
-    var: &Datum,
+fn process_proc<I: Iterator<Item = Datum>>(
+    list: ListKind,
+    body: I,
+    named: bool,
+) -> Result<(Option<String>, ProcData), ParserError> {
+    let bs_err = || ParserError {
+        kind: ParserErrorKind::BadSyntax((if named { "define" } else { "lambda" }).to_owned()),
+    };
+    let process_forms = |forms: Vec<Datum>| -> Result<(Option<String>, Vec<String>), ParserError> {
+        let mut name = None;
+        let mut fi = forms.into_iter();
+        if named {
+            let first = fi.next().ok_or(ParserError {
+                kind: ParserErrorKind::IllegalEmptyList,
+            })?;
+            name = match first {
+                Datum::Simple(SimpleDatum::Symbol(s)) => Some(s),
+                _ => return Err(bs_err()),
+            };
+        }
+        Ok((
+            name,
+            fi.into_iter()
+                .map(|d| match d {
+                    Datum::Simple(SimpleDatum::Symbol(s)) => {
+                        if is_keyword(&s) {
+                            Err(ParserError {
+                                kind: ParserErrorKind::IllegalVariableName(s),
+                            })
+                        } else {
+                            Ok(s)
+                        }
+                    }
+                    _ => Err(bs_err()),
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        ))
+    };
+    match list {
+        ListKind::Proper(forms) => {
+            let (name, args) = process_forms(forms)?;
+            Ok((
+                name,
+                ProcData {
+                    args,
+                    rest: None,
+                    body: process_body(body)?,
+                },
+            ))
+        }
+        ListKind::Improper(forms, rest) => {
+            let (name, args) = process_forms(forms)?;
+            Ok((
+                name,
+                ProcData {
+                    args,
+                    rest: match *rest {
+                        Datum::Simple(SimpleDatum::Symbol(s)) => {
+                            if is_keyword(&s) {
+                                return Err(ParserError {
+                                    kind: ParserErrorKind::IllegalVariableName(s),
+                                });
+                            }
+                            Some(s)
+                        }
+                        _ => {
+                            return Err(bs_err());
+                        }
+                    },
+                    body: process_body(body)?,
+                },
+            ))
+        }
+        _ => Err(bs_err()),
+    }
+}
+
+fn process_define<I: Iterator<Item = Datum>>(
+    var: Datum,
     mut body: I,
 ) -> Result<Definition, ParserError> {
     let bs_err = || ParserError {
@@ -79,16 +156,16 @@ fn process_define<'a, I: Iterator<Item = &'a Datum>>(
     };
     match var {
         Datum::Simple(SimpleDatum::Symbol(s)) => {
-            if is_keyword(s) {
+            if is_keyword(&s) {
                 Err(ParserError {
-                    kind: ParserErrorKind::IllegalVariableName(s.clone()),
+                    kind: ParserErrorKind::IllegalVariableName(s),
                 })
             } else {
                 let expr = parse_expr(body.next().ok_or_else(bs_err)?)?;
 
                 if body.next().is_none() {
                     Ok(Definition::Variable {
-                        name: s.clone(),
+                        name: s,
                         value: Box::new(expr),
                     })
                 } else {
@@ -96,66 +173,18 @@ fn process_define<'a, I: Iterator<Item = &'a Datum>>(
                 }
             }
         }
-        Datum::Compound(CompoundDatum::List(list)) => match list {
-            ListKind::Proper(forms) | ListKind::Improper(forms, _) => {
-                if forms.is_empty() {
-                    return Err(ParserError {
-                        kind: ParserErrorKind::IllegalEmptyList,
-                    });
-                }
-                let name = match &forms[0] {
-                    Datum::Simple(SimpleDatum::Symbol(s)) => s,
-                    _ => return Err(bs_err()),
-                };
-                let args = forms
-                    .iter()
-                    .skip(1)
-                    .map(|d| match d {
-                        Datum::Simple(SimpleDatum::Symbol(s)) => {
-                            if is_keyword(s) {
-                                Err(ParserError {
-                                    kind: ParserErrorKind::IllegalVariableName(s.clone()),
-                                })
-                            } else {
-                                Ok(s.clone())
-                            }
-                        }
-                        _ => Err(bs_err()),
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-
-                Ok(Definition::Procedure {
-                    name: name.clone(),
-                    data: ProcData {
-                        args,
-                        rest: if let ListKind::Improper(_, rest) = list {
-                            match &**rest {
-                                Datum::Simple(SimpleDatum::Symbol(s)) => {
-                                    if is_keyword(s) {
-                                        return Err(ParserError {
-                                            kind: ParserErrorKind::IllegalVariableName(s.clone()),
-                                        });
-                                    }
-                                    Some(s.clone())
-                                }
-                                _ => {
-                                    return Err(bs_err());
-                                }
-                            }
-                        } else {
-                            None
-                        },
-                        body: process_body(body)?,
-                    },
-                })
-            }
-            _ => Err(bs_err()),
-        },
+        Datum::Compound(CompoundDatum::List(list)) => {
+            let (name, proc_data) = process_proc(list, body, true)?;
+            Ok(Definition::Procedure {
+                name: name.expect("Name should be present"),
+                data: proc_data,
+            })
+        }
         _ => Err(bs_err()),
     }
 }
 
-fn process_body<'a, I: Iterator<Item = &'a Datum>>(data: I) -> Result<Body, ParserError> {
+fn process_body<I: Iterator<Item = Datum>>(data: I) -> Result<Body, ParserError> {
     let mut eods = Vec::new();
     let mut last_is_expr = false;
     for d in data {
@@ -185,7 +214,7 @@ fn process_body<'a, I: Iterator<Item = &'a Datum>>(data: I) -> Result<Body, Pars
 }
 
 fn process_qq_template_or_splice(
-    datum: &Datum,
+    datum: Datum,
     qq_level: usize,
 ) -> Result<QQTemplateOrSplice, ParserError> {
     if qq_level == 0 {
@@ -198,20 +227,25 @@ fn process_qq_template_or_splice(
                 AbbreviationPrefix::UnquoteSplicing,
                 arg,
             ))) => Ok(QQTemplateOrSplice::Splice(process_qq_template(
-                arg,
+                *arg,
                 qq_level - 1,
             )?)),
-            Datum::Compound(CompoundDatum::List(ListKind::Proper(list))) => match list[..] {
-                [Datum::Simple(SimpleDatum::Symbol(ref s)), ref arg] if s == "unquote-splicing" => {
-                    Ok(QQTemplateOrSplice::Splice(process_qq_template(
-                        arg,
-                        qq_level - 1,
-                    )?))
-                }
-                _ => Ok(QQTemplateOrSplice::Template(process_qq_template(
-                    datum, qq_level,
-                )?)),
-            },
+            Datum::Compound(CompoundDatum::List(ListKind::Proper(list))) => {
+                return match list.first() {
+                    Some(Datum::Simple(SimpleDatum::Symbol(s))) if s == "unquote-splicing" => {
+                        Ok(QQTemplateOrSplice::Splice(process_qq_template(
+                            list.into_iter().nth(1).ok_or(ParserError {
+                                kind: ParserErrorKind::IllegalUnquoteSplicing,
+                            })?,
+                            qq_level - 1,
+                        )?))
+                    }
+                    _ => Ok(QQTemplateOrSplice::Template(process_qq_template(
+                        Datum::Compound(CompoundDatum::List(ListKind::Proper(list))),
+                        qq_level,
+                    )?)),
+                };
+            }
             _ => Ok(QQTemplateOrSplice::Template(process_qq_template(
                 datum, qq_level,
             )?)),
@@ -219,7 +253,7 @@ fn process_qq_template_or_splice(
     }
 }
 
-fn process_qq_template(datum: &Datum, qq_level: usize) -> Result<QQTemplate, ParserError> {
+fn process_qq_template(datum: Datum, qq_level: usize) -> Result<QQTemplate, ParserError> {
     if qq_level == 0 {
         return Ok(QQTemplate::Level0(Box::new(parse_expr(datum)?)));
     }
@@ -228,49 +262,59 @@ fn process_qq_template(datum: &Datum, qq_level: usize) -> Result<QQTemplate, Par
         match datum {
             Datum::Simple(_) | Datum::EmptyList => Box::new(QQTemplateData::Datum(datum.clone())),
             Datum::Compound(CompoundDatum::List(list)) => match list {
-                ListKind::Proper(list) => match list[0] {
-                    Datum::Simple(SimpleDatum::Symbol(ref s))
-                        if s == "unquote" || s == "quasiquote" =>
-                    {
-                        if list.len() != 2 {
-                            return Err(ParserError {
+                ListKind::Proper(list) => {
+                    let mut li = list.into_iter();
+                    let first = li.next().ok_or(ParserError {
+                        kind: ParserErrorKind::IllegalEmptyList,
+                    })?;
+                    match first {
+                        Datum::Simple(SimpleDatum::Symbol(ref s))
+                            if s == "unquote" || s == "quasiquote" =>
+                        {
+                            let arg = li.next().ok_or_else(|| ParserError {
                                 kind: ParserErrorKind::BadSyntax(s.to_owned()),
-                            });
+                            })?;
+                            if li.next().is_some() {
+                                return Err(ParserError {
+                                    kind: ParserErrorKind::BadSyntax(s.to_owned()),
+                                });
+                            }
+                            if s == "unquote" {
+                                Box::new(QQTemplateData::Unquotation(process_qq_template(
+                                    arg,
+                                    qq_level - 1,
+                                )?))
+                            } else {
+                                Box::new(QQTemplateData::List(ListQQTemplate::QQ(
+                                    process_qq_template(arg, qq_level + 1)?,
+                                )))
+                            }
                         }
-                        if s == "unquote" {
-                            Box::new(QQTemplateData::Unquotation(process_qq_template(
-                                &list[1],
-                                qq_level - 1,
-                            )?))
-                        } else {
-                            Box::new(QQTemplateData::List(ListQQTemplate::QQ(
-                                process_qq_template(&list[1], qq_level + 1)?,
-                            )))
-                        }
+                        _ => Box::new(QQTemplateData::List(ListQQTemplate::Proper(
+                            std::iter::once(first)
+                                .chain(li)
+                                .map(|d| process_qq_template_or_splice(d, qq_level))
+                                .collect::<Result<Vec<_>, _>>()?,
+                        ))),
                     }
-                    _ => Box::new(QQTemplateData::List(ListQQTemplate::Proper(
-                        list.iter()
-                            .map(|d| process_qq_template_or_splice(d, qq_level))
-                            .collect::<Result<Vec<_>, _>>()?,
-                    ))),
-                },
+                }
                 ListKind::Improper(list, last) => {
                     Box::new(QQTemplateData::List(ListQQTemplate::Improper(
-                        list.iter()
+                        list.into_iter()
                             .map(|d| process_qq_template_or_splice(d, qq_level))
                             .collect::<Result<Vec<_>, _>>()?,
-                        process_qq_template(last, qq_level)?,
+                        process_qq_template(*last, qq_level)?,
                     )))
                 }
                 ListKind::Abbreviation(abbr, arg) => match abbr {
                     AbbreviationPrefix::Unquote => Box::new(QQTemplateData::Unquotation(
-                        process_qq_template(arg, qq_level - 1)?,
+                        process_qq_template(*arg, qq_level - 1)?,
                     )),
                     AbbreviationPrefix::Quote => Box::new(QQTemplateData::List(
-                        ListQQTemplate::Quote(process_qq_template(arg, qq_level)?),
+                        ListQQTemplate::Quote(process_qq_template(*arg, qq_level)?),
                     )),
                     AbbreviationPrefix::Quasiquote => Box::new(QQTemplateData::List(
-                        ListQQTemplate::QQ(process_qq_template(arg, qq_level + 1)?),
+                        ListQQTemplate::QQ(process_qq_template(*arg, qq_level + 1)?),
                     )),
                     AbbreviationPrefix::UnquoteSplicing => {
                         return Err(ParserError {
@@ -281,7 +325,7 @@ fn process_qq_template(datum: &Datum, qq_level: usize) -> Result<QQTemplate, Par
             },
             Datum::Compound(CompoundDatum::Vector(vector)) => Box::new(QQTemplateData::Vector(
                 vector
-                    .iter()
+                    .into_iter()
                     .map(|d| process_qq_template_or_splice(d, qq_level))
                     .collect::<Result<Vec<_>, _>>()?,
             )),
@@ -289,7 +333,7 @@ fn process_qq_template(datum: &Datum, qq_level: usize) -> Result<QQTemplate, Par
     ))
 }
 
-fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
+fn process_keyword<I: Iterator<Item = Datum>>(
     kw: &str,
     mut operands: I,
 ) -> Result<ExprOrDef, ParserError> {
@@ -305,7 +349,7 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                 let operand = operands.next().ok_or_else(bs_err)?;
                 if operands.next().is_none() {
                     Ok(ExprOrDef::Expr(Expr::Literal(LiteralKind::Quotation(
-                        operand.clone(),
+                        operand,
                     ))))
                 } else {
                     Err(bs_err())
@@ -314,66 +358,19 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
             "lambda" => {
                 let formals = operands.next().ok_or_else(bs_err)?;
                 match formals {
-                    Datum::Compound(CompoundDatum::List(list)) => match list {
-                        ListKind::Proper(forms) | ListKind::Improper(forms, _) => {
-                            if forms.is_empty() {
-                                return Err(ParserError {
-                                    kind: ParserErrorKind::IllegalEmptyList,
-                                });
-                            }
-                            let args = forms
-                                .iter()
-                                .map(|d| match d {
-                                    Datum::Simple(SimpleDatum::Symbol(s)) => {
-                                        if is_keyword(s) {
-                                            Err(ParserError {
-                                                kind: ParserErrorKind::IllegalVariableName(
-                                                    s.clone(),
-                                                ),
-                                            })
-                                        } else {
-                                            Ok(s.clone())
-                                        }
-                                    }
-                                    _ => Err(bs_err()),
-                                })
-                                .collect::<Result<Vec<_>, _>>()?;
-
-                            Ok(ExprOrDef::Expr(Expr::Lambda(ProcData {
-                                args,
-                                rest: if let ListKind::Improper(_, rest) = list {
-                                    match &**rest {
-                                        Datum::Simple(SimpleDatum::Symbol(s)) => {
-                                            if is_keyword(s) {
-                                                return Err(ParserError {
-                                                    kind: ParserErrorKind::IllegalVariableName(
-                                                        s.clone(),
-                                                    ),
-                                                });
-                                            }
-                                            Some(s.clone())
-                                        }
-                                        _ => {
-                                            return Err(bs_err());
-                                        }
-                                    }
-                                } else {
-                                    None
-                                },
-                                body: process_body(operands)?,
-                            })))
-                        }
-                        _ => Err(bs_err()),
-                    },
+                    Datum::Compound(CompoundDatum::List(list)) => {
+                        let (_, args) = process_proc(list, operands, false)?;
+                        Ok(ExprOrDef::Expr(Expr::Lambda(args)))
+                    }
                     Datum::Simple(SimpleDatum::Symbol(rest)) => {
-                        if is_keyword(rest) {
+                        if is_keyword(&rest) {
                             return Err(ParserError {
-                                kind: ParserErrorKind::IllegalVariableName(rest.clone()),
+                                kind: ParserErrorKind::IllegalVariableName(rest),
                             });
                         }
                         Ok(ExprOrDef::Expr(Expr::Lambda(ProcData {
                             args: vec![],
-                            rest: Some(rest.clone()),
+                            rest: Some(rest),
                             body: process_body(operands)?,
                         })))
                     }
@@ -431,7 +428,7 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                 if operands.next().is_none() {
                     Ok(ExprOrDef::Expr(Expr::Assignment {
                         variable: match variable {
-                            Datum::Simple(SimpleDatum::Symbol(s)) => s.clone(),
+                            Datum::Simple(SimpleDatum::Symbol(s)) => s,
                             _ => {
                                 return Err(bs_err());
                             }
@@ -468,18 +465,13 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                         return Err(bs_err());
                     }
                     if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = clause {
-                        if parts.is_empty() {
-                            return Err(ParserError {
-                                kind: ParserErrorKind::IllegalEmptyList,
-                            });
-                        }
-                        match &parts[0] {
+                        let mut pi = parts.into_iter();
+                        let first = pi.next().ok_or(ParserError {
+                            kind: ParserErrorKind::IllegalEmptyList,
+                        })?;
+                        match first {
                             Datum::Simple(SimpleDatum::Symbol(s)) if s == "else" => {
-                                let seq = parts
-                                    .iter()
-                                    .skip(1)
-                                    .map(parse_expr)
-                                    .collect::<Result<Vec<_>, _>>()?;
+                                let seq = pi.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
                                 if seq.is_empty() {
                                     return Err(bs_err());
                                 }
@@ -487,23 +479,24 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                                 else_present = true;
                             }
                             _ => {
-                                let test = parse_expr(&parts[0])?;
-                                if parts.len() == 1 {
+                                let test = parse_expr(first)?;
+                                let second = pi.next();
+                                if second.is_none() {
                                     clauses.push(CondClause::Normal(test, vec![]));
                                     continue;
                                 }
-                                match &parts[1] {
-                                    Datum::Simple(SimpleDatum::Symbol(s)) if s == "=>" => {
-                                        if parts.len() != 3 {
+                                match second.unwrap() {
+                                    Datum::Simple(SimpleDatum::Symbol(ref s)) if s == "=>" => {
+                                        let third = pi.next().ok_or_else(bs_err)?;
+                                        if pi.next().is_some() {
                                             return Err(bs_err());
                                         }
-                                        let recipient = parse_expr(&parts[2])?;
+                                        let recipient = parse_expr(third)?;
                                         clauses.push(CondClause::Arrow(test, recipient));
                                     }
-                                    _ => {
-                                        let seq = parts
-                                            .iter()
-                                            .skip(1)
+                                    second => {
+                                        let seq = std::iter::once(second)
+                                            .chain(pi)
                                             .map(parse_expr)
                                             .collect::<Result<Vec<_>, _>>()?;
                                         if seq.is_empty() {
@@ -538,18 +531,13 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                         return Err(bs_err());
                     }
                     if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = clause {
-                        if parts.is_empty() {
-                            return Err(ParserError {
-                                kind: ParserErrorKind::IllegalEmptyList,
-                            });
-                        }
-                        match &parts[0] {
+                        let mut pi = parts.into_iter();
+                        let first = pi.next().ok_or(ParserError {
+                            kind: ParserErrorKind::IllegalEmptyList,
+                        })?;
+                        match &first {
                             Datum::Simple(SimpleDatum::Symbol(s)) if s == "else" => {
-                                let seq = parts
-                                    .iter()
-                                    .skip(1)
-                                    .map(parse_expr)
-                                    .collect::<Result<Vec<_>, _>>()?;
+                                let seq = pi.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
                                 if seq.is_empty() {
                                     return Err(bs_err());
                                 }
@@ -559,13 +547,9 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                             _ => {
                                 if let Datum::Compound(CompoundDatum::List(ListKind::Proper(
                                     keys,
-                                ))) = &parts[0]
+                                ))) = first
                                 {
-                                    let seq = parts
-                                        .iter()
-                                        .skip(1)
-                                        .map(parse_expr)
-                                        .collect::<Result<Vec<_>, _>>()?;
+                                    let seq = pi.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
                                     if seq.is_empty() {
                                         return Err(bs_err());
                                     }
@@ -590,7 +574,7 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                 if let Datum::Simple(SimpleDatum::Symbol(n)) = first {
                     if kw == "let" {
                         first = operands.next().ok_or_else(bs_err)?;
-                        name = Some(n.clone());
+                        name = Some(n);
                     } else {
                         return Err(bs_err());
                     }
@@ -603,7 +587,7 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                         )) = first
                         {
                             binding_data
-                                .iter()
+                                .into_iter()
                                 .map(|binding| {
                                     if let Datum::Compound(CompoundDatum::List(ListKind::Proper(
                                         parts,
@@ -612,9 +596,11 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                                         if parts.len() != 2 {
                                             return Err(bs_err());
                                         }
-                                        if let Datum::Simple(SimpleDatum::Symbol(name)) = &parts[0]
+                                        let mut pi = parts.into_iter();
+                                        if let Datum::Simple(SimpleDatum::Symbol(name)) =
+                                            pi.next().unwrap()
                                         {
-                                            Ok((name.clone(), parse_expr(&parts[1])?))
+                                            Ok((name, parse_expr(pi.next().unwrap())?))
                                         } else {
                                             Err(bs_err())
                                         }
@@ -657,7 +643,7 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                         ))) = first
                         {
                             spec_data
-                                .iter()
+                                .into_iter()
                                 .map(|spec| {
                                     if let Datum::Compound(CompoundDatum::List(ListKind::Proper(
                                         parts,
@@ -666,16 +652,14 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                                         if parts.len() != 2 && parts.len() != 3 {
                                             return Err(bs_err());
                                         }
-                                        if let Datum::Simple(SimpleDatum::Symbol(name)) = &parts[0]
+                                        let mut pi = parts.into_iter();
+                                        if let Datum::Simple(SimpleDatum::Symbol(name)) =
+                                            pi.next().unwrap()
                                         {
                                             Ok(IterationSpec {
-                                                variable: name.clone(),
-                                                init: parse_expr(&parts[1])?,
-                                                step: match parts.len() {
-                                                    2 => None,
-                                                    3 => Some(parse_expr(&parts[2])?),
-                                                    _ => unreachable!("parts len should be 2 or 3"),
-                                                },
+                                                variable: name,
+                                                init: parse_expr(pi.next().unwrap())?,
+                                                step: pi.next().map(parse_expr).transpose()?,
                                             })
                                         } else {
                                             Err(bs_err())
@@ -691,15 +675,9 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
                         let second = operands.next().ok_or_else(bs_err)?;
                         if let Datum::Compound(CompoundDatum::List(ListKind::Proper(term))) = second
                         {
-                            if term.is_empty() {
-                                return Err(bs_err());
-                            }
-                            let test = parse_expr(&term[0])?;
-                            let seq = term
-                                .iter()
-                                .skip(1)
-                                .map(parse_expr)
-                                .collect::<Result<Vec<_>, _>>()?;
+                            let mut ei = term.into_iter().map(parse_expr);
+                            let test = ei.next().ok_or_else(bs_err)??;
+                            let seq = ei.collect::<Result<Vec<_>, _>>()?;
                             let body = operands.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
                             Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Do {
                                 specs,
@@ -742,7 +720,7 @@ fn process_keyword<'a, I: Iterator<Item = &'a Datum>>(
     }
 }
 
-fn parse_expr(datum: &Datum) -> Result<Expr, ParserError> {
+fn parse_expr(datum: Datum) -> Result<Expr, ParserError> {
     match parse(datum)? {
         ExprOrDef::Expr(expr) => Ok(expr),
         _ => Err(ParserError {
@@ -751,76 +729,54 @@ fn parse_expr(datum: &Datum) -> Result<Expr, ParserError> {
     }
 }
 
-pub fn parse(datum: &Datum) -> Result<ExprOrDef, ParserError> {
+pub fn parse(datum: Datum) -> Result<ExprOrDef, ParserError> {
     match datum {
         Datum::Simple(simple) => match simple {
             SimpleDatum::Boolean(b) => Ok(ExprOrDef::Expr(Expr::Literal(
-                LiteralKind::SelfEvaluating(SelfEvaluatingKind::Boolean(*b)),
+                LiteralKind::SelfEvaluating(SelfEvaluatingKind::Boolean(b)),
             ))),
             SimpleDatum::Number(n) => Ok(ExprOrDef::Expr(Expr::Literal(
-                LiteralKind::SelfEvaluating(SelfEvaluatingKind::Number(n.clone())),
+                LiteralKind::SelfEvaluating(SelfEvaluatingKind::Number(n)),
             ))),
             SimpleDatum::Character(c) => Ok(ExprOrDef::Expr(Expr::Literal(
-                LiteralKind::SelfEvaluating(SelfEvaluatingKind::Character(*c)),
+                LiteralKind::SelfEvaluating(SelfEvaluatingKind::Character(c)),
             ))),
             SimpleDatum::String(s) => Ok(ExprOrDef::Expr(Expr::Literal(
-                LiteralKind::SelfEvaluating(SelfEvaluatingKind::String(s.clone())),
+                LiteralKind::SelfEvaluating(SelfEvaluatingKind::String(s)),
             ))),
-            SimpleDatum::Symbol(symb) => match symb.as_str() {
+            SimpleDatum::Symbol(symb) => match &symb {
                 kw if is_keyword(kw) => Err(ParserError {
                     kind: ParserErrorKind::BadSyntax(kw.to_owned()),
                 }),
-                _ => Ok(ExprOrDef::Expr(Expr::Variable(symb.clone()))),
+                _ => Ok(ExprOrDef::Expr(Expr::Variable(symb))),
             },
         },
         Datum::Compound(compound) => match compound {
             CompoundDatum::List(list) => match list {
                 ListKind::Proper(list) => {
-                    let first = list.first().ok_or(ParserError {
+                    let mut li = list.into_iter();
+                    let first = li.next().ok_or(ParserError {
                         kind: ParserErrorKind::IllegalEmptyList,
                     })?;
-                    match first {
-                        Datum::Simple(simple) => {
-                            let operator = parse_expr(first);
-                            let operands = list.iter().skip(1);
-                            match operator {
-                                Ok(se) => Ok(ExprOrDef::Expr(Expr::ProcCall {
-                                    operator: Box::new(se),
-                                    operands: operands
-                                        .map(parse_expr)
-                                        .collect::<Result<Vec<_>, _>>()?,
-                                })),
-                                Err(_) => {
-                                    if let SimpleDatum::Symbol(kw) = simple {
-                                        process_keyword(kw, operands)
-                                    } else {
-                                        unreachable!("keyword should be a symbol")
-                                    }
-                                }
-                            }
+                    match &first {
+                        Datum::Simple(SimpleDatum::Symbol(kw)) if is_keyword(kw) => {
+                            process_keyword(kw, li)
                         }
-                        Datum::Compound(_) => {
+                        _ => {
                             let operator = parse_expr(first)?;
-                            let rest = list
-                                .iter()
-                                .skip(1)
-                                .map(parse_expr)
-                                .collect::<Result<Vec<_>, _>>()?;
+                            let rest = li.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
                             Ok(ExprOrDef::Expr(Expr::ProcCall {
                                 operator: Box::new(operator),
                                 operands: rest,
                             }))
                         }
-                        Datum::EmptyList => Err(ParserError {
-                            kind: ParserErrorKind::IllegalEmptyList,
-                        }),
                     }
                 }
                 ListKind::Improper(_, _) => Err(ParserError {
                     kind: ParserErrorKind::IllegalDot,
                 }),
                 ListKind::Abbreviation(abbr, arg) => {
-                    let operands = std::iter::once(&**arg);
+                    let operands = std::iter::once(*arg);
                     process_keyword(abbr.to_keyword(), operands)
                 }
             },
@@ -842,16 +798,16 @@ mod tests {
     #[test]
     fn literals() {
         assert_eq!(
-            parse(&bool_datum!(true)),
+            parse(bool_datum!(true)),
             Ok(ExprOrDef::Expr(bool_expr!(true)))
         );
-        assert_eq!(parse(&int_datum!(42)), Ok(ExprOrDef::Expr(int_expr!(42))));
+        assert_eq!(parse(int_datum!(42)), Ok(ExprOrDef::Expr(int_expr!(42))));
         assert_eq!(
-            parse(&char_datum!('c')),
+            parse(char_datum!('c')),
             Ok(ExprOrDef::Expr(char_expr!('c')))
         );
         assert_eq!(
-            parse(&str_datum!("foo")),
+            parse(str_datum!("foo")),
             Ok(ExprOrDef::Expr(str_expr!("foo")))
         );
     }
@@ -859,7 +815,7 @@ mod tests {
     #[test]
     fn proc_calls() {
         assert_eq!(
-            parse(&proper_list_datum![symbol_datum!("f")]),
+            parse(proper_list_datum![symbol_datum!("f")]),
             Ok(ExprOrDef::Expr(Expr::ProcCall {
                 operator: Box::new(var_expr!("f")),
                 operands: vec![],
@@ -867,7 +823,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("g"),
                 int_datum!(1),
                 int_datum!(2),
@@ -882,19 +838,19 @@ mod tests {
     #[test]
     fn illegal_literals() {
         assert_eq!(
-            parse(&Datum::EmptyList),
+            parse(Datum::EmptyList),
             Err(ParserError {
                 kind: ParserErrorKind::IllegalEmptyList,
             })
         );
         assert_eq!(
-            parse(&improper_list_datum![int_datum!(1); int_datum!(2)]),
+            parse(improper_list_datum![int_datum!(1); int_datum!(2)]),
             Err(ParserError {
                 kind: ParserErrorKind::IllegalDot,
             })
         );
         assert_eq!(
-            parse(&vector_datum![int_datum!(1), int_datum!(2)]),
+            parse(vector_datum![int_datum!(1), int_datum!(2)]),
             Err(ParserError {
                 kind: ParserErrorKind::IllegalVector,
             })
@@ -904,7 +860,7 @@ mod tests {
     #[test]
     fn definitions() {
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("define"),
                 symbol_datum!("x"),
                 int_datum!(42),
@@ -916,7 +872,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse_expr(&proper_list_datum![
+            parse_expr(proper_list_datum![
                 symbol_datum!("define"),
                 symbol_datum!("x"),
                 int_datum!(42),
@@ -927,7 +883,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("define"),
                 proper_list_datum![symbol_datum!("f"), symbol_datum!("x")],
                 proper_list_datum![symbol_datum!("define"), symbol_datum!("y"), int_datum!(1)],
@@ -953,7 +909,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("define"),
                 improper_list_datum![
                     symbol_datum!("f"),
@@ -974,7 +930,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("define"),
                 proper_list_datum![symbol_datum!("f"), int_datum!(1),],
                 int_datum!(2),
@@ -985,14 +941,14 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![symbol_datum!("define")]),
+            parse(proper_list_datum![symbol_datum!("define")]),
             Err(ParserError {
                 kind: ParserErrorKind::BadSyntax("define".to_owned())
             })
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("define"),
                 int_datum!(1),
                 int_datum!(2),
@@ -1003,19 +959,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
-                symbol_datum!("define"),
-                symbol_datum!("x"),
-                int_datum!(1),
-                int_datum!(2),
-            ]),
-            Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("define".to_owned())
-            })
-        );
-
-        assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("define"),
                 symbol_datum!("x"),
                 int_datum!(1),
@@ -1027,7 +971,19 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
+                symbol_datum!("define"),
+                symbol_datum!("x"),
+                int_datum!(1),
+                int_datum!(2),
+            ]),
+            Err(ParserError {
+                kind: ParserErrorKind::BadSyntax("define".to_owned())
+            })
+        );
+
+        assert_eq!(
+            parse(proper_list_datum![
                 symbol_datum!("define"),
                 proper_list_datum![symbol_datum!("f"), symbol_datum!("x")],
             ]),
@@ -1037,7 +993,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("define"),
                 proper_list_datum![symbol_datum!("f"), symbol_datum!("x")],
                 int_datum!(1),
@@ -1052,7 +1008,7 @@ mod tests {
     #[test]
     fn lambdas() {
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("lambda"),
                 proper_list_datum![symbol_datum!("x"), symbol_datum!("y")],
                 proper_list_datum![symbol_datum!("+"), symbol_datum!("x"), symbol_datum!("y")],
@@ -1068,7 +1024,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("lambda"),
                 improper_list_datum![
                     symbol_datum!("x"),
@@ -1107,7 +1063,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("lambda"),
                 symbol_datum!("args"),
                 int_datum!(1)
@@ -1120,7 +1076,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("lambda"),
                 Datum::EmptyList,
                 int_datum!(1)
@@ -1133,14 +1089,14 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![symbol_datum!("lambda")]),
+            parse(proper_list_datum![symbol_datum!("lambda")]),
             Err(ParserError {
                 kind: ParserErrorKind::BadSyntax("lambda".to_owned())
             })
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("lambda"),
                 proper_list_datum![symbol_datum!("x")]
             ]),
@@ -1150,7 +1106,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("lambda"),
                 proper_list_datum![symbol_datum!("x")],
                 int_datum!(1),
@@ -1165,7 +1121,7 @@ mod tests {
     #[test]
     fn quotes() {
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("quote"),
                 proper_list_datum![symbol_datum!("a"), symbol_datum!("b")],
             ]),
@@ -1175,14 +1131,14 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![symbol_datum!("quote")]),
+            parse(proper_list_datum![symbol_datum!("quote")]),
             Err(ParserError {
                 kind: ParserErrorKind::BadSyntax("quote".to_owned())
             })
         );
 
         assert_eq!(
-            parse(&abbr_list_datum!(
+            parse(abbr_list_datum!(
                 AbbreviationPrefix::Quote,
                 proper_list_datum![symbol_datum!("a"), symbol_datum!("b")]
             )),
@@ -1195,7 +1151,7 @@ mod tests {
     #[test]
     fn assignments() {
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("set!"),
                 symbol_datum!("x"),
                 int_datum!(1),
@@ -1207,14 +1163,14 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![symbol_datum!("set!")]),
+            parse(proper_list_datum![symbol_datum!("set!")]),
             Err(ParserError {
                 kind: ParserErrorKind::BadSyntax("set!".to_owned())
             })
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("set!"),
                 symbol_datum!("x"),
                 int_datum!(1),
@@ -1229,7 +1185,7 @@ mod tests {
     #[test]
     fn begins() {
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("begin"),
                 proper_list_datum![symbol_datum!("define"), symbol_datum!("x"), int_datum!(42)],
                 str_datum!("hello"),
@@ -1250,7 +1206,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("begin"),
                 proper_list_datum![symbol_datum!("define"), symbol_datum!("x"), int_datum!(42)],
                 proper_list_datum![symbol_datum!("define"), symbol_datum!("y"), int_datum!(43)],
@@ -1268,14 +1224,14 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![symbol_datum!("begin")]),
+            parse(proper_list_datum![symbol_datum!("begin")]),
             Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Begin(
                 vec![]
             ))))
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("begin"),
                 symbol_datum!("x"),
                 symbol_datum!("y"),
@@ -1290,7 +1246,7 @@ mod tests {
     #[test]
     fn conds() {
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("cond"),
                 proper_list_datum![bool_datum!(false), int_datum!(0)],
                 proper_list_datum![
@@ -1328,7 +1284,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("cond"),
                 proper_list_datum![symbol_datum!("else"), int_datum!(0)],
                 proper_list_datum![bool_datum!(true), int_datum!(1)],
@@ -1339,7 +1295,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("cond"),
                 proper_list_datum![symbol_datum!("else"), int_datum!(0)],
                 proper_list_datum![symbol_datum!("else"), int_datum!(1)],
@@ -1353,7 +1309,7 @@ mod tests {
     #[test]
     fn ands_ors() {
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("and"),
                 bool_datum!(true),
                 bool_datum!(false),
@@ -1364,7 +1320,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("or"),
                 bool_datum!(true),
                 bool_datum!(false),
@@ -1375,14 +1331,14 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![symbol_datum!("and")]),
+            parse(proper_list_datum![symbol_datum!("and")]),
             Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::And(
                 vec![]
             ))))
         );
 
         assert_eq!(
-            parse(&proper_list_datum![symbol_datum!("or")]),
+            parse(proper_list_datum![symbol_datum!("or")]),
             Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Or(
                 vec![]
             ))))
@@ -1392,7 +1348,7 @@ mod tests {
     #[test]
     fn cases() {
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("case"),
                 int_datum!(42),
                 proper_list_datum![proper_list_datum![int_datum!(1)], int_datum!(2)],
@@ -1413,7 +1369,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("case"),
                 int_datum!(42),
                 proper_list_datum![symbol_datum!("else"), int_datum!(0)],
@@ -1425,7 +1381,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("case"),
                 int_datum!(42),
                 proper_list_datum![symbol_datum!("else"), int_datum!(0)],
@@ -1440,7 +1396,7 @@ mod tests {
     #[test]
     fn lets() {
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("let"),
                 Datum::EmptyList,
                 int_datum!(0)
@@ -1453,7 +1409,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("let"),
                 proper_list_datum![proper_list_datum![symbol_datum!("x"), int_datum!(1)]],
                 proper_list_datum![symbol_datum!("define"), symbol_datum!("y"), int_datum!(2)],
@@ -1476,7 +1432,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("let*"),
                 proper_list_datum![proper_list_datum![symbol_datum!("x"), int_datum!(1)]],
                 symbol_datum!("x"),
@@ -1489,7 +1445,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("letrec"),
                 proper_list_datum![proper_list_datum![symbol_datum!("x"), int_datum!(1)]],
                 symbol_datum!("x"),
@@ -1502,7 +1458,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("let"),
                 symbol_datum!("foo"),
                 proper_list_datum![proper_list_datum![symbol_datum!("x"), int_datum!(1)]],
@@ -1519,7 +1475,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("let*"),
                 symbol_datum!("foo"),
                 proper_list_datum![proper_list_datum![symbol_datum!("x"), int_datum!(1)]],
@@ -1531,21 +1487,21 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![symbol_datum!("let")]),
+            parse(proper_list_datum![symbol_datum!("let")]),
             Err(ParserError {
                 kind: ParserErrorKind::BadSyntax("let".to_owned())
             })
         );
 
         assert_eq!(
-            parse(&proper_list_datum![symbol_datum!("let"), int_datum!(1)]),
+            parse(proper_list_datum![symbol_datum!("let"), int_datum!(1)]),
             Err(ParserError {
                 kind: ParserErrorKind::BadSyntax("let".to_owned())
             })
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("let"),
                 proper_list_datum![symbol_datum!("x"), int_datum!(1)],
                 symbol_datum!("x")
@@ -1559,7 +1515,7 @@ mod tests {
     #[test]
     fn dos() {
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("do"),
                 proper_list_datum![
                     proper_list_datum![
@@ -1605,7 +1561,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("do"),
                 Datum::EmptyList,
                 proper_list_datum![bool_datum!(false)],
@@ -1625,7 +1581,7 @@ mod tests {
     #[test]
     fn delays() {
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("delay"),
                 proper_list_datum![symbol_datum!("f"), int_datum!(1)]
             ]),
@@ -1638,14 +1594,14 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&proper_list_datum![symbol_datum!("delay")]),
+            parse(proper_list_datum![symbol_datum!("delay")]),
             Err(ParserError {
                 kind: ParserErrorKind::BadSyntax("delay".to_owned())
             })
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("delay"),
                 int_datum!(1),
                 int_datum!(2)
@@ -1659,7 +1615,7 @@ mod tests {
     #[test]
     fn quasiquotes() {
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("quasiquote"),
                 int_datum!(1),
             ]),
@@ -1686,7 +1642,7 @@ mod tests {
             ]))
         };
         assert_eq!(
-            parse(&abbr_list_datum!(
+            parse(abbr_list_datum!(
                 AbbreviationPrefix::Quasiquote,
                 proper_list_datum![symbol_datum!("+"), int_datum!(1), int_datum!(2)],
             )),
@@ -1696,7 +1652,7 @@ mod tests {
             )))),
         );
 
-        let with_abbrs = parse(&abbr_list_datum!(
+        let with_abbrs = parse(abbr_list_datum!(
             AbbreviationPrefix::Quasiquote,
             proper_list_datum![
                 symbol_datum!("a"),
@@ -1718,7 +1674,7 @@ mod tests {
                 symbol_datum!("b"),
             ],
         ));
-        let with_kws = parse(&proper_list_datum![
+        let with_kws = parse(proper_list_datum![
             symbol_datum!("quasiquote"),
             proper_list_datum![
                 symbol_datum!("a"),
@@ -1779,7 +1735,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&abbr_list_datum!(
+            parse(abbr_list_datum!(
                 AbbreviationPrefix::Quasiquote,
                 vector_datum![
                     int_datum!(1),
@@ -1820,7 +1776,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&abbr_list_datum!(
+            parse(abbr_list_datum!(
                 AbbreviationPrefix::Quasiquote,
                 proper_list_datum![
                     symbol_datum!("a"),
@@ -1942,7 +1898,7 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&abbr_list_datum!(
+            parse(abbr_list_datum!(
                 AbbreviationPrefix::Quasiquote,
                 improper_list_datum![int_datum!(1), int_datum!(2); int_datum!(3)]
             )),
@@ -1968,28 +1924,28 @@ mod tests {
     #[test]
     fn unquote_errs() {
         assert_eq!(
-            parse(&proper_list_datum![symbol_datum!("unquote")]),
+            parse(proper_list_datum![symbol_datum!("unquote")]),
             Err(ParserError {
                 kind: ParserErrorKind::IllegalUnquote
             })
         );
 
         assert_eq!(
-            parse(&proper_list_datum![symbol_datum!("unquote-splicing")]),
+            parse(proper_list_datum![symbol_datum!("unquote-splicing")]),
             Err(ParserError {
                 kind: ParserErrorKind::IllegalUnquoteSplicing
             })
         );
 
         assert_eq!(
-            parse(&proper_list_datum![symbol_datum!("unquote"), int_datum!(1)]),
+            parse(proper_list_datum![symbol_datum!("unquote"), int_datum!(1)]),
             Err(ParserError {
                 kind: ParserErrorKind::IllegalUnquote
             })
         );
 
         assert_eq!(
-            parse(&proper_list_datum![
+            parse(proper_list_datum![
                 symbol_datum!("unquote-splicing"),
                 int_datum!(1),
             ]),
@@ -1999,17 +1955,14 @@ mod tests {
         );
 
         assert_eq!(
-            parse(&abbr_list_datum!(
-                AbbreviationPrefix::Unquote,
-                int_datum!(1),
-            )),
+            parse(abbr_list_datum!(AbbreviationPrefix::Unquote, int_datum!(1),)),
             Err(ParserError {
                 kind: ParserErrorKind::IllegalUnquote
             })
         );
 
         assert_eq!(
-            parse(&abbr_list_datum!(
+            parse(abbr_list_datum!(
                 AbbreviationPrefix::UnquoteSplicing,
                 int_datum!(1),
             )),

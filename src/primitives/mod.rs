@@ -42,13 +42,17 @@ pub fn prelude() -> &'static [ExprOrDef] {
     lazy_static! {
         static ref PRELUDE: Vec<ExprOrDef> = {
             let prelude = vec![numeric::PRELUDE, eq::PRELUDE, list::PRELUDE].join("");
-            Reader::new(tokenize!(&prelude).expect("Error lexing prelude").iter())
-                .collect::<Result<Vec<_>, _>>()
-                .expect("Error reading prelude")
-                .iter()
-                .map(parse)
-                .collect::<Result<Vec<_>, _>>()
-                .expect("Error parsing prelude")
+            Reader::new(
+                tokenize!(&prelude)
+                    .expect("Error lexing prelude")
+                    .into_iter(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .expect("Error reading prelude")
+            .into_iter()
+            .map(parse)
+            .collect::<Result<Vec<_>, _>>()
+            .expect("Error parsing prelude")
         };
     }
     &PRELUDE
