@@ -29,6 +29,13 @@ impl ObjectRef {
             _ => false,
         }
     }
+
+    pub fn try_deref<E, F: FnOnce(&Self) -> E>(&self, err: F) -> Result<&Object, E> {
+        match self {
+            ObjectRef::Object(o) => Ok(o),
+            _ => Err(err(self)),
+        }
+    }
 }
 
 impl Deref for ObjectRef {

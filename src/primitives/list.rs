@@ -5,6 +5,13 @@ use crate::object::{Object, ObjectRef};
 
 use super::PrimitiveMap;
 
+fn pair_cv(got: &ObjectRef) -> EvalError {
+    EvalError::new(EvalErrorKind::ContractViolation {
+        expected: "pair".to_owned(),
+        got: got.clone(),
+    })
+}
+
 fn cons(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     if args.len() != 2 {
         return Err(EvalError::new(EvalErrorKind::ArityMismatch {
@@ -24,16 +31,13 @@ fn select(args: &[ObjectRef], first: bool) -> Result<ObjectRef, EvalError> {
             rest: false,
         }));
     }
-    match &*args[0] {
+    match &args[0].try_deref(pair_cv)? {
         Object::Pair(p) => Ok(if first {
             p.borrow().0.clone()
         } else {
             p.borrow().1.clone()
         }),
-        _ => Err(EvalError::new(EvalErrorKind::ContractViolation {
-            expected: "pair".to_owned(),
-            got: args[0].clone(),
-        })),
+        _ => Err(pair_cv(&args[0])),
     }
 }
 
@@ -82,6 +86,13 @@ mod tests {
         assert_eq!(
             select(&[p], false),
             Ok(ObjectRef::new(atom_obj!(int_datum!(2))))
+        );
+        assert_eq!(
+            select(&[ObjectRef::EmptyList], false),
+            Err(EvalError::new(EvalErrorKind::ContractViolation {
+                expected: "pair".to_owned(),
+                got: ObjectRef::EmptyList
+            }))
         );
     }
 }
