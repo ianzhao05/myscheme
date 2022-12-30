@@ -364,7 +364,7 @@ mod tests {
             Ok(EvalResult::Expr(ObjectRef::Void))
         );
         assert_eq!(
-            eval(&ExprOrDef::Expr(var_expr!("a")), env.clone()),
+            eval(&ExprOrDef::Expr(var_expr!("a")), env),
             Ok(EvalResult::Expr(ObjectRef::new(atom_obj!(int_datum!(2)))))
         );
     }
