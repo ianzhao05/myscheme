@@ -1,13 +1,28 @@
 pub mod datum;
+pub mod env;
+pub mod err;
+pub mod evaler;
 pub mod expr;
+pub mod interpret;
 pub mod lexer;
 pub mod number;
+pub mod object;
 pub mod parser;
-pub mod read;
-pub mod repl;
+pub mod primitives;
+pub mod proc;
+pub mod reader;
+
+pub use crate::interpret::{eval_str, repl};
 
 #[cfg(test)]
 pub mod test_util {
+    macro_rules! tokenize {
+        ($e:expr) => {
+            $crate::lexer::Lexer::new($e).collect::<Result<Vec<_>, _>>()
+        };
+    }
+    pub(crate) use tokenize;
+
     macro_rules! int_datum {
         ($n:expr) => {
             $crate::datum::Datum::Simple($crate::datum::SimpleDatum::Number(
@@ -130,4 +145,14 @@ pub mod test_util {
         };
     }
     pub(crate) use var_expr;
+
+    macro_rules! atom_obj {
+        ($d:expr) => {
+            match $d {
+                $crate::datum::Datum::Simple(s) => $crate::object::Object::Atom(s),
+                _ => panic!("Expected simple datum, got {:?}", $d),
+            }
+        };
+    }
+    pub(crate) use atom_obj;
 }

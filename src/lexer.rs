@@ -210,16 +210,10 @@ impl<'a> Iterator for Lexer<'a> {
     }
 }
 
-#[macro_export]
-macro_rules! tokenize {
-    ($e:expr) => {
-        $crate::lexer::Lexer::new($e).collect::<Result<Vec<_>, _>>()
-    };
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::tokenize;
 
     #[test]
     fn identifiers() {

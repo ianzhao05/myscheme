@@ -1,5 +1,3 @@
-use myscheme::repl;
-
 fn main() {
-    repl::run();
+    myscheme::repl();
 }

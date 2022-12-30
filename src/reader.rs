@@ -12,6 +12,7 @@ pub enum ReaderErrorKind {
     UnexpectedToken(Token),
     UnexpectedEndOfInput,
     IllegalDot,
+    InvalidNumber(String),
 }
 
 #[derive(Debug, PartialEq)]
@@ -27,28 +28,32 @@ impl fmt::Display for ReaderError {
             ReaderErrorKind::UnexpectedToken(t) => write!(f, "Unexpected token {t}"),
             ReaderErrorKind::UnexpectedEndOfInput => write!(f, "Unexpected end of input"),
             ReaderErrorKind::IllegalDot => write!(f, "Illegal use of dot"),
+            ReaderErrorKind::InvalidNumber(n) => write!(f, "Invalid number {n}"),
         }
     }
 }
 
-pub fn read<'a, I: Iterator<Item = &'a Token>>(token_iter: I) -> Result<Datum, ReaderError> {
+pub fn read<I: Iterator<Item = Token>>(token_iter: I) -> Result<Datum, ReaderError> {
     read_impl(&mut token_iter.peekable())
 }
 
-fn read_impl<'a, I: Iterator<Item = &'a Token>>(
-    tip: &mut Peekable<I>,
-) -> Result<Datum, ReaderError> {
+fn read_impl<I: Iterator<Item = Token>>(tip: &mut Peekable<I>) -> Result<Datum, ReaderError> {
     let token = tip.next().ok_or(ReaderError {
         kind: ReaderErrorKind::UnexpectedEndOfInput,
     })?;
     match token {
-        Token::Boolean(b) => Ok(Datum::Simple(SimpleDatum::Boolean(*b))),
-        Token::Character(c) => Ok(Datum::Simple(SimpleDatum::Character(*c))),
-        Token::String(s) => Ok(Datum::Simple(SimpleDatum::String(s.clone()))),
-        Token::Identifier(s) => Ok(Datum::Simple(SimpleDatum::Symbol(s.clone()))),
+        Token::Boolean(b) => Ok(Datum::Simple(SimpleDatum::Boolean(b))),
+        Token::Character(c) => Ok(Datum::Simple(SimpleDatum::Character(c))),
+        Token::String(s) => Ok(Datum::Simple(SimpleDatum::String(s))),
+        Token::Identifier(s) => Ok(Datum::Simple(SimpleDatum::Symbol(s))),
         Token::Number(n) => {
-            let number = Number::from_str(n).unwrap();
-            Ok(Datum::Simple(SimpleDatum::Number(number)))
+            let number = Number::from_str(&n);
+            match number {
+                Ok(n) => Ok(Datum::Simple(SimpleDatum::Number(n))),
+                Err(_) => Err(ReaderError {
+                    kind: ReaderErrorKind::InvalidNumber(n),
+                }),
+            }
         }
         Token::LParen => {
             let mut list = Vec::new();
@@ -140,13 +145,13 @@ fn read_impl<'a, I: Iterator<Item = &'a Token>>(
     }
 }
 
-pub struct Reader<'a, I: Iterator<Item = &'a Token>> {
+pub struct Reader<I: Iterator<Item = Token>> {
     token_iter: Peekable<I>,
     error: bool,
 }
 
-impl<'a, I: Iterator<Item = &'a Token>> Reader<'a, I> {
-    pub fn new(token_iter: I) -> Reader<'a, I> {
+impl<I: Iterator<Item = Token>> Reader<I> {
+    pub fn new(token_iter: I) -> Reader<I> {
         Reader {
             token_iter: token_iter.peekable(),
             error: false,
@@ -154,7 +159,7 @@ impl<'a, I: Iterator<Item = &'a Token>> Reader<'a, I> {
     }
 }
 
-impl<'a, I: Iterator<Item = &'a Token>> Iterator for Reader<'a, I> {
+impl<I: Iterator<Item = Token>> Iterator for Reader<I> {
     type Item = Result<Datum, ReaderError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -178,27 +183,27 @@ mod tests {
     #[test]
     fn simple_datum() {
         assert_eq!(
-            read(&mut vec![Token::Boolean(true)].iter()),
+            read(vec![Token::Boolean(true)].into_iter()),
             Ok(bool_datum!(true))
         );
 
         assert_eq!(
-            read(&mut vec![Token::Number("123".to_owned())].iter()),
+            read(vec![Token::Number("123".to_owned())].into_iter()),
             Ok(int_datum!(123))
         );
 
         assert_eq!(
-            read(&mut vec![Token::Character('a')].iter()),
+            read(vec![Token::Character('a')].into_iter()),
             Ok(char_datum!('a'))
         );
 
         assert_eq!(
-            read(&mut vec![Token::String("foo".to_owned())].iter()),
+            read(vec![Token::String("foo".to_owned())].into_iter()),
             Ok(str_datum!("foo"))
         );
 
         assert_eq!(
-            read(&mut vec![Token::Identifier("foo".to_owned())].iter()).unwrap(),
+            read(vec![Token::Identifier("foo".to_owned())].into_iter()).unwrap(),
             symbol_datum!("foo")
         );
     }
@@ -206,7 +211,7 @@ mod tests {
     #[test]
     fn empty_list() {
         assert_eq!(
-            read(&mut vec![Token::LParen, Token::RParen].iter()),
+            read(vec![Token::LParen, Token::RParen].into_iter()),
             Ok(Datum::EmptyList)
         );
     }
@@ -215,19 +220,19 @@ mod tests {
     fn compound_datum() {
         assert_eq!(
             read(
-                &mut vec![
+                vec![
                     Token::LParen,
                     Token::Number("123".to_owned()),
                     Token::RParen,
                 ]
-                .iter(),
+                .into_iter(),
             ),
             Ok(proper_list_datum![int_datum!(123)])
         );
 
         assert_eq!(
             read(
-                &mut vec![
+                vec![
                     Token::LParen,
                     Token::Number("123".to_owned()),
                     Token::Number("456".to_owned()),
@@ -235,7 +240,7 @@ mod tests {
                     Token::Identifier("bar".to_owned()),
                     Token::RParen,
                 ]
-                .iter(),
+                .into_iter(),
             ),
             Ok(improper_list_datum![
                 int_datum!(123), int_datum!(456);
@@ -245,13 +250,13 @@ mod tests {
 
         assert_eq!(
             read(
-                &mut vec![
+                vec![
                     Token::Quote,
                     Token::LParen,
                     Token::Number("123".to_owned()),
                     Token::RParen,
                 ]
-                .iter(),
+                .into_iter(),
             ),
             Ok(abbr_list_datum!(
                 AbbreviationPrefix::Quote,
@@ -261,13 +266,13 @@ mod tests {
 
         assert_eq!(
             read(
-                &mut vec![
+                vec![
                     Token::Quasiquote,
                     Token::LParen,
                     Token::Number("123".to_owned()),
                     Token::RParen,
                 ]
-                .iter(),
+                .into_iter(),
             ),
             Ok(abbr_list_datum!(
                 AbbreviationPrefix::Quasiquote,
@@ -276,7 +281,7 @@ mod tests {
         );
 
         assert_eq!(
-            read(&mut vec![Token::Unquote, Token::Number("123".to_owned())].iter()),
+            read(vec![Token::Unquote, Token::Number("123".to_owned())].into_iter()),
             Ok(abbr_list_datum!(
                 AbbreviationPrefix::Unquote,
                 int_datum!(123),
@@ -285,13 +290,13 @@ mod tests {
 
         assert_eq!(
             read(
-                &mut vec![
+                vec![
                     Token::UnquoteSplicing,
                     Token::LParen,
                     Token::Number("123".to_owned()),
                     Token::RParen,
                 ]
-                .iter(),
+                .into_iter(),
             ),
             Ok(abbr_list_datum!(
                 AbbreviationPrefix::UnquoteSplicing,
@@ -301,13 +306,13 @@ mod tests {
 
         assert_eq!(
             read(
-                &mut vec![
+                vec![
                     Token::Vector,
                     Token::Number("123".to_owned()),
                     Token::Number("456".to_owned()),
                     Token::RParen,
                 ]
-                .iter(),
+                .into_iter(),
             ),
             Ok(vector_datum![int_datum!(123), int_datum!(456)])
         );
@@ -317,21 +322,21 @@ mod tests {
     fn nested_datum() {
         assert_eq!(
             read(
-                &mut vec![
+                vec![
                     Token::LParen,
                     Token::LParen,
                     Token::Number("123".to_owned()),
                     Token::RParen,
                     Token::RParen,
                 ]
-                .iter(),
+                .into_iter(),
             ),
             Ok(proper_list_datum![proper_list_datum![int_datum!(123)]])
         );
 
         assert_eq!(
             read(
-                &mut vec![
+                vec![
                     Token::LParen,
                     Token::LParen,
                     Token::Identifier("a".to_owned()),
@@ -345,7 +350,7 @@ mod tests {
                     Token::RParen,
                     Token::RParen,
                 ]
-                .iter(),
+                .into_iter(),
             ),
             Ok(proper_list_datum![
                 proper_list_datum![symbol_datum!("a"), symbol_datum!("b"), symbol_datum!("c")],
@@ -355,7 +360,7 @@ mod tests {
 
         assert_eq!(
             read(
-                &mut vec![
+                vec![
                     Token::LParen,
                     Token::Identifier("a".to_owned()),
                     Token::Dot,
@@ -366,7 +371,7 @@ mod tests {
                     Token::RParen,
                     Token::RParen,
                 ]
-                .iter(),
+                .into_iter(),
             ),
             Ok(improper_list_datum![
                 symbol_datum!("a");
@@ -376,7 +381,7 @@ mod tests {
 
         assert_eq!(
             read(
-                &mut vec![
+                vec![
                     Token::Quasiquote,
                     Token::LParen,
                     Token::Identifier("a".to_owned()),
@@ -397,7 +402,7 @@ mod tests {
                     Token::RParen,
                     Token::RParen,
                 ]
-                .iter(),
+                .into_iter(),
             ),
             Ok(abbr_list_datum!(
                 AbbreviationPrefix::Quasiquote,
@@ -420,7 +425,7 @@ mod tests {
     #[test]
     fn errors() {
         assert_eq!(
-            read(&mut vec![Token::LParen].iter()),
+            read(vec![Token::LParen].into_iter()),
             Err(ReaderError {
                 kind: ReaderErrorKind::UnexpectedEndOfInput
             })
@@ -428,14 +433,14 @@ mod tests {
 
         assert_eq!(
             read(
-                &mut vec![
+                vec![
                     Token::LParen,
                     Token::Number("123".to_owned()),
                     Token::LParen,
                     Token::Number("456".to_owned()),
                     Token::RParen,
                 ]
-                .iter()
+                .into_iter()
             ),
             Err(ReaderError {
                 kind: ReaderErrorKind::UnexpectedEndOfInput
@@ -443,21 +448,21 @@ mod tests {
         );
 
         assert_eq!(
-            read(&mut vec![Token::Quote,].iter()),
+            read(vec![Token::Quote,].into_iter()),
             Err(ReaderError {
                 kind: ReaderErrorKind::UnexpectedEndOfInput
             })
         );
 
         assert_eq!(
-            read(&mut vec![Token::RParen].iter()),
+            read(vec![Token::RParen].into_iter()),
             Err(ReaderError {
                 kind: ReaderErrorKind::UnexpectedToken(Token::RParen)
             })
         );
 
         assert_eq!(
-            read(&mut vec![Token::Dot].iter()),
+            read(vec![Token::Dot].into_iter()),
             Err(ReaderError {
                 kind: ReaderErrorKind::IllegalDot
             })
@@ -465,7 +470,7 @@ mod tests {
 
         assert_eq!(
             read(
-                &mut vec![
+                vec![
                     Token::LParen,
                     Token::Number("123".to_owned()),
                     Token::Dot,
@@ -473,7 +478,7 @@ mod tests {
                     Token::Number("789".to_owned()),
                     Token::RParen,
                 ]
-                .iter()
+                .into_iter()
             ),
             Err(ReaderError {
                 kind: ReaderErrorKind::IllegalDot
@@ -482,13 +487,13 @@ mod tests {
 
         assert_eq!(
             read(
-                &mut vec![
+                vec![
                     Token::LParen,
                     Token::Number("123".to_owned()),
                     Token::Dot,
                     Token::RParen,
                 ]
-                .iter()
+                .into_iter()
             ),
             Err(ReaderError {
                 kind: ReaderErrorKind::UnexpectedToken(Token::RParen)
@@ -496,9 +501,16 @@ mod tests {
         );
 
         assert_eq!(
-            read(&mut vec![Token::LParen, Token::Dot, Token::RParen,].iter()),
+            read(vec![Token::LParen, Token::Dot, Token::RParen,].into_iter()),
             Err(ReaderError {
                 kind: ReaderErrorKind::IllegalDot
+            })
+        );
+
+        assert_eq!(
+            read(vec![Token::Number("1/0".to_owned())].into_iter()),
+            Err(ReaderError {
+                kind: ReaderErrorKind::InvalidNumber("1/0".to_owned())
             })
         );
     }
@@ -513,7 +525,7 @@ mod tests {
             Token::Number("456".to_owned()),
             Token::RParen,
         ];
-        let mut reader = Reader::new(tokens.iter());
+        let mut reader = Reader::new(tokens.into_iter());
         assert_eq!(reader.next(), Some(Ok(proper_list_datum![int_datum!(123)])));
         assert_eq!(reader.next(), Some(Ok(proper_list_datum![int_datum!(456)])));
         assert_eq!(reader.next(), None);
@@ -528,7 +540,7 @@ mod tests {
             Token::RParen,
             Token::RParen,
         ];
-        let mut reader = Reader::new(tokens.iter());
+        let mut reader = Reader::new(tokens.into_iter());
         assert_eq!(reader.next(), Some(Ok(proper_list_datum![int_datum!(123)])));
         assert_eq!(
             reader.next(),
