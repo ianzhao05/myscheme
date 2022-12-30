@@ -130,6 +130,16 @@ fn eval_expr(expr: &Expr, env: Rc<RefCell<Env>>) -> Result<ObjectRef, EvalError>
                 _ => eval_expr(consequent, env),
             }
         }
+        Expr::Assignment { variable, value } => {
+            let value = eval_expr(value, env.clone())?;
+            if !env.borrow().contains(variable) {
+                return Err(EvalError {
+                    kind: EvalErrorKind::UndefinedVariable(variable.clone()),
+                });
+            }
+            env.borrow_mut().insert(variable, value);
+            Ok(ObjectRef::Void)
+        }
         _ => todo!(),
     }
 }
@@ -149,7 +159,12 @@ fn eval_def(def: &Definition, env: Rc<RefCell<Env>>) -> Result<(), EvalError> {
             env.borrow_mut().insert(name, ObjectRef::new(proc));
             Ok(())
         }
-        Definition::Begin(_) => todo!(),
+        Definition::Begin(defs) => {
+            for def in defs {
+                eval_def(def, env.clone())?;
+            }
+            Ok(())
+        }
     }
 }
 
@@ -284,7 +299,6 @@ mod tests {
                 kind: EvalErrorKind::UndefinedVariable("a".to_owned())
             })
         );
-
         assert_eq!(
             eval(
                 &ExprOrDef::Definition(Definition::Variable {
@@ -295,10 +309,63 @@ mod tests {
             ),
             Ok(EvalResult::Def)
         );
+        assert_eq!(
+            eval(&ExprOrDef::Expr(var_expr!("a")), env.clone()),
+            Ok(EvalResult::Expr(ObjectRef::new(atom_obj!(int_datum!(1)))))
+        );
 
         assert_eq!(
-            eval(&ExprOrDef::Expr(var_expr!("a")), env),
-            Ok(EvalResult::Expr(ObjectRef::new(atom_obj!(int_datum!(1)))))
+            eval(
+                &ExprOrDef::Definition(Definition::Begin(vec![
+                    Definition::Variable {
+                        name: "b".to_owned(),
+                        value: Box::new(int_expr!(2))
+                    },
+                    Definition::Variable {
+                        name: "c".to_owned(),
+                        value: Box::new(int_expr!(3))
+                    },
+                ])),
+                env.clone()
+            ),
+            Ok(EvalResult::Def)
+        );
+        assert_eq!(
+            eval(&ExprOrDef::Expr(var_expr!("b")), env.clone()),
+            Ok(EvalResult::Expr(ObjectRef::new(atom_obj!(int_datum!(2)))))
+        );
+        assert_eq!(
+            eval(&ExprOrDef::Expr(var_expr!("c")), env),
+            Ok(EvalResult::Expr(ObjectRef::new(atom_obj!(int_datum!(3)))))
+        );
+    }
+
+    #[test]
+    fn assignments() {
+        let env = Rc::new(RefCell::new(Env::new(None)));
+        assert_eq!(
+            eval(
+                &ExprOrDef::Definition(Definition::Variable {
+                    name: "a".to_owned(),
+                    value: Box::new(int_expr!(1))
+                }),
+                env.clone()
+            ),
+            Ok(EvalResult::Def)
+        );
+        assert_eq!(
+            eval(
+                &ExprOrDef::Expr(Expr::Assignment {
+                    variable: "a".to_owned(),
+                    value: Box::new(int_expr!(2))
+                }),
+                env.clone()
+            ),
+            Ok(EvalResult::Expr(ObjectRef::Void))
+        );
+        assert_eq!(
+            eval(&ExprOrDef::Expr(var_expr!("a")), env.clone()),
+            Ok(EvalResult::Expr(ObjectRef::new(atom_obj!(int_datum!(2)))))
         );
     }
 
