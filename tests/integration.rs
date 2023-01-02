@@ -7,7 +7,10 @@ macro_rules! assert_eval_eq {
             .unwrap()
             .into_iter()
             .filter_map(|r| match r {
-                Expr(o) => Some(o),
+                Expr(o) => match o {
+                    ObjectRef::Void => None,
+                    _ => Some(o),
+                },
                 _ => None,
             })
             .collect();
@@ -15,7 +18,10 @@ macro_rules! assert_eval_eq {
             .unwrap()
             .into_iter()
             .filter_map(|r| match r {
-                Expr(o) => Some(o),
+                Expr(o) => match o {
+                    ObjectRef::Void => None,
+                    _ => Some(o),
+                },
                 _ => None,
             })
             .collect();
@@ -74,6 +80,15 @@ fn simple_defines() {
     assert_eval_eq!("(define x 1) x", "1", env);
     assert_eval_eq!("(define y (+ 2 3)) y", "5", env);
     assert_eval_eq!("(define z (+ x y)) z", "6", env);
+}
+
+#[test]
+fn assignments() {
+    let env = Env::primitives();
+
+    assert_eval_eq!("(define x 1) x", "1", env);
+    assert_eval_eq!("(set! x 2) x", "2", env);
+    assert_eval_eq!("(set! x (+ x 1)) x", "3", env);
 }
 
 #[test]

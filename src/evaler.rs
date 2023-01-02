@@ -6,7 +6,8 @@ use crate::datum::SimpleDatum;
 use crate::env::Env;
 use crate::expr::*;
 use crate::object::{Object, ObjectRef};
-use crate::proc::{Call, Procedure, UserDefined};
+use crate::proc::{Procedure, UserDefined};
+use crate::trampoline::{trampoline, Bouncer, BouncerFn};
 
 #[derive(Debug, PartialEq)]
 pub enum EvalErrorKind {
@@ -79,15 +80,20 @@ impl EvalResult {
     }
 }
 
-fn eval_expr(expr: &Expr, env: Rc<RefCell<Env>>) -> Result<ObjectRef, EvalError> {
+pub fn eval_expr<'a>(expr: &'a Expr, env: Rc<RefCell<Env>>, k: BouncerFn<'a>) -> Bouncer<'a> {
     match expr {
-        Expr::Variable(v) => match env.borrow().get(v) {
-            Some(obj) => Ok(obj),
-            None => Err(EvalError {
-                kind: EvalErrorKind::UndefinedVariable(v.clone()),
-            }),
-        },
-        Expr::Literal(l) => Ok(match l {
+        Expr::Variable(v) => {
+            let benv = env.borrow();
+            let res = match benv.get(v) {
+                Some(obj) => Ok(obj),
+                None => Err(EvalError {
+                    kind: EvalErrorKind::UndefinedVariable(v.clone()),
+                }),
+            };
+            drop(benv);
+            k(res)
+        }
+        Expr::Literal(l) => k(Ok(match l {
             LiteralKind::Quotation(d) => ObjectRef::from(d.clone()),
             LiteralKind::SelfEvaluating(s) => ObjectRef::new(Object::Atom(match s {
                 SelfEvaluatingKind::Boolean(b) => SimpleDatum::Boolean(*b),
@@ -95,58 +101,123 @@ fn eval_expr(expr: &Expr, env: Rc<RefCell<Env>>) -> Result<ObjectRef, EvalError>
                 SelfEvaluatingKind::Number(n) => SimpleDatum::Number(n.clone()),
                 SelfEvaluatingKind::String(s) => SimpleDatum::String(s.clone()),
             })),
+        })),
+        Expr::Lambda(data) => k(match UserDefined::new(data.clone(), env) {
+            Ok(proc) => Ok(ObjectRef::new(Object::Procedure(Procedure::UserDefined(
+                proc,
+            )))),
+            Err(e) => Err(e),
         }),
-        Expr::Lambda(data) => Ok(ObjectRef::new(Object::Procedure(Procedure::UserDefined(
-            UserDefined::new(data.clone(), env)?,
-        )))),
         Expr::ProcCall { operator, operands } => {
-            let operator = eval_expr(operator, env.clone())?;
-            if let Object::Procedure(proc) = &*operator {
-                let operands = operands
-                    .iter()
-                    .map(|op| eval_expr(op, env.clone()))
-                    .collect::<Result<Vec<_>, _>>()?;
-                proc.call(&operands)
-            } else {
-                Err(EvalError {
-                    kind: EvalErrorKind::ContractViolation {
-                        expected: "procedure".to_owned(),
-                        got: operator,
-                    },
-                })
-            }
+            Bouncer::BounceCall(operator, operands, env, k, Vec::new())
         }
         Expr::Conditional {
             test,
             consequent,
             alternate,
-        } => {
-            let test = eval_expr(test, env.clone())?;
-            match *test {
-                Object::Atom(SimpleDatum::Boolean(false)) => match alternate {
-                    Some(alternate) => eval_expr(alternate, env),
-                    None => Ok(ObjectRef::Void),
-                },
-                _ => eval_expr(consequent, env),
-            }
-        }
-        Expr::Assignment { variable, value } => {
-            let value = eval_expr(value, env.clone())?;
-            if !env.borrow_mut().set(variable, value) {
-                return Err(EvalError {
-                    kind: EvalErrorKind::UndefinedVariable(variable.clone()),
-                });
-            }
-            Ok(ObjectRef::Void)
-        }
+        } => eval_expr(
+            test,
+            env.clone(),
+            Box::new(move |obj| match obj {
+                Ok(obj) => {
+                    let res = match obj.try_deref() {
+                        Some(obj) => match *obj {
+                            Object::Atom(SimpleDatum::Boolean(false)) => match alternate {
+                                Some(alternate) => alternate,
+                                None => return k(Ok(ObjectRef::Void)),
+                            },
+                            _ => consequent,
+                        },
+                        None => match alternate {
+                            Some(alternate) => alternate,
+                            None => return k(Ok(ObjectRef::Void)),
+                        },
+                    };
+                    eval_expr(res, env.clone(), k)
+                }
+                e => k(e),
+            }),
+        ),
+        Expr::Assignment { variable, value } => eval_expr(
+            value,
+            env.clone(),
+            Box::new(move |val| match val {
+                Ok(obj) => {
+                    println!("Setting {} to {:?}", variable, obj);
+                    let mut benv = env.borrow_mut();
+                    let res = match benv.set(variable, obj) {
+                        true => Ok(ObjectRef::Void),
+                        false => Err(EvalError {
+                            kind: EvalErrorKind::UndefinedVariable(variable.clone()),
+                        }),
+                    };
+                    drop(benv);
+                    k(res)
+                }
+                e => k(e),
+            }),
+        ),
         _ => todo!(),
     }
 }
 
-fn eval_def(def: &Definition, env: Rc<RefCell<Env>>) -> Result<(), EvalError> {
+pub fn eval_proc_call<'a>(
+    proc: &'a Expr,
+    exprs: &'a [Expr],
+    env: Rc<RefCell<Env>>,
+    k: BouncerFn<'a>,
+    mut acc: Vec<ObjectRef>,
+) -> Bouncer<'a> {
+    match exprs.split_first() {
+        Some((first, rest)) => Bouncer::Bounce(
+            first,
+            env.clone(),
+            Box::new(move |obj| match obj {
+                Ok(obj) => {
+                    acc.push(obj);
+                    Bouncer::BounceCall(proc, rest, env.clone(), k, acc)
+                }
+                e => k(e),
+            }),
+        ),
+        None => Bouncer::Bounce(
+            proc,
+            env,
+            Box::new(move |objres| match objres {
+                Ok(objref) => {
+                    let err = || EvalError {
+                        kind: EvalErrorKind::ContractViolation {
+                            expected: "procedure".to_owned(),
+                            got: objref.clone(),
+                        },
+                    };
+                    match &objref {
+                        ObjectRef::Object(obj) => match &**obj {
+                            Object::Procedure(_) => {
+                                // p.call(acc, k, objref.pin())
+                                unsafe {
+                                    let p_ptr = Rc::as_ptr(obj);
+                                    match &*p_ptr {
+                                        Object::Procedure(p) => p.call(acc, k, objref.pin()),
+                                        _ => unreachable!(),
+                                    }
+                                }
+                            }
+                            _ => k(Err(err())),
+                        },
+                        _ => k(Err(err())),
+                    }
+                }
+                e => k(e),
+            }),
+        ),
+    }
+}
+
+pub fn eval_def(def: &Definition, env: Rc<RefCell<Env>>) -> Result<(), EvalError> {
     match def {
         Definition::Variable { name, value } => {
-            let res = eval_expr(value, env.clone())?;
+            let res = trampoline(eval_expr(value, env.clone(), Box::new(Bouncer::Land)))?;
             env.borrow_mut().insert(name, res);
             Ok(())
         }
@@ -180,7 +251,11 @@ pub fn eval_body(body: &Body, env: Rc<RefCell<Env>>) -> Result<ObjectRef, EvalEr
 
 pub fn eval(eod: &ExprOrDef, env: Rc<RefCell<Env>>) -> Result<EvalResult, EvalError> {
     match eod {
-        ExprOrDef::Expr(expr) => Ok(EvalResult::Expr(eval_expr(expr, env)?)),
+        ExprOrDef::Expr(expr) => Ok(EvalResult::Expr(trampoline(Bouncer::Bounce(
+            expr,
+            env,
+            Box::new(Bouncer::Land),
+        ))?)),
         ExprOrDef::Definition(def) => {
             eval_def(def, env)?;
             Ok(EvalResult::Def)
