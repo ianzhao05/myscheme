@@ -11,7 +11,7 @@ macro_rules! assert_eval_eq {
                 _ => None,
             })
             .collect();
-        let rv: Vec<_> = eval_str($lhs, $env.clone())
+        let rv: Vec<_> = eval_str($rhs, $env.clone())
             .unwrap()
             .into_iter()
             .filter_map(|r| match r {
@@ -102,7 +102,7 @@ fn recursive_procs() {
 
     assert_eval_eq!(
         "(define (fib n) (if (< n 2) 1 (+ (fib (- n 1)) (fib (- n 2))))) (fib 10)",
-        "55",
+        "89",
         env
     );
 
@@ -131,4 +131,18 @@ fn recursive_procs() {
         "120",
         env
     );
+}
+
+#[test]
+fn closures() {
+    let env = Env::primitives();
+
+    assert_eval_eq!(
+        "(define count ((lambda (next) (lambda () (set! next (+ next 1)) next)) 0))
+         (count)
+         (count)
+         (count)",
+        "1 2 3",
+        env
+    )
 }

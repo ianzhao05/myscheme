@@ -132,12 +132,11 @@ fn eval_expr(expr: &Expr, env: Rc<RefCell<Env>>) -> Result<ObjectRef, EvalError>
         }
         Expr::Assignment { variable, value } => {
             let value = eval_expr(value, env.clone())?;
-            if !env.borrow().contains(variable) {
+            if !env.borrow_mut().set(variable, value) {
                 return Err(EvalError {
                     kind: EvalErrorKind::UndefinedVariable(variable.clone()),
                 });
             }
-            env.borrow_mut().insert(variable, value);
             Ok(ObjectRef::Void)
         }
         _ => todo!(),

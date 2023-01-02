@@ -46,11 +46,15 @@ impl Env {
         self.bindings.insert(name.to_owned(), val);
     }
 
-    pub fn contains(&self, name: &str) -> bool {
-        self.bindings.contains_key(name)
-            || match &self.parent {
-                Some(parent) => parent.borrow().contains(name),
+    pub fn set(&mut self, name: &str, val: ObjectRef) -> bool {
+        if self.bindings.contains_key(name) {
+            self.bindings.insert(name.to_owned(), val);
+            true
+        } else {
+            match &self.parent {
+                Some(parent) => parent.borrow_mut().set(name, val),
                 None => false,
             }
+        }
     }
 }
