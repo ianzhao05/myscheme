@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt;
+use std::pin::Pin;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::datum::SimpleDatum;
@@ -80,7 +81,12 @@ impl EvalResult {
     }
 }
 
-pub fn eval_expr<'a>(expr: &'a Expr, env: Rc<RefCell<Env>>, k: BouncerFn<'a>) -> Bouncer<'a> {
+pub fn eval_expr<'a>(
+    expr: &'a Expr,
+    env: Rc<RefCell<Env>>,
+    handle: Option<Pin<Rc<Object>>>,
+    k: BouncerFn<'a>,
+) -> Bouncer<'a> {
     match expr {
         Expr::Variable(v) => {
             let benv = env.borrow();
@@ -109,7 +115,7 @@ pub fn eval_expr<'a>(expr: &'a Expr, env: Rc<RefCell<Env>>, k: BouncerFn<'a>) ->
             Err(e) => Err(e),
         }),
         Expr::ProcCall { operator, operands } => {
-            Bouncer::BounceCall(operator, operands, env, k, Vec::new())
+            Bouncer::BounceCall(handle, operator, operands, env, k, Vec::new())
         }
         Expr::Conditional {
             test,
@@ -118,6 +124,7 @@ pub fn eval_expr<'a>(expr: &'a Expr, env: Rc<RefCell<Env>>, k: BouncerFn<'a>) ->
         } => eval_expr(
             test,
             env.clone(),
+            None,
             Box::new(move |obj| match obj {
                 Ok(obj) => {
                     let res = match obj.try_deref() {
@@ -133,7 +140,7 @@ pub fn eval_expr<'a>(expr: &'a Expr, env: Rc<RefCell<Env>>, k: BouncerFn<'a>) ->
                             None => return k(Ok(ObjectRef::Void)),
                         },
                     };
-                    eval_expr(res, env.clone(), k)
+                    eval_expr(res, env.clone(), handle, k)
                 }
                 e => k(e),
             }),
@@ -141,6 +148,7 @@ pub fn eval_expr<'a>(expr: &'a Expr, env: Rc<RefCell<Env>>, k: BouncerFn<'a>) ->
         Expr::Assignment { variable, value } => eval_expr(
             value,
             env.clone(),
+            handle,
             Box::new(move |val| match val {
                 Ok(obj) => {
                     println!("Setting {} to {:?}", variable, obj);
@@ -165,6 +173,7 @@ pub fn eval_proc_call<'a>(
     proc: &'a Expr,
     exprs: &'a [Expr],
     env: Rc<RefCell<Env>>,
+    handle: Option<Pin<Rc<Object>>>,
     k: BouncerFn<'a>,
     mut acc: Vec<ObjectRef>,
 ) -> Bouncer<'a> {
@@ -172,10 +181,11 @@ pub fn eval_proc_call<'a>(
         Some((first, rest)) => Bouncer::Bounce(
             first,
             env.clone(),
+            None,
             Box::new(move |obj| match obj {
                 Ok(obj) => {
                     acc.push(obj);
-                    Bouncer::BounceCall(proc, rest, env.clone(), k, acc)
+                    Bouncer::BounceCall(handle, proc, rest, env.clone(), k, acc)
                 }
                 e => k(e),
             }),
@@ -183,6 +193,7 @@ pub fn eval_proc_call<'a>(
         None => Bouncer::Bounce(
             proc,
             env,
+            handle,
             Box::new(move |objres| match objres {
                 Ok(objref) => {
                     let err = || EvalError {
@@ -217,7 +228,7 @@ pub fn eval_proc_call<'a>(
 pub fn eval_def(def: &Definition, env: Rc<RefCell<Env>>) -> Result<(), EvalError> {
     match def {
         Definition::Variable { name, value } => {
-            let res = trampoline(eval_expr(value, env.clone(), Box::new(Bouncer::Land)))?;
+            let res = trampoline(eval_expr(value, env.clone(), None, Box::new(Bouncer::Land)))?;
             env.borrow_mut().insert(name, res);
             Ok(())
         }
@@ -254,6 +265,7 @@ pub fn eval(eod: &ExprOrDef, env: Rc<RefCell<Env>>) -> Result<EvalResult, EvalEr
         ExprOrDef::Expr(expr) => Ok(EvalResult::Expr(trampoline(Bouncer::Bounce(
             expr,
             env,
+            None,
             Box::new(Bouncer::Land),
         ))?)),
         ExprOrDef::Definition(def) => {

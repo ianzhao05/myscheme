@@ -10,8 +10,14 @@ use crate::object::{Object, ObjectRef};
 pub type BouncerFn<'a> = Box<dyn FnOnce(Result<ObjectRef, EvalError>) -> Bouncer<'a> + 'a>;
 
 pub enum Bouncer<'a> {
-    Bounce(&'a Expr, Rc<RefCell<Env>>, BouncerFn<'a>),
+    Bounce(
+        &'a Expr,
+        Rc<RefCell<Env>>,
+        Option<Pin<Rc<Object>>>,
+        BouncerFn<'a>,
+    ),
     BounceCall(
+        Option<Pin<Rc<Object>>>,
         &'a Expr,
         &'a [Expr],
         Rc<RefCell<Env>>,
@@ -33,32 +39,37 @@ pub fn trampoline(bouncer: Bouncer) -> Result<ObjectRef, EvalError> {
     let mut bouncer = bouncer;
     loop {
         match bouncer {
-            Bouncer::Bounce(expr, env, k) => {
-                bouncer = eval_expr(expr, env, k);
+            Bouncer::Bounce(expr, env, handle, k) => {
+                bouncer = eval_expr(expr, env, handle, k);
             }
-            Bouncer::BounceCall(proc, exprs, env, k, acc) => {
-                bouncer = eval_proc_call(proc, exprs, env, k, acc);
+            Bouncer::BounceCall(handle, proc, exprs, env, k, acc) => {
+                bouncer = eval_proc_call(proc, exprs, env, handle, k, acc);
             }
-            Bouncer::BounceApply(proc, body, env, k, i, res) => {
+            Bouncer::BounceApply(handle, body, env, k, i, res) => {
                 let eods = unsafe { body.as_ref() };
-                bouncer = if i == eods.len() {
-                    k(Ok(res))
-                } else {
-                    match &eods[i] {
-                        ExprOrDef::Expr(expr) => eval_expr(
-                            expr,
-                            env.clone(),
-                            Box::new(move |res| match res {
-                                Ok(res) => Bouncer::BounceApply(proc, body, env, k, i + 1, res),
-                                e => k(e),
-                            }),
-                        ),
-                        ExprOrDef::Definition(def) => match eval_def(def, env.clone()) {
-                            Ok(_) => Bouncer::BounceApply(proc, body, env, k, i + 1, res),
-                            Err(e) => k(Err(e)),
-                        },
-                        ExprOrDef::MixedBegin(_) => unreachable!(),
+                bouncer = match &eods[i] {
+                    ExprOrDef::Expr(expr) => {
+                        if i == eods.len() - 1 {
+                            eval_expr(expr, env.clone(), Some(handle), k)
+                        } else {
+                            eval_expr(
+                                expr,
+                                env.clone(),
+                                None,
+                                Box::new(move |res| match res {
+                                    Ok(res) => {
+                                        Bouncer::BounceApply(handle, body, env, k, i + 1, res)
+                                    }
+                                    e => k(e),
+                                }),
+                            )
+                        }
                     }
+                    ExprOrDef::Definition(def) => match eval_def(def, env.clone()) {
+                        Ok(_) => Bouncer::BounceApply(handle, body, env, k, i + 1, res),
+                        Err(e) => k(Err(e)),
+                    },
+                    ExprOrDef::MixedBegin(_) => unreachable!(),
                 }
             }
             Bouncer::Land(obj) => return obj,
