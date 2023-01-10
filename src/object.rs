@@ -1,5 +1,6 @@
 use core::ops::Deref;
 use std::cell::RefCell;
+use std::pin::Pin;
 use std::rc::Rc;
 
 use crate::datum::*;
@@ -30,10 +31,24 @@ impl ObjectRef {
         }
     }
 
-    pub fn try_deref<E, F: FnOnce(&Self) -> E>(&self, err: F) -> Result<&Object, E> {
+    pub fn try_deref(&self) -> Option<&Object> {
+        match self {
+            ObjectRef::Object(o) => Some(o),
+            _ => None,
+        }
+    }
+
+    pub fn try_deref_or<E, F: FnOnce(&Self) -> E>(&self, err: F) -> Result<&Object, E> {
         match self {
             ObjectRef::Object(o) => Ok(o),
             _ => Err(err(self)),
+        }
+    }
+
+    pub fn pin(self) -> Pin<Rc<Object>> {
+        match self {
+            ObjectRef::Object(o) => Pin::new(o),
+            _ => panic!("Cannot pin {:?}", self),
         }
     }
 }
@@ -120,7 +135,7 @@ impl PartialEq for Object {
                 let b2 = &*v2.borrow();
                 b1.len() == b2.len() && b1.iter().zip(b2).all(|(a, b)| ObjectRef::equal(&*a, &*b))
             }
-            (Object::Procedure(_), Object::Procedure(_)) => false,
+            (Object::Procedure(p1), Object::Procedure(p2)) => p1 == p2,
             _ => false,
         }
     }

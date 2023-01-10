@@ -20,7 +20,7 @@ fn num_cv(got: &ObjectRef) -> EvalError {
 fn add(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     let mut sum = Number::Real(RealKind::Integer(BigInt::from(0)));
     for arg in args {
-        match &*arg.try_deref(num_cv)? {
+        match &*arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => sum += n.clone(),
             _ => return Err(num_cv(arg)),
         }
@@ -36,7 +36,7 @@ fn sub(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
             rest: true,
         }));
     }
-    let first = match &args[0].try_deref(num_cv)? {
+    let first = match &args[0].try_deref_or(num_cv)? {
         Object::Atom(SimpleDatum::Number(n)) => n,
         _ => return Err(num_cv(&args[0])),
     };
@@ -47,7 +47,7 @@ fn sub(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     }
     let mut res = first.clone();
     for arg in &args[1..] {
-        match &*arg.try_deref(num_cv)? {
+        match &*arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => res -= n.clone(),
             _ => return Err(num_cv(arg)),
         }
@@ -58,7 +58,7 @@ fn sub(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn mul(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     let mut prod = Number::Real(RealKind::Integer(BigInt::from(1)));
     for arg in args {
-        match &*arg.try_deref(num_cv)? {
+        match &*arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => prod *= n.clone(),
             _ => return Err(num_cv(arg)),
         }
@@ -74,7 +74,7 @@ fn div(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
             rest: true,
         }));
     }
-    let first = match &args[0].try_deref(num_cv)? {
+    let first = match &args[0].try_deref_or(num_cv)? {
         Object::Atom(SimpleDatum::Number(n)) => n,
         _ => return Err(num_cv(&args[0])),
     };
@@ -89,7 +89,7 @@ fn div(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     }
     let mut res = first.clone();
     for arg in &args[1..] {
-        match &*arg.try_deref(num_cv)? {
+        match &*arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => {
                 if Number::eq_val(n, &zero) {
                     return Err(EvalError::new(EvalErrorKind::ZeroDivision));
@@ -110,12 +110,12 @@ fn eq(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
             rest: true,
         }));
     }
-    let first = match &args[0].try_deref(num_cv)? {
+    let first = match &args[0].try_deref_or(num_cv)? {
         Object::Atom(SimpleDatum::Number(n)) => n,
         _ => return Err(num_cv(&args[0])),
     };
     for arg in &args[1..] {
-        match &*arg.try_deref(num_cv)? {
+        match &*arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => {
                 if !Number::eq_val(first, n) {
                     return Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(false))));
@@ -136,17 +136,19 @@ fn cmp(args: &[ObjectRef], ord: Ordering, strict: bool) -> Result<ObjectRef, Eva
         }));
     }
     for w in args.windows(2) {
-        match &w[0].try_deref(num_cv)? {
-            Object::Atom(SimpleDatum::Number(Number::Real(n1))) => match &w[1].try_deref(num_cv)? {
-                Object::Atom(SimpleDatum::Number(Number::Real(n2))) => {
-                    if strict && n1.partial_cmp(n2).unwrap() != ord
-                        || !strict && n1.partial_cmp(n2).unwrap() == ord.reverse()
-                    {
-                        return Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(false))));
+        match &w[0].try_deref_or(num_cv)? {
+            Object::Atom(SimpleDatum::Number(Number::Real(n1))) => {
+                match &w[1].try_deref_or(num_cv)? {
+                    Object::Atom(SimpleDatum::Number(Number::Real(n2))) => {
+                        if strict && n1.partial_cmp(n2).unwrap() != ord
+                            || !strict && n1.partial_cmp(n2).unwrap() == ord.reverse()
+                        {
+                            return Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(false))));
+                        }
                     }
+                    _ => return Err(num_cv(&w[1])),
                 }
-                _ => return Err(num_cv(&w[1])),
-            },
+            }
             _ => return Err(num_cv(&w[0])),
         }
     }

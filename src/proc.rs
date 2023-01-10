@@ -1,17 +1,16 @@
 use std::fmt::Debug;
+use std::pin::Pin;
+use std::ptr::NonNull;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{cell::RefCell, rc::Rc};
 
 use crate::env::Env;
-use crate::evaler::{eval_body, EvalError, EvalErrorKind};
+use crate::evaler::{EvalError, EvalErrorKind};
 use crate::expr::ProcData;
-use crate::object::ObjectRef;
+use crate::object::{Object, ObjectRef};
+use crate::trampoline::{Bouncer, BouncerFn};
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
-
-pub trait Call {
-    fn call(&self, args: &[ObjectRef]) -> Result<ObjectRef, EvalError>;
-}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Procedure {
@@ -19,11 +18,16 @@ pub enum Procedure {
     UserDefined(UserDefined),
 }
 
-impl Call for Procedure {
-    fn call(&self, args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
+impl Procedure {
+    pub fn call<'a>(
+        &self,
+        args: Vec<ObjectRef>,
+        k: BouncerFn<'a>,
+        handle: Pin<Rc<Object>>,
+    ) -> Bouncer<'a> {
         match self {
-            Procedure::Primitive(p) => p.call(args),
-            Procedure::UserDefined(p) => p.call(args),
+            Procedure::Primitive(p) => k(p.call(args)),
+            Procedure::UserDefined(p) => p.call(args, k, handle),
         }
     }
 }
@@ -46,17 +50,15 @@ impl Primitive {
     pub fn new(name: &'static str, func: fn(&[ObjectRef]) -> Result<ObjectRef, EvalError>) -> Self {
         Self { name, func }
     }
+
+    fn call(&self, args: Vec<ObjectRef>) -> Result<ObjectRef, EvalError> {
+        (self.func)(&args)
+    }
 }
 
 impl PartialEq for Primitive {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
-    }
-}
-
-impl Call for Primitive {
-    fn call(&self, args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-        (self.func)(args)
     }
 }
 
@@ -92,24 +94,21 @@ impl UserDefined {
             env,
         })
     }
-}
 
-impl PartialEq for UserDefined {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl Call for UserDefined {
-    fn call(&self, args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
+    fn call<'a>(
+        &self,
+        args: Vec<ObjectRef>,
+        k: BouncerFn<'a>,
+        handle: Pin<Rc<Object>>,
+    ) -> Bouncer<'a> {
         if args.len() < self.data.args.len()
             || (self.data.rest.is_none() && args.len() != self.data.args.len())
         {
-            return Err(EvalError::new(EvalErrorKind::ArityMismatch {
+            return k(Err(EvalError::new(EvalErrorKind::ArityMismatch {
                 expected: self.data.args.len(),
                 got: args.len(),
                 rest: self.data.rest.is_some(),
-            }));
+            })));
         }
         let env = Rc::new(RefCell::new(Env::new(Some(self.env.clone()))));
         let mut benv = env.borrow_mut();
@@ -126,6 +125,19 @@ impl Call for UserDefined {
             );
         }
         drop(benv);
-        eval_body(&self.data.body, env)
+        Bouncer::BounceApply(
+            handle,
+            NonNull::from(&self.data.body.0),
+            env,
+            k,
+            0,
+            ObjectRef::Void,
+        )
+    }
+}
+
+impl PartialEq for UserDefined {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
     }
 }

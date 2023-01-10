@@ -11,6 +11,7 @@ pub mod parser;
 pub mod primitives;
 pub mod proc;
 pub mod reader;
+pub mod trampoline;
 
 pub use crate::interpret::{eval_str, repl};
 

@@ -32,7 +32,7 @@ fn select(args: &[ObjectRef], first: bool) -> Result<ObjectRef, EvalError> {
             rest: false,
         }));
     }
-    match &args[0].try_deref(pair_cv)? {
+    match &args[0].try_deref_or(pair_cv)? {
         Object::Pair(p) => Ok(if first {
             p.borrow().0.clone()
         } else {
