@@ -82,7 +82,12 @@ impl EvalResult {
 fn eval_expr(expr: &Expr, env: Rc<RefCell<Env>>) -> Result<ObjectRef, EvalError> {
     match expr {
         Expr::Variable(v) => match env.borrow().get(v) {
-            Some(obj) => Ok(obj),
+            Some(obj) => match obj {
+                ObjectRef::Undefined => Err(EvalError {
+                    kind: EvalErrorKind::UndefinedVariable(v.clone()),
+                }),
+                _ => Ok(obj),
+            },
             None => Err(EvalError {
                 kind: EvalErrorKind::UndefinedVariable(v.clone()),
             }),
@@ -143,6 +148,9 @@ fn eval_expr(expr: &Expr, env: Rc<RefCell<Env>>) -> Result<ObjectRef, EvalError>
             let value = eval_expr(value, env.clone())?;
             env.borrow_mut().insert(arg, value);
             eval_expr(body, env)
+        }
+        Expr::Undefined => {
+            return Ok(ObjectRef::Undefined);
         }
         _ => todo!(),
     }

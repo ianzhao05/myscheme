@@ -33,13 +33,6 @@ pub enum Definition {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum LetKind {
-    Normal,
-    Named(String),
-    Star,
-    Rec,
-}
-#[derive(Debug, PartialEq, Clone)]
 pub struct IterationSpec {
     pub variable: String,
     pub init: Expr,
@@ -48,12 +41,6 @@ pub struct IterationSpec {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum DerivedExprKind {
-    Let {
-        kind: LetKind,
-        bindings: Vec<(String, Expr)>,
-        body: Body,
-    },
-    Begin(Vec<Expr>),
     Do {
         specs: Vec<IterationSpec>,
         term: (Box<Expr>, Vec<Expr>),
@@ -90,7 +77,7 @@ pub enum ListQQTemplate {
     QQ(QQTemplate),
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Variable(String),
     Literal(LiteralKind),
@@ -116,6 +103,96 @@ pub enum Expr {
         body: Box<Expr>,
     },
     Quasiquotation(QQTemplate),
+    Undefined,
+}
+
+impl PartialEq for Expr {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Expr::Variable(a), Expr::Variable(b)) => {
+                a == b || (cfg!(test) && a.starts_with("__temp_") && b.starts_with("__temp_"))
+            }
+            (Expr::Literal(a), Expr::Literal(b)) => a == b,
+            (
+                Expr::ProcCall {
+                    operator: a1,
+                    operands: b1,
+                },
+                Expr::ProcCall {
+                    operator: a2,
+                    operands: b2,
+                },
+            ) => a1 == a2 && b1 == b2,
+            (
+                Expr::Lambda(ProcData {
+                    args: a1,
+                    rest: r1,
+                    body: b1,
+                }),
+                Expr::Lambda(ProcData {
+                    args: a2,
+                    rest: r2,
+                    body: b2,
+                }),
+            ) => {
+                (a1 == a2
+                    || (cfg!(test)
+                        && a1.len() == a2.len()
+                        && a1.iter().all(|x| x.starts_with("__temp_"))
+                        && a2.iter().all(|x| x.starts_with("__temp_"))))
+                    && (r1 == r2
+                        || (cfg!(test)
+                            && r1.is_some()
+                            && r2.is_some()
+                            && r1.as_ref().unwrap().starts_with("__temp_")
+                            && r2.as_ref().unwrap().starts_with("__temp_")))
+                    && b1 == b2
+            }
+            (
+                Expr::Conditional {
+                    test: a1,
+                    consequent: b1,
+                    alternate: c1,
+                },
+                Expr::Conditional {
+                    test: a2,
+                    consequent: b2,
+                    alternate: c2,
+                },
+            ) => a1 == a2 && b1 == b2 && c1 == c2,
+            (
+                Expr::Assignment {
+                    variable: a1,
+                    value: b1,
+                },
+                Expr::Assignment {
+                    variable: a2,
+                    value: b2,
+                },
+            ) => a1 == a2 && b1 == b2,
+            (Expr::DerivedExpr(a), Expr::DerivedExpr(b)) => a == b,
+            (Expr::Begin(a), Expr::Begin(b)) => a == b,
+            (
+                Expr::SimpleLet {
+                    arg: a1,
+                    value: b1,
+                    body: c1,
+                },
+                Expr::SimpleLet {
+                    arg: a2,
+                    value: b2,
+                    body: c2,
+                },
+            ) => {
+                (a1 == a2 || (cfg!(test) && a1.starts_with("__temp_") && a2.starts_with("__temp_")))
+                    && b1 == b2
+                    && c1 == c2
+            }
+            (Expr::Quasiquotation(a), Expr::Quasiquotation(b)) => a == b,
+            (Expr::Undefined, Expr::Undefined) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]

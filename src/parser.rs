@@ -346,6 +346,26 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
     let bs_err = || ParserError {
         kind: ParserErrorKind::BadSyntax(kw.to_owned()),
     };
+    let process_bindings = |binding_data: Vec<Datum>| -> Result<Vec<(String, Expr)>, ParserError> {
+        Ok(binding_data
+            .into_iter()
+            .map(|binding| {
+                if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = binding {
+                    if parts.len() != 2 {
+                        return Err(bs_err());
+                    }
+                    let mut pi = parts.into_iter();
+                    if let Datum::Simple(SimpleDatum::Symbol(name)) = pi.next().unwrap() {
+                        Ok((name, parse_expr(pi.next().unwrap())?))
+                    } else {
+                        Err(bs_err())
+                    }
+                } else {
+                    Err(bs_err())
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?)
+    };
     match kw {
         "define" => {
             let var = operands.next().ok_or_else(bs_err)?;
@@ -417,7 +437,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                         .collect(),
                 )))
             } else {
-                Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Begin(
+                Ok(ExprOrDef::Expr(Expr::Begin(
                     children
                         .into_iter()
                         .map(|eod| match eod {
@@ -425,7 +445,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                             _ => unreachable!("should not encounter non-definition"),
                         })
                         .collect(),
-                ))))
+                )))
             }
         }
         "set!" => {
@@ -571,7 +591,6 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 0 => Expr::Literal(LiteralKind::SelfEvaluating(SelfEvaluatingKind::Boolean(
                     true,
                 ))),
-                1 => ops.into_iter().next().unwrap(),
                 _ => {
                     let mut oi = ops.into_iter();
                     let mut acc = oi.next().unwrap();
@@ -597,7 +616,6 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 0 => Expr::Literal(LiteralKind::SelfEvaluating(SelfEvaluatingKind::Boolean(
                     false,
                 ))),
-                1 => ops.into_iter().next().unwrap(),
                 _ => {
                     let mut oi = ops.into_iter();
                     let mut acc = oi.next().unwrap();
@@ -677,69 +695,144 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 None => Err(bs_err()),
             }
         }
-        "let" | "let*" | "letrec" => {
+        "let" => {
             let mut first = operands.next().ok_or_else(bs_err)?;
-            let mut name: Option<String> = None;
-            if let Datum::Simple(SimpleDatum::Symbol(n)) = first {
-                if kw == "let" {
-                    first = operands.next().ok_or_else(bs_err)?;
-                    name = Some(n);
-                } else {
-                    return Err(bs_err());
+            let name: Option<String> = if let Datum::Simple(SimpleDatum::Symbol(n)) = first {
+                first = operands.next().ok_or_else(bs_err)?;
+                Some(n)
+            } else {
+                None
+            };
+            let (args, vals) = match first {
+                Datum::Compound(CompoundDatum::List(ListKind::Proper(binding_data))) => {
+                    process_bindings(binding_data)?.into_iter().unzip()
                 }
-            }
-            match first {
-                Datum::Compound(CompoundDatum::List(ListKind::Proper(_))) | Datum::EmptyList => {
-                    let bindings = if let Datum::Compound(CompoundDatum::List(ListKind::Proper(
-                        binding_data,
-                    ))) = first
-                    {
-                        binding_data
-                            .into_iter()
-                            .map(|binding| {
-                                if let Datum::Compound(CompoundDatum::List(ListKind::Proper(
-                                    parts,
-                                ))) = binding
-                                {
-                                    if parts.len() != 2 {
-                                        return Err(bs_err());
-                                    }
-                                    let mut pi = parts.into_iter();
-                                    if let Datum::Simple(SimpleDatum::Symbol(name)) =
-                                        pi.next().unwrap()
-                                    {
-                                        Ok((name, parse_expr(pi.next().unwrap())?))
-                                    } else {
-                                        Err(bs_err())
-                                    }
-                                } else {
-                                    Err(bs_err())
-                                }
-                            })
-                            .collect::<Result<Vec<_>, _>>()?
-                    } else {
-                        vec![]
-                    };
-                    let body = process_body(operands)?;
-                    Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
-                        kind: match kw {
-                            "let" => {
-                                if let Some(name) = name {
-                                    LetKind::Named(name)
-                                } else {
-                                    LetKind::Normal
-                                }
-                            }
-                            "let*" => LetKind::Star,
-                            "letrec" => LetKind::Rec,
-                            _ => unreachable!(),
-                        },
-                        bindings,
+                Datum::EmptyList => (vec![], vec![]),
+                _ => return Err(bs_err()),
+            };
+            let body = process_body(operands)?;
+            match name {
+                Some(n) => Ok(ExprOrDef::Expr(Expr::ProcCall {
+                    operator: Box::new(Expr::ProcCall {
+                        operator: Box::new(Expr::Lambda(ProcData {
+                            args: vec![n.clone()],
+                            rest: None,
+                            body: Body(vec![
+                                ExprOrDef::Expr(Expr::Assignment {
+                                    variable: n.clone(),
+                                    value: Box::new(Expr::Lambda(ProcData {
+                                        args,
+                                        rest: None,
+                                        body,
+                                    })),
+                                }),
+                                ExprOrDef::Expr(Expr::Variable(n)),
+                            ]),
+                        })),
+                        operands: vec![Expr::Undefined],
+                    }),
+                    operands: vals,
+                })),
+                None => Ok(ExprOrDef::Expr(Expr::ProcCall {
+                    operator: Box::new(Expr::Lambda(ProcData {
+                        args,
+                        rest: None,
                         body,
-                    })))
-                }
-                _ => Err(bs_err()),
+                    })),
+                    operands: vals,
+                })),
             }
+        }
+        "let*" => {
+            let first = operands.next().ok_or_else(bs_err)?;
+            let bindings = match first {
+                Datum::Compound(CompoundDatum::List(ListKind::Proper(binding_data))) => {
+                    process_bindings(binding_data)?
+                }
+                Datum::EmptyList => vec![],
+                _ => return Err(bs_err()),
+            };
+            let mut body = Some(process_body(operands)?);
+            if bindings.is_empty() {
+                return Ok(ExprOrDef::Expr(Expr::ProcCall {
+                    operator: Box::new(Expr::Lambda(ProcData {
+                        args: vec![],
+                        rest: None,
+                        body: body.take().unwrap(),
+                    })),
+                    operands: vec![],
+                }));
+            }
+            let mut acc: Option<Expr> = None;
+            for (arg, val) in bindings.into_iter().rev() {
+                acc = Some(Expr::ProcCall {
+                    operator: Box::new(Expr::Lambda(ProcData {
+                        args: vec![arg],
+                        rest: None,
+                        body: match acc {
+                            Some(a) => Body(vec![ExprOrDef::Expr(a)]),
+                            None => body.take().unwrap(),
+                        },
+                    })),
+                    operands: vec![val],
+                });
+            }
+            Ok(ExprOrDef::Expr(acc.unwrap()))
+        }
+        "letrec" => {
+            let first = operands.next().ok_or_else(bs_err)?;
+            let bindings = match first {
+                Datum::Compound(CompoundDatum::List(ListKind::Proper(binding_data))) => {
+                    process_bindings(binding_data)?
+                }
+                Datum::EmptyList => vec![],
+                _ => return Err(bs_err()),
+            };
+            let mut body = process_body(operands)?;
+            if bindings.is_empty() {
+                return Ok(ExprOrDef::Expr(Expr::ProcCall {
+                    operator: Box::new(Expr::Lambda(ProcData {
+                        args: vec![],
+                        rest: None,
+                        body,
+                    })),
+                    operands: vec![],
+                }));
+            }
+            let (args, vals): (Vec<_>, Vec<_>) = bindings.into_iter().unzip();
+            let temps: Vec<_> = args.iter().map(|_| gen_temp_name()).collect();
+            let setters = Body(
+                args.iter()
+                    .cloned()
+                    .zip(temps.iter().cloned())
+                    .map(|(arg, temp)| {
+                        ExprOrDef::Expr(Expr::Assignment {
+                            variable: arg,
+                            value: Box::new(Expr::Variable(temp)),
+                        })
+                    })
+                    .collect(),
+            );
+            body.0.insert(
+                0,
+                ExprOrDef::Expr(Expr::ProcCall {
+                    operator: Box::new(Expr::Lambda(ProcData {
+                        args: temps,
+                        rest: None,
+                        body: setters,
+                    })),
+                    operands: vals,
+                }),
+            );
+            let operands = vec![Expr::Undefined; args.len()];
+            Ok(ExprOrDef::Expr(Expr::ProcCall {
+                operator: Box::new(Expr::Lambda(ProcData {
+                    args,
+                    rest: None,
+                    body,
+                })),
+                operands,
+            }))
         }
         "do" => {
             let first = operands.next().ok_or_else(bs_err)?;
@@ -1288,6 +1381,56 @@ mod tests {
     }
 
     #[test]
+    fn ifs() {
+        assert_eq!(
+            parse(proper_list_datum![
+                symbol_datum!("if"),
+                int_datum!(1),
+                int_datum!(2),
+                int_datum!(3),
+            ]),
+            Ok(ExprOrDef::Expr(Expr::Conditional {
+                test: Box::new(int_expr!(1)),
+                consequent: Box::new(int_expr!(2)),
+                alternate: Some(Box::new(int_expr!(3))),
+            }))
+        );
+
+        assert_eq!(
+            parse(proper_list_datum![
+                symbol_datum!("if"),
+                int_datum!(1),
+                int_datum!(2),
+            ]),
+            Ok(ExprOrDef::Expr(Expr::Conditional {
+                test: Box::new(int_expr!(1)),
+                consequent: Box::new(int_expr!(2)),
+                alternate: None,
+            }))
+        );
+
+        assert_eq!(
+            parse(proper_list_datum![symbol_datum!("if")]),
+            Err(ParserError {
+                kind: ParserErrorKind::BadSyntax("if".to_owned())
+            })
+        );
+
+        assert_eq!(
+            parse(proper_list_datum![
+                symbol_datum!("if"),
+                int_datum!(1),
+                int_datum!(2),
+                int_datum!(3),
+                int_datum!(4),
+            ]),
+            Err(ParserError {
+                kind: ParserErrorKind::BadSyntax("if".to_owned())
+            })
+        );
+    }
+
+    #[test]
     fn begins() {
         assert_eq!(
             parse(proper_list_datum![
@@ -1330,9 +1473,7 @@ mod tests {
 
         assert_eq!(
             parse(proper_list_datum![symbol_datum!("begin")]),
-            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Begin(
-                vec![]
-            ))))
+            Ok(ExprOrDef::Expr(Expr::Begin(vec![])))
         );
 
         assert_eq!(
@@ -1342,30 +1483,59 @@ mod tests {
                 symbol_datum!("y"),
                 symbol_datum!("z"),
             ]),
-            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Begin(
-                vec![var_expr!("x"), var_expr!("y"), var_expr!("z"),]
-            ))))
+            Ok(ExprOrDef::Expr(Expr::Begin(vec![
+                var_expr!("x"),
+                var_expr!("y"),
+                var_expr!("z"),
+            ])))
         )
     }
 
     #[test]
     fn conds() {
-        assert!(parse(proper_list_datum![
-            symbol_datum!("cond"),
-            proper_list_datum![bool_datum!(false), int_datum!(0)],
-            proper_list_datum![
-                proper_list_datum![symbol_datum!("="), int_datum!(1), int_datum!(2)],
-                int_datum!(3),
-                int_datum!(4),
-            ],
-            proper_list_datum![
-                proper_list_datum![symbol_datum!("cons"), int_datum!(5), int_datum!(6)],
-                symbol_datum!("=>"),
-                symbol_datum!("car"),
-            ],
-            proper_list_datum![symbol_datum!("else"), int_datum!(3)],
-        ])
-        .is_ok());
+        assert_eq!(
+            parse(proper_list_datum![
+                symbol_datum!("cond"),
+                proper_list_datum![bool_datum!(false), int_datum!(0)],
+                proper_list_datum![
+                    proper_list_datum![symbol_datum!("="), int_datum!(1), int_datum!(2)],
+                    int_datum!(3),
+                    int_datum!(4),
+                ],
+                proper_list_datum![
+                    proper_list_datum![symbol_datum!("cons"), int_datum!(5), int_datum!(6)],
+                    symbol_datum!("=>"),
+                    symbol_datum!("car"),
+                ],
+                proper_list_datum![symbol_datum!("else"), int_datum!(3)],
+            ]),
+            Ok(ExprOrDef::Expr(Expr::Conditional {
+                test: Box::new(bool_expr!(false)),
+                consequent: Box::new(int_expr!(0)),
+                alternate: Some(Box::new(Expr::Conditional {
+                    test: Box::new(Expr::ProcCall {
+                        operator: Box::new(var_expr!("=")),
+                        operands: vec![int_expr!(1), int_expr!(2)]
+                    }),
+                    consequent: Box::new(Expr::Begin(vec![int_expr!(3), int_expr!(4)])),
+                    alternate: Some(Box::new(Expr::SimpleLet {
+                        arg: "__temp_var".to_owned(),
+                        value: Box::new(Expr::ProcCall {
+                            operator: Box::new(var_expr!("cons")),
+                            operands: vec![int_expr!(5), int_expr!(6)]
+                        }),
+                        body: Box::new(Expr::Conditional {
+                            test: Box::new(var_expr!("__temp_var")),
+                            consequent: Box::new(Expr::ProcCall {
+                                operator: Box::new(var_expr!("car")),
+                                operands: vec![var_expr!("__temp_var")]
+                            }),
+                            alternate: Some(Box::new(int_expr!(3))),
+                        })
+                    }))
+                })),
+            }))
+        );
 
         assert_eq!(
             parse(proper_list_datum![
@@ -1392,48 +1562,101 @@ mod tests {
 
     #[test]
     fn ands_ors() {
-        assert!(parse(proper_list_datum![
-            symbol_datum!("and"),
-            bool_datum!(true),
-            bool_datum!(false),
-        ])
-        .is_ok());
-
-        assert!(parse(proper_list_datum![
-            symbol_datum!("or"),
-            bool_datum!(true),
-            bool_datum!(false),
-        ])
-        .is_ok());
-
         assert_eq!(
             parse(proper_list_datum![symbol_datum!("and")]),
-            Ok(ExprOrDef::Expr(Expr::Literal(LiteralKind::SelfEvaluating(
-                SelfEvaluatingKind::Boolean(true)
-            ))))
+            Ok(ExprOrDef::Expr(bool_expr!(true)))
+        );
+
+        assert_eq!(
+            parse(proper_list_datum![symbol_datum!("and"), int_datum!(1),]),
+            Ok(ExprOrDef::Expr(int_expr!(1)))
+        );
+
+        assert_eq!(
+            parse(proper_list_datum![
+                symbol_datum!("and"),
+                bool_datum!(true),
+                int_datum!(1),
+            ]),
+            Ok(ExprOrDef::Expr(Expr::Conditional {
+                test: Box::new(bool_expr!(true)),
+                consequent: Box::new(int_expr!(1)),
+                alternate: Some(Box::new(bool_expr!(false))),
+            }))
+        );
+
+        assert_eq!(
+            parse(proper_list_datum![symbol_datum!("or"), int_datum!(1),]),
+            Ok(ExprOrDef::Expr(int_expr!(1)))
         );
 
         assert_eq!(
             parse(proper_list_datum![symbol_datum!("or")]),
-            Ok(ExprOrDef::Expr(Expr::Literal(LiteralKind::SelfEvaluating(
-                SelfEvaluatingKind::Boolean(false)
-            ))))
+            Ok(ExprOrDef::Expr(bool_expr!(false)))
+        );
+
+        assert_eq!(
+            parse(proper_list_datum![
+                symbol_datum!("or"),
+                int_datum!(1),
+                bool_datum!(true),
+            ]),
+            Ok(ExprOrDef::Expr(Expr::SimpleLet {
+                arg: "__temp_var".to_owned(),
+                value: Box::new(int_expr!(1)),
+                body: Box::new(Expr::Conditional {
+                    test: Box::new(var_expr!("__temp_var")),
+                    consequent: Box::new(var_expr!("__temp_var")),
+                    alternate: Some(Box::new(bool_expr!(true))),
+                })
+            }))
         );
     }
 
     #[test]
     fn cases() {
-        assert!(parse(proper_list_datum![
-            symbol_datum!("case"),
-            int_datum!(42),
-            proper_list_datum![proper_list_datum![int_datum!(1)], int_datum!(2)],
-            proper_list_datum![
-                proper_list_datum![int_datum!(3), int_datum!(4)],
-                int_datum!(5),
-            ],
-            proper_list_datum![symbol_datum!("else"), int_datum!(6)],
-        ])
-        .is_ok());
+        assert_eq!(
+            parse(proper_list_datum![
+                symbol_datum!("case"),
+                int_datum!(42),
+                proper_list_datum![proper_list_datum![int_datum!(1)], int_datum!(2)],
+                proper_list_datum![
+                    proper_list_datum![int_datum!(3), int_datum!(4)],
+                    int_datum!(5),
+                ],
+                proper_list_datum![symbol_datum!("else"), int_datum!(6)],
+            ]),
+            Ok(ExprOrDef::Expr(Expr::SimpleLet {
+                arg: "__temp_var".to_owned(),
+                value: Box::new(int_expr!(42)),
+                body: Box::new(Expr::Conditional {
+                    test: Box::new(Expr::ProcCall {
+                        operator: Box::new(var_expr!("memv")),
+                        operands: vec![
+                            var_expr!("__temp_var"),
+                            Expr::Literal(LiteralKind::Quotation(proper_list_datum![int_datum!(
+                                1
+                            )]))
+                        ]
+                    }),
+                    consequent: Box::new(int_expr!(2)),
+                    alternate: Some(Box::new(Expr::Conditional {
+                        test: Box::new(Expr::ProcCall {
+                            operator: Box::new(var_expr!("memv")),
+                            operands: vec![
+                                var_expr!("__temp_var"),
+                                Expr::Literal(LiteralKind::Quotation(proper_list_datum![
+                                    int_datum!(3),
+                                    int_datum!(4)
+                                ]))
+                            ]
+                        }),
+                        consequent: Box::new(int_expr!(5)),
+                        alternate: Some(Box::new(int_expr!(6))),
+                    })),
+                })
+            }))
+        );
 
         assert_eq!(
             parse(proper_list_datum![
@@ -1468,11 +1691,14 @@ mod tests {
                 Datum::EmptyList,
                 int_datum!(0)
             ]),
-            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
-                kind: LetKind::Normal,
-                bindings: vec![],
-                body: Body(vec![ExprOrDef::Expr(int_expr!(0))]),
-            })))
+            Ok(ExprOrDef::Expr(Expr::ProcCall {
+                operator: Box::new(Expr::Lambda(ProcData {
+                    args: vec![],
+                    rest: None,
+                    body: Body(vec![ExprOrDef::Expr(int_expr!(0))]),
+                })),
+                operands: vec![]
+            }))
         );
 
         assert_eq!(
@@ -1482,33 +1708,49 @@ mod tests {
                 proper_list_datum![symbol_datum!("define"), symbol_datum!("y"), int_datum!(2)],
                 proper_list_datum![symbol_datum!("+"), symbol_datum!("x"), symbol_datum!("y")],
             ]),
-            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
-                kind: LetKind::Normal,
-                bindings: vec![("x".to_owned(), int_expr!(1))],
-                body: Body(vec![
-                    ExprOrDef::Definition(Definition::Variable {
-                        name: "y".to_owned(),
-                        value: Box::new(int_expr!(2)),
-                    }),
-                    ExprOrDef::Expr(Expr::ProcCall {
-                        operator: Box::new(Expr::Variable("+".to_owned())),
-                        operands: vec![var_expr!("x"), var_expr!("y")],
-                    }),
-                ]),
-            })))
+            Ok(ExprOrDef::Expr(Expr::ProcCall {
+                operator: Box::new(Expr::Lambda(ProcData {
+                    args: vec!["x".to_owned()],
+                    rest: None,
+                    body: Body(vec![
+                        ExprOrDef::Definition(Definition::Variable {
+                            name: "y".to_owned(),
+                            value: Box::new(int_expr!(2)),
+                        }),
+                        ExprOrDef::Expr(Expr::ProcCall {
+                            operator: Box::new(var_expr!("+")),
+                            operands: vec![var_expr!("x"), var_expr!("y")],
+                        }),
+                    ]),
+                })),
+                operands: vec![int_expr!(1)],
+            }))
         );
 
         assert_eq!(
             parse(proper_list_datum![
                 symbol_datum!("let*"),
-                proper_list_datum![proper_list_datum![symbol_datum!("x"), int_datum!(1)]],
-                symbol_datum!("x"),
+                proper_list_datum![
+                    proper_list_datum![symbol_datum!("x"), int_datum!(1)],
+                    proper_list_datum![symbol_datum!("y"), symbol_datum!("x")]
+                ],
+                symbol_datum!("y"),
             ]),
-            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
-                kind: LetKind::Star,
-                bindings: vec![("x".to_owned(), int_expr!(1))],
-                body: Body(vec![ExprOrDef::Expr(var_expr!("x"))]),
-            })))
+            Ok(ExprOrDef::Expr(Expr::ProcCall {
+                operator: Box::new(Expr::Lambda(ProcData {
+                    args: vec!["x".to_owned()],
+                    rest: None,
+                    body: Body(vec![ExprOrDef::Expr(Expr::ProcCall {
+                        operator: Box::new(Expr::Lambda(ProcData {
+                            args: vec!["y".to_owned()],
+                            rest: None,
+                            body: Body(vec![ExprOrDef::Expr(var_expr!("y"))]),
+                        })),
+                        operands: vec![var_expr!("x")],
+                    })]),
+                })),
+                operands: vec![int_expr!(1)],
+            }))
         );
 
         assert_eq!(
@@ -1517,11 +1759,27 @@ mod tests {
                 proper_list_datum![proper_list_datum![symbol_datum!("x"), int_datum!(1)]],
                 symbol_datum!("x"),
             ]),
-            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
-                kind: LetKind::Rec,
-                bindings: vec![("x".to_owned(), int_expr!(1))],
-                body: Body(vec![ExprOrDef::Expr(var_expr!("x"))]),
-            })))
+            Ok(ExprOrDef::Expr(Expr::ProcCall {
+                operator: Box::new(Expr::Lambda(ProcData {
+                    args: vec!["x".to_owned()],
+                    rest: None,
+                    body: Body(vec![
+                        ExprOrDef::Expr(Expr::ProcCall {
+                            operator: Box::new(Expr::Lambda(ProcData {
+                                args: vec!["__temp_var".to_owned()],
+                                rest: None,
+                                body: Body(vec![ExprOrDef::Expr(Expr::Assignment {
+                                    variable: "x".to_owned(),
+                                    value: Box::new(var_expr!("__temp_var"))
+                                })])
+                            })),
+                            operands: vec![int_expr!(1)]
+                        }),
+                        ExprOrDef::Expr(var_expr!("x")),
+                    ]),
+                })),
+                operands: vec![Expr::Undefined],
+            }))
         );
 
         assert_eq!(
@@ -1531,14 +1789,30 @@ mod tests {
                 proper_list_datum![proper_list_datum![symbol_datum!("x"), int_datum!(1)]],
                 proper_list_datum![symbol_datum!("foo"), symbol_datum!("x")],
             ]),
-            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Let {
-                kind: LetKind::Named("foo".to_owned()),
-                bindings: vec![("x".to_owned(), int_expr!(1))],
-                body: Body(vec![ExprOrDef::Expr(Expr::ProcCall {
-                    operator: Box::new(var_expr!("foo")),
-                    operands: vec![var_expr!("x")],
-                })])
-            })))
+            Ok(ExprOrDef::Expr(Expr::ProcCall {
+                operator: Box::new(Expr::ProcCall {
+                    operator: Box::new(Expr::Lambda(ProcData {
+                        args: vec!["foo".to_owned()],
+                        rest: None,
+                        body: Body(vec![
+                            ExprOrDef::Expr(Expr::Assignment {
+                                variable: "foo".to_owned(),
+                                value: Box::new(Expr::Lambda(ProcData {
+                                    args: vec!["x".to_owned()],
+                                    rest: None,
+                                    body: Body(vec![ExprOrDef::Expr(Expr::ProcCall {
+                                        operator: Box::new(var_expr!("foo")),
+                                        operands: vec![var_expr!("x")]
+                                    })])
+                                }))
+                            }),
+                            ExprOrDef::Expr(var_expr!("foo"))
+                        ])
+                    })),
+                    operands: vec![Expr::Undefined]
+                }),
+                operands: vec![int_expr!(1)]
+            }))
         );
 
         assert_eq!(
@@ -1547,7 +1821,7 @@ mod tests {
                 symbol_datum!("foo"),
                 proper_list_datum![proper_list_datum![symbol_datum!("x"), int_datum!(1)]],
                 proper_list_datum![symbol_datum!("foo"), symbol_datum!("x")],
-            ]),
+            ],),
             Err(ParserError {
                 kind: ParserErrorKind::BadSyntax("let*".to_owned())
             })

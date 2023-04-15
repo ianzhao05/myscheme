@@ -8,6 +8,7 @@ use crate::proc::Procedure;
 #[derive(Debug, Clone)]
 pub enum ObjectRef {
     Object(Rc<Object>),
+    Undefined,
     EmptyList,
     Void,
 }

@@ -182,7 +182,7 @@ fn closures() {
 }
 
 #[test]
-fn derived_exprs() {
+fn ands_ors() {
     let env = Env::primitives();
 
     assert_eval_eq!("(and 1)", "1", env);
@@ -193,6 +193,11 @@ fn derived_exprs() {
     assert_eval_eq!("(or 1 2)", "1", env);
     assert_eval_eq!("(or #f #f 3)", "3", env);
     assert_eval_eq!("(or #f #f #f)", "#f", env);
+}
+
+#[test]
+fn conds() {
+    let env = Env::primitives();
 
     assert_eval_eq!("(cond (1))", "1", env);
     assert_eval_eq!("(cond (#t 1))", "1", env);
@@ -200,6 +205,11 @@ fn derived_exprs() {
     assert_eval_eq!("(cond (#f 1) (#f 2) (else 3))", "3", env);
     assert_eval_eq!("(cond ((cons 1 2) => car))", "1", env);
     assert_eval_eq!("(cond (#f => car) ((cons 1 2) => cdr))", "2", env);
+}
+
+#[test]
+fn cases() {
+    let env = Env::primitives();
 
     assert_eval_eq!(
         "(case (* 2 3) ((2 3 5 7) 'prime) ((1 4 6 8 9) 'composite))",
@@ -208,4 +218,54 @@ fn derived_exprs() {
     );
     assert_eval_eq!("(case (car '(c d)) ((a) 'A) ((c) 'C) (else 'E))", "'C", env);
     assert_eval_eq!("(case 'b ((a) 'A) (else 'E))", "'E", env);
+}
+
+#[test]
+fn lets() {
+    let env = Env::primitives();
+
+    assert_eval_eq!("(let ((x 2) (y 3)) (* x y))", "6", env);
+    assert_eval_eq!(
+        "(let ((x 2) (y 3)) (let ((x 7) (z (+ x y))) (* z x)))",
+        "35",
+        env
+    );
+
+    assert_eval_eq!(
+        "(let f ((n 5) (acc 1)) (if (zero? n) acc (f (- n 1) (* n acc))))",
+        "120",
+        env
+    );
+    assert_eval_eq!(
+        "(let loop ((numbers '(3 -2 1 6 -5))
+                    (nonneg '())
+                    (neg ' () ))
+            (cond ((null? numbers) (list nonneg neg))
+                  ((>= (car numbers) 0)
+                   (loop (cdr numbers) (cons (car numbers) nonneg) neg))
+                  ((< (car numbers) 0)
+                   (loop (cdr numbers) nonneg (cons (car numbers) neg)))))",
+        "'((6 1 3) (-5 -2))",
+        env
+    );
+
+    assert_eval_eq!("(let* ((x 2) (y x)) (* x y))", "4", env);
+    assert_eval_eq!(
+        "(let ((x 2) (y 3)) (let* ((x 7) (z (+ x y))) (* z x)))",
+        "70",
+        env
+    );
+
+    assert_eval_eq!(
+        "(letrec ((f (lambda (n) (if (zero? n) 1 (* n (f (- n 1))))))) (f 5))",
+        "120",
+        env
+    );
+    assert_eval_eq!(
+        "(letrec ((my-even? (lambda (n) (if (zero? n) #t (my-odd? (- n 1)))))
+                  (my-odd? (lambda (n) (if (zero? n) #f (my-even? (- n 1))))))
+            (list (my-even? 42) (my-odd? 42)))",
+        "'(#t #f)",
+        env
+    );
 }
