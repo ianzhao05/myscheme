@@ -80,6 +80,8 @@ fn list_primitives() {
     assert_eval_eq!("(cdr (cons 1 2))", "2", env);
     assert_eval_eq!("(list 1 2 3)", "'(1 2 3)", env);
 
+    assert_eval_eq!("(cadadr '((a b) (c d) (e f)))", "'d", env);
+
     assert_eval_eq!("(null? '())", "#t", env);
     assert_eval_eq!("(null? '(1 2 3))", "#f", env);
 
@@ -88,6 +90,17 @@ fn list_primitives() {
 
     assert_eval_eq!("(reverse '())", "'()", env);
     assert_eval_eq!("(reverse '(1 2 3))", "'(3 2 1)", env);
+
+    assert_eval_eq!("(append '(a b c) '())", "'(a b c)", env);
+    assert_eval_eq!("(append '() '(a b c))", "'(a b c)", env);
+    assert_eval_eq!("(append '(a b) '(c d) '(e f))", "'(a b c d e f)", env);
+    assert_eval_eq!("(append '(a b) 'c)", "'(a b . c)", env);
+    assert_eval_eq!("(append '(a b) '(c . d))", "'(a b c . d)", env);
+    assert_eval_eq!(
+        "(let ((x '(b))) (eq? x (cdr (append '(a) x))))  ",
+        "#t",
+        env
+    );
 
     assert_eval_eq!("(memq 'a '(a b c))", "'(a b c)", env);
     assert_eval_eq!("(memq 'b '(a b c))", "'(b c)", env);
