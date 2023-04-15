@@ -893,9 +893,14 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
         "delay" => {
             let expr = parse_expr(operands.next().ok_or_else(bs_err)?)?;
             if operands.next().is_none() {
-                Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Delay(
-                    Box::new(expr),
-                ))))
+                Ok(ExprOrDef::Expr(Expr::ProcCall {
+                    operator: Box::new(Expr::Variable("make-promise".to_owned())),
+                    operands: vec![Expr::Lambda(ProcData {
+                        args: vec![],
+                        rest: None,
+                        body: Body(vec![ExprOrDef::Expr(expr)]),
+                    })],
+                }))
             } else {
                 Err(bs_err())
             }
@@ -1926,12 +1931,17 @@ mod tests {
                 symbol_datum!("delay"),
                 proper_list_datum![symbol_datum!("f"), int_datum!(1)]
             ]),
-            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Delay(
-                Box::new(Expr::ProcCall {
-                    operator: Box::new(var_expr!("f")),
-                    operands: vec![int_expr!(1)],
-                })
-            ))))
+            Ok(ExprOrDef::Expr(Expr::ProcCall {
+                operator: Box::new(Expr::Variable("make-promise".to_owned())),
+                operands: vec![Expr::Lambda(ProcData {
+                    args: vec![],
+                    rest: None,
+                    body: Body(vec![ExprOrDef::Expr(Expr::ProcCall {
+                        operator: Box::new(var_expr!("f")),
+                        operands: vec![int_expr!(1)],
+                    })]),
+                })],
+            })),
         );
 
         assert_eq!(

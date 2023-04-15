@@ -223,6 +223,14 @@ fn closures() {
 }
 
 #[test]
+fn sequencing() {
+    let env = Env::primitives();
+
+    assert_eval_eq!("(begin 1 2 3)", "3", env);
+    assert_eval_eq!("(let ((x 1)) (begin (set! x 2) x))", "2", env);
+}
+
+#[test]
 fn ands_ors() {
     let env = Env::primitives();
 
@@ -234,6 +242,7 @@ fn ands_ors() {
     assert_eval_eq!("(or 1 2)", "1", env);
     assert_eval_eq!("(or #f #f 3)", "3", env);
     assert_eval_eq!("(or #f #f #f)", "#f", env);
+    assert_eval_eq!("(or (memq 'b '(a b c)) (/ 3 0))", "'(b c)", env);
 }
 
 #[test]
@@ -309,4 +318,46 @@ fn lets() {
         "'(#t #f)",
         env
     );
+}
+
+#[test]
+fn delays() {
+    let env = Env::primitives();
+
+    assert_eval_eq!("(force (delay (+ 1 2)))", "3", env);
+
+    assert_eval_eq!(
+        "(let ((p (delay (+ 1 2)))) (list (force p) (force p)))",
+        "'(3 3)",
+        env
+    );
+
+    assert_eval_eq!(
+        "(let ((p (delay (+ 1 2)))) (set! p (delay (+ 3 4))) (force p))",
+        "7",
+        env
+    );
+
+    assert_eval_eq!(
+        "(define a-stream
+           (letrec ((next (lambda (n) (cons n (delay (next (+ n 1)))))))
+             (next 0)))
+         (define head car)
+         (define (tail stream) (force (cdr stream)))
+         (head (tail (tail a-stream)))",
+        "2",
+        env
+    );
+
+    assert_eval_eq!(
+        "(define count 0)
+         (define x 5)
+         (define p
+           (delay (begin (set! count (+ count 1))
+                         (if (> count x) count (force p)))))
+         (force p)
+         (begin (set! x 10) (force p))",
+        "6 6",
+        env
+    )
 }

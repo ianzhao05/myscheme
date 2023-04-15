@@ -46,7 +46,6 @@ pub enum DerivedExprKind {
         term: (Box<Expr>, Vec<Expr>),
         body: Vec<Expr>,
     },
-    Delay(Box<Expr>),
 }
 
 #[derive(Debug, PartialEq, Clone)]

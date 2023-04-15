@@ -1,3 +1,4 @@
+mod delay;
 mod eq;
 mod list;
 mod numeric;
@@ -39,7 +40,7 @@ pub fn primitives() -> HashMap<String, ObjectRef> {
 pub fn prelude() -> &'static [ExprOrDef] {
     lazy_static! {
         static ref PRELUDE: Vec<ExprOrDef> =
-            parse_str(&vec![numeric::PRELUDE, eq::PRELUDE, list::PRELUDE].join(""))
+            parse_str(&vec![numeric::PRELUDE, list::PRELUDE, delay::PRELUDE].join(""))
                 .expect("Prelude should parse without error");
     }
     &PRELUDE

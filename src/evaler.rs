@@ -149,6 +149,13 @@ fn eval_expr(expr: &Expr, env: Rc<RefCell<Env>>) -> Result<ObjectRef, EvalError>
             env.borrow_mut().insert(arg, value);
             eval_expr(body, env)
         }
+        Expr::Begin(seq) => {
+            let mut res = ObjectRef::Void;
+            for expr in seq {
+                res = eval_expr(expr, env.clone())?;
+            }
+            Ok(res)
+        }
         Expr::Undefined => {
             return Ok(ObjectRef::Undefined);
         }
@@ -465,6 +472,24 @@ mod tests {
                 env
             ),
             Ok(EvalResult::Expr(ObjectRef::new(atom_obj!(int_datum!(2)))))
+        );
+    }
+
+    #[test]
+    fn begins() {
+        let env = Rc::new(RefCell::new(Env::new(None)));
+
+        assert_eq!(
+            eval(
+                &ExprOrDef::Expr(Expr::Begin(vec![int_expr!(1), int_expr!(2), int_expr!(3)])),
+                env.clone()
+            ),
+            Ok(EvalResult::Expr(ObjectRef::new(atom_obj!(int_datum!(3)))))
+        );
+
+        assert_eq!(
+            eval(&ExprOrDef::Expr(Expr::Begin(vec![])), env),
+            Ok(EvalResult::Expr(ObjectRef::Void))
         );
     }
 }

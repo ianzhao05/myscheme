@@ -57,5 +57,3 @@ pub fn primitives() -> PrimitiveMap {
     m.insert("equal?", equal);
     m
 }
-
-pub const PRELUDE: &str = "";
