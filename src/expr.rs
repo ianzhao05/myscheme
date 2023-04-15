@@ -16,19 +16,6 @@ pub enum LiteralKind {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum CondClause {
-    Normal(Expr, Vec<Expr>),
-    Arrow(Expr, Expr),
-    Else(Vec<Expr>),
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum CaseClause {
-    Normal(Vec<Datum>, Vec<Expr>),
-    Else(Vec<Expr>),
-}
-
-#[derive(Debug, PartialEq, Clone)]
 pub struct ProcData {
     pub args: Vec<String>,
     pub rest: Option<String>,
@@ -61,10 +48,6 @@ pub struct IterationSpec {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum DerivedExprKind {
-    Case {
-        key: Box<Expr>,
-        clauses: Vec<CaseClause>,
-    },
     Let {
         kind: LetKind,
         bindings: Vec<(String, Expr)>,

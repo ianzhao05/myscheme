@@ -65,6 +65,22 @@ fn list_primitives() {
 
     assert_eval_eq!("(null? '())", "#t", env);
     assert_eval_eq!("(null? '(1 2 3))", "#f", env);
+
+    assert_eval_eq!("(length '())", "0", env);
+    assert_eval_eq!("(length '(1 2 3))", "3", env);
+
+    assert_eval_eq!("(reverse '())", "'()", env);
+    assert_eval_eq!("(reverse '(1 2 3))", "'(3 2 1)", env);
+
+    assert_eval_eq!("(memq 'a '(a b c))", "'(a b c)", env);
+    assert_eval_eq!("(memq 'b '(a b c))", "'(b c)", env);
+    assert_eval_eq!("(memq 'c '(a b c))", "'(c)", env);
+    assert_eval_eq!("(memq 'd '(a b c))", "#f", env);
+
+    assert_eval_eq!("(memv 2 '(1 2 3))", "'(2 3)", env);
+    assert_eval_eq!("(memv 4 '(1 2 3))", "#f", env);
+
+    assert_eval_eq!("(member '(4 5) '((1 2 3) (4 5) (6)))", "'((4 5) (6))", env);
 }
 
 #[test]
@@ -166,4 +182,12 @@ fn derived_exprs() {
     assert_eval_eq!("(cond (#f 1) (#f 2) (else 3))", "3", env);
     assert_eval_eq!("(cond ((cons 1 2) => car))", "1", env);
     assert_eval_eq!("(cond (#f => car) ((cons 1 2) => cdr))", "2", env);
+
+    assert_eval_eq!(
+        "(case (* 2 3) ((2 3 5 7) 'prime) ((1 4 6 8 9) 'composite))",
+        "'composite",
+        env
+    );
+    assert_eval_eq!("(case (car '(c d)) ((a) 'A) ((c) 'C) (else 'E))", "'C", env);
+    assert_eval_eq!("(case 'b ((a) 'A) (else 'E))", "'E", env);
 }

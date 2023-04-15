@@ -619,48 +619,63 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
         }
         "case" => {
             let key = parse_expr(operands.next().ok_or_else(bs_err)?)?;
-            let mut clauses = vec![];
-            let mut else_present = false;
-            for clause in operands {
-                if else_present {
-                    return Err(bs_err());
-                }
+            let temp = gen_temp_name();
+            let mut acc: Option<Expr> = None;
+            for clause in operands.rev() {
                 if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = clause {
                     let mut pi = parts.into_iter();
                     let first = pi.next().ok_or(ParserError {
                         kind: ParserErrorKind::IllegalEmptyList,
                     })?;
-                    match &first {
+                    let seq = pi.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
+                    if seq.is_empty() {
+                        return Err(bs_err());
+                    }
+                    match first {
                         Datum::Simple(SimpleDatum::Symbol(s)) if s == "else" => {
-                            let seq = pi.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
-                            if seq.is_empty() {
+                            if let Some(_) = acc {
                                 return Err(bs_err());
                             }
-                            clauses.push(CaseClause::Else(seq));
-                            else_present = true;
+                            acc = Some(if seq.len() == 1 {
+                                seq.into_iter().next().unwrap()
+                            } else {
+                                Expr::Begin(seq)
+                            });
+                        }
+                        Datum::Compound(CompoundDatum::List(ListKind::Proper(_))) => {
+                            acc = Some(Expr::Conditional {
+                                test: Box::new(Expr::ProcCall {
+                                    operator: Box::new(Expr::Variable("memv".to_owned())),
+                                    operands: vec![
+                                        Expr::Variable(temp.clone()),
+                                        Expr::Literal(LiteralKind::Quotation(first)),
+                                    ],
+                                }),
+                                consequent: Box::new(if seq.len() == 1 {
+                                    seq.into_iter().next().unwrap()
+                                } else {
+                                    Expr::Begin(seq)
+                                }),
+                                alternate: match acc {
+                                    Some(a) => Some(Box::new(a)),
+                                    None => None,
+                                },
+                            });
                         }
                         _ => {
-                            if let Datum::Compound(CompoundDatum::List(ListKind::Proper(keys))) =
-                                first
-                            {
-                                let seq = pi.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
-                                if seq.is_empty() {
-                                    return Err(bs_err());
-                                }
-                                clauses.push(CaseClause::Normal(keys.clone(), seq));
-                            } else {
-                                return Err(bs_err());
-                            }
+                            return Err(bs_err());
                         }
                     }
-                } else {
-                    return Err(bs_err());
                 }
             }
-            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Case {
-                key: Box::new(key),
-                clauses,
-            })))
+            match acc {
+                Some(a) => Ok(ExprOrDef::Expr(Expr::SimpleLet {
+                    arg: temp,
+                    value: Box::new(key),
+                    body: Box::new(a),
+                })),
+                None => Err(bs_err()),
+            }
         }
         "let" | "let*" | "letrec" => {
             let mut first = operands.next().ok_or_else(bs_err)?;
@@ -1408,26 +1423,17 @@ mod tests {
 
     #[test]
     fn cases() {
-        assert_eq!(
-            parse(proper_list_datum![
-                symbol_datum!("case"),
-                int_datum!(42),
-                proper_list_datum![proper_list_datum![int_datum!(1)], int_datum!(2)],
-                proper_list_datum![
-                    proper_list_datum![int_datum!(3), int_datum!(4)],
-                    int_datum!(5),
-                ],
-                proper_list_datum![symbol_datum!("else"), int_datum!(6)],
-            ]),
-            Ok(ExprOrDef::Expr(Expr::DerivedExpr(DerivedExprKind::Case {
-                key: Box::new(int_expr!(42)),
-                clauses: vec![
-                    CaseClause::Normal(vec![int_datum!(1)], vec![int_expr!(2)]),
-                    CaseClause::Normal(vec![int_datum!(3), int_datum!(4)], vec![int_expr!(5)]),
-                    CaseClause::Else(vec![int_expr!(6)]),
-                ],
-            })))
-        );
+        assert!(parse(proper_list_datum![
+            symbol_datum!("case"),
+            int_datum!(42),
+            proper_list_datum![proper_list_datum![int_datum!(1)], int_datum!(2)],
+            proper_list_datum![
+                proper_list_datum![int_datum!(3), int_datum!(4)],
+                int_datum!(5),
+            ],
+            proper_list_datum![symbol_datum!("else"), int_datum!(6)],
+        ])
+        .is_ok());
 
         assert_eq!(
             parse(proper_list_datum![

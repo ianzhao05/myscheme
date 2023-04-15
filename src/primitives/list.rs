@@ -66,6 +66,28 @@ pub fn primitives() -> PrimitiveMap {
 
 pub const PRELUDE: &str = r#"
 (define (list . args) args)
+
+(define (length l)
+    (define (length-help l acc)
+        (if (null? l) acc (length-help (cdr l) (+ acc 1))))
+    (length-help l 0))
+
+(define (reverse l)
+    (define (reverse-help l acc)
+        (if (null? l) acc (reverse-help (cdr l) (cons (car l) acc))))
+    (reverse-help l '()))
+
+(define (memq o l)
+    (if (null? l) #f
+        (if (eq? (car l) o) l (memq o (cdr l)))))
+
+(define (memv o l)
+    (if (null? l) #f
+        (if (eqv? (car l) o) l (memv o (cdr l)))))
+
+(define (member o l)
+    (if (null? l) #f
+        (if (equal? (car l) o) l (member o (cdr l)))))
 "#;
 
 #[cfg(test)]
