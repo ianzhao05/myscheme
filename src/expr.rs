@@ -33,22 +33,6 @@ pub enum Definition {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct IterationSpec {
-    pub variable: String,
-    pub init: Expr,
-    pub step: Option<Expr>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum DerivedExprKind {
-    Do {
-        specs: Vec<IterationSpec>,
-        term: (Box<Expr>, Vec<Expr>),
-        body: Vec<Expr>,
-    },
-}
-
-#[derive(Debug, PartialEq, Clone)]
 pub enum QQTemplateData {
     Datum(Datum),
     Unquotation(QQTemplate),
@@ -94,7 +78,6 @@ pub enum Expr {
         variable: String,
         value: Box<Expr>,
     },
-    DerivedExpr(DerivedExprKind),
     Begin(Vec<Expr>),
     SimpleLet {
         arg: String,
@@ -172,7 +155,6 @@ impl PartialEq for Expr {
                 (a1 == a2 || (cfg!(test) && a1.starts_with("__temp_") && a2.starts_with("__temp_")))
                     && b1 == b2
             }
-            (Expr::DerivedExpr(a), Expr::DerivedExpr(b)) => a == b,
             (Expr::Begin(a), Expr::Begin(b)) => a == b,
             (
                 Expr::SimpleLet {
