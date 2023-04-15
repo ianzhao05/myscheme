@@ -61,13 +61,10 @@ pub struct IterationSpec {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum DerivedExprKind {
-    Cond(Vec<CondClause>),
     Case {
         key: Box<Expr>,
         clauses: Vec<CaseClause>,
     },
-    And(Vec<Expr>),
-    Or(Vec<Expr>),
     Let {
         kind: LetKind,
         bindings: Vec<(String, Expr)>,
@@ -129,6 +126,12 @@ pub enum Expr {
         value: Box<Expr>,
     },
     DerivedExpr(DerivedExprKind),
+    Begin(Vec<Expr>),
+    SimpleLet {
+        arg: String,
+        value: Box<Expr>,
+        body: Box<Expr>,
+    },
     Quasiquotation(QQTemplate),
 }
 

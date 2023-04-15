@@ -146,3 +146,24 @@ fn closures() {
         env
     )
 }
+
+#[test]
+fn derived_exprs() {
+    let env = Env::primitives();
+
+    assert_eval_eq!("(and 1)", "1", env);
+    assert_eval_eq!("(and 1 2)", "2", env);
+    assert_eval_eq!("(and 1 2 #f 4 5)", "#f", env);
+
+    assert_eval_eq!("(or 1)", "1", env);
+    assert_eval_eq!("(or 1 2)", "1", env);
+    assert_eval_eq!("(or #f #f 3)", "3", env);
+    assert_eval_eq!("(or #f #f #f)", "#f", env);
+
+    assert_eval_eq!("(cond (1))", "1", env);
+    assert_eval_eq!("(cond (#t 1))", "1", env);
+    assert_eval_eq!("(cond (#f 1) (#t 2))", "2", env);
+    assert_eval_eq!("(cond (#f 1) (#f 2) (else 3))", "3", env);
+    assert_eval_eq!("(cond ((cons 1 2) => car))", "1", env);
+    assert_eval_eq!("(cond (#f => car) ((cons 1 2) => cdr))", "2", env);
+}

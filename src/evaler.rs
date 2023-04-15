@@ -139,6 +139,11 @@ fn eval_expr(expr: &Expr, env: Rc<RefCell<Env>>) -> Result<ObjectRef, EvalError>
             }
             Ok(ObjectRef::Void)
         }
+        Expr::SimpleLet { arg, value, body } => {
+            let value = eval_expr(value, env.clone())?;
+            env.borrow_mut().insert(arg, value);
+            eval_expr(body, env)
+        }
         _ => todo!(),
     }
 }
