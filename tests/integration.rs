@@ -80,10 +80,22 @@ fn list_primitives() {
     assert_eval_eq!("(cdr (cons 1 2))", "2", env);
     assert_eval_eq!("(list 1 2 3)", "'(1 2 3)", env);
 
+    assert_eval_eq!("(list? '())", "#t", env);
+    assert_eval_eq!("(list? '(1 2 3))", "#t", env);
+    assert_eval_eq!("(list? '(1 2 . 3))", "#f", env);
+
     assert_eval_eq!("(cadadr '((a b) (c d) (e f)))", "'d", env);
 
     assert_eval_eq!("(null? '())", "#t", env);
     assert_eval_eq!("(null? '(1 2 3))", "#f", env);
+
+    assert_eval_eq!("(pair? 1)", "#f", env);
+    assert_eval_eq!("(pair? '())", "#f", env);
+    assert_eval_eq!("(pair? '(1 2 3))", "#t", env);
+    assert_eval_eq!("(pair? '(1 . 2))", "#t", env);
+
+    assert_eval_eq!("(let ((x '(1 . 2))) (set-car! x 3) (car x))", "3", env);
+    assert_eval_eq!("(let ((x '(1 . 2))) (set-cdr! x 3) (cdr x))", "3", env);
 
     assert_eval_eq!("(length '())", "0", env);
     assert_eval_eq!("(length '(1 2 3))", "3", env);
@@ -102,15 +114,31 @@ fn list_primitives() {
         env
     );
 
-    assert_eval_eq!("(memq 'a '(a b c))", "'(a b c)", env);
-    assert_eval_eq!("(memq 'b '(a b c))", "'(b c)", env);
-    assert_eval_eq!("(memq 'c '(a b c))", "'(c)", env);
-    assert_eval_eq!("(memq 'd '(a b c))", "#f", env);
+    assert_eval_eq!("(list-tail '(a b c d) 1)", "'(b c d)", env);
+    assert_eval_eq!("(list-ref '(a b c d) 2)", "'c", env);
 
-    assert_eval_eq!("(memv 2 '(1 2 3))", "'(2 3)", env);
-    assert_eval_eq!("(memv 4 '(1 2 3))", "#f", env);
-
+    assert_eval_eq!(
+        "(define ml '(a b c))
+         (memq 'a ml)
+         (memq 'b ml)
+         (memq 'c ml)
+         (memq 'd ml)",
+        "'(a b c) '(b c) '(c) #f",
+        env
+    );
+    assert_eval_eq!("(memv 2 '(1 2 3)) (memv 4 '(1 2 3))", "'(2 3) #f", env);
     assert_eval_eq!("(member '(4 5) '((1 2 3) (4 5) (6)))", "'((4 5) (6))", env);
+
+    assert_eval_eq!(
+        "(define al '((a 1) (b 2) (c 3)))
+         (assq 'a al)
+         (assq 'b al)
+         (assq 'd al)",
+        "'(a 1) '(b 2) #f",
+        env
+    );
+    assert_eval_eq!("(assv 5 '((2 3) (5 7) (11 13)))", "'(5 7)", env);
+    assert_eval_eq!("(assoc '(a) '(((a)) ((b)) ((c))))", "'((a))", env);
 }
 
 #[test]

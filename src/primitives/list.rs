@@ -42,6 +42,28 @@ fn select(args: &[ObjectRef], first: bool) -> Result<ObjectRef, EvalError> {
     }
 }
 
+fn set_select(args: &[ObjectRef], first: bool) -> Result<ObjectRef, EvalError> {
+    if args.len() != 2 {
+        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
+            expected: 2,
+            got: args.len(),
+            rest: false,
+        }));
+    }
+    match &args[0].try_deref(pair_cv)? {
+        Object::Pair(p) => {
+            let mut b = p.borrow_mut();
+            if first {
+                b.0 = args[1].clone();
+            } else {
+                b.1 = args[1].clone();
+            }
+            Ok(ObjectRef::Void)
+        }
+        _ => Err(pair_cv(&args[0])),
+    }
+}
+
 fn null(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     if args.len() != 1 {
         return Err(EvalError::new(EvalErrorKind::ArityMismatch {
@@ -55,16 +77,41 @@ fn null(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ))))
 }
 
+fn pair(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
+    if args.len() != 1 {
+        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
+            expected: 1,
+            got: args.len(),
+            rest: false,
+        }));
+    }
+    Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(
+        match &args[0] {
+            ObjectRef::Object(o) => match **o {
+                Object::Pair(_) => true,
+                _ => false,
+            },
+            _ => false,
+        },
+    ))))
+}
+
 pub fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("cons", cons);
     m.insert("car", |args| select(args, true));
     m.insert("cdr", |args| select(args, false));
+    m.insert("set-car!", |args| set_select(args, true));
+    m.insert("set-cdr!", |args| set_select(args, false));
     m.insert("null?", null);
+    m.insert("pair?", pair);
     m
 }
 
 pub const PRELUDE: &str = r#"
+(define (list? x)
+  (if (null? x) #t (if (pair? x) (list? (cdr x)) #f)))
+
 (define (list . args) args)
 
 (define (caar x) (car (car x)))
@@ -116,6 +163,12 @@ pub const PRELUDE: &str = r#"
     (if (null? l) acc (reverse-help (cdr l) (cons (car l) acc))))
   (reverse-help l '()))
 
+(define (list-tail l k)
+  (if (zero? k) l (list-tail (cdr l) (- k 1))))
+
+(define (list-ref l k)
+  (car (list-tail l k)))
+
 (define (memq o l)
   (if (null? l) #f
       (if (eq? (car l) o) l (memq o (cdr l)))))
@@ -127,6 +180,18 @@ pub const PRELUDE: &str = r#"
 (define (member o l)
   (if (null? l) #f
       (if (equal? (car l) o) l (member o (cdr l)))))
+
+(define (assq o al)
+  (if (null? al) #f
+      (if (eq? (caar al) o) (car al) (assq o (cdr al)))))
+
+(define (assv o al)
+  (if (null? al) #f
+      (if (eqv? (caar al) o) (car al) (assv o (cdr al)))))
+
+(define (assoc o al)
+  (if (null? al) #f
+      (if (equal? (caar al) o) (car al) (assoc o (cdr al)))))
 "#;
 
 #[cfg(test)]
@@ -184,6 +249,21 @@ mod tests {
                 ObjectRef::new(atom_obj!(int_datum!(2)))
             )]),
             Ok(ObjectRef::new(atom_obj!(bool_datum!(false))))
+        );
+    }
+
+    #[test]
+    fn test_pair() {
+        assert_eq!(
+            pair(&[ObjectRef::EmptyList]),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(false))))
+        );
+        assert_eq!(
+            pair(&[ObjectRef::new_pair(
+                ObjectRef::new(atom_obj!(int_datum!(1))),
+                ObjectRef::new(atom_obj!(int_datum!(2)))
+            )]),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
         );
     }
 }
