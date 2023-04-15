@@ -168,7 +168,10 @@ impl PartialEq for Expr {
                     variable: a2,
                     value: b2,
                 },
-            ) => a1 == a2 && b1 == b2,
+            ) => {
+                (a1 == a2 || (cfg!(test) && a1.starts_with("__temp_") && a2.starts_with("__temp_")))
+                    && b1 == b2
+            }
             (Expr::DerivedExpr(a), Expr::DerivedExpr(b)) => a == b,
             (Expr::Begin(a), Expr::Begin(b)) => a == b,
             (

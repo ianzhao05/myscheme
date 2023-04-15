@@ -361,3 +361,27 @@ fn delays() {
         env
     )
 }
+
+#[test]
+fn dos() {
+    let env = Env::primitives();
+
+    assert_eval_eq!("(do ((i 0 (+ i 1))) ((= i 3) i))", "3", env);
+
+    assert_eval_eq!(
+        "(do ((i 0 (+ i 1)) (j 0 (+ j 2)) (k 0))
+           ((= i 3) (list i j k))
+           (set! k (+ i j)))",
+        "'(3 6 6)",
+        env
+    );
+
+    assert_eval_eq!(
+        "(let ((x '(1 3 5 7 9)))
+           (do ((x x (cdr x))
+                (sum 0 (+ sum (car x))))
+               ((null? x) sum)))",
+        "25",
+        env
+    )
+}
