@@ -55,6 +55,23 @@ fn arithmetic() {
 }
 
 #[test]
+fn num_primitives() {
+    let env = Env::primitives();
+
+    assert_eval_eq!("(zero? 0)", "#t", env);
+    assert_eval_eq!("(zero? 1)", "#f", env);
+    assert_eval_eq!("(zero? -1)", "#f", env);
+
+    assert_eval_eq!("(positive? 0)", "#f", env);
+    assert_eval_eq!("(positive? 1)", "#t", env);
+    assert_eval_eq!("(positive? -1)", "#f", env);
+
+    assert_eval_eq!("(negative? 0)", "#f", env);
+    assert_eval_eq!("(negative? 1)", "#f", env);
+    assert_eval_eq!("(negative? -1)", "#t", env);
+}
+
+#[test]
 fn list_primitives() {
     let env = Env::primitives();
 
@@ -110,7 +127,7 @@ fn recursive_procs() {
     let env = Env::primitives();
 
     assert_eval_eq!(
-        "(define (fact n) (if (= n 0) 1 (* n (fact (- n 1))))) (fact 5)",
+        "(define (fact n) (if (zero? n) 1 (* n (fact (- n 1))))) (fact 5)",
         "120",
         env
     );
@@ -135,14 +152,15 @@ fn recursive_procs() {
     );
 
     assert_eval_eq!(
-        "(define (reverse l acc) (if (null? l) acc (reverse (cdr l) (cons (car l) acc)))) (reverse '(1 2 3 4 5) '())",
+        "(define (my-reverse l acc) (if (null? l) acc (my-reverse (cdr l) (cons (car l) acc))))
+         (my-reverse '(1 2 3 4 5) '())",
         "'(5 4 3 2 1)",
         env
     );
 
     assert_eval_eq!(
         "(define (Y f) ((lambda (x) (x x)) (lambda (x) (f (lambda (v) ((x x) v))))))
-         (define (fact self) (lambda (n) (if (= n 0) 1 (* n (self (- n 1))))))
+         (define (fact self) (lambda (n) (if (zero? n) 1 (* n (self (- n 1))))))
          ((Y fact) 5)",
         "120",
         env

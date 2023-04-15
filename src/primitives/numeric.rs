@@ -167,7 +167,11 @@ pub fn primitives() -> PrimitiveMap {
     m
 }
 
-pub const PRELUDE: &str = "";
+pub const PRELUDE: &str = "
+(define (zero? z) (= z 0))
+(define (positive? x) (> x 0))
+(define (negative? x) (< x 0))
+";
 
 #[cfg(test)]
 mod tests {
