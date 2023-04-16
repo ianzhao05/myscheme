@@ -76,6 +76,90 @@ impl Number {
             },
         }
     }
+
+    pub fn is_exact(&self) -> bool {
+        match self {
+            Number::Real(r) => match r {
+                RealKind::Real(_) => false,
+                RealKind::Rational(_) => true,
+                RealKind::Integer(_) => true,
+            },
+        }
+    }
+
+    pub fn is_integer(&self) -> bool {
+        match self {
+            Number::Real(r) => match r {
+                RealKind::Real(r) => r.fract() == 0.0,
+                RealKind::Rational(r) => r.is_integer(),
+                RealKind::Integer(_) => true,
+            },
+        }
+    }
+
+    pub fn max(self, other: Self) -> Self {
+        match (self, other) {
+            (Number::Real(a), Number::Real(b)) => match (a, b) {
+                (RealKind::Real(a), RealKind::Real(b)) => Number::Real(RealKind::Real(a.max(b))),
+                (RealKind::Rational(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Rational(a.max(b)))
+                }
+                (RealKind::Integer(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Integer(a.max(b)))
+                }
+                (RealKind::Rational(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Rational(a.max(BigRational::from(b))))
+                }
+                (RealKind::Integer(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Rational(BigRational::from(a).max(b)))
+                }
+                (RealKind::Real(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Real(a.max(b.to_f64().unwrap_or(0.0))))
+                }
+                (RealKind::Rational(a), RealKind::Real(b)) => {
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0).max(b)))
+                }
+                (RealKind::Real(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Real(a.max(b.to_f64().unwrap_or(0.0))))
+                }
+                (RealKind::Integer(a), RealKind::Real(b)) => {
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0).max(b)))
+                }
+            },
+        }
+    }
+
+    pub fn min(self, other: Self) -> Self {
+        match (self, other) {
+            (Number::Real(a), Number::Real(b)) => match (a, b) {
+                (RealKind::Real(a), RealKind::Real(b)) => Number::Real(RealKind::Real(a.min(b))),
+                (RealKind::Rational(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Rational(a.min(b)))
+                }
+                (RealKind::Integer(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Integer(a.min(b)))
+                }
+                (RealKind::Rational(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Rational(a.min(BigRational::from(b))))
+                }
+                (RealKind::Integer(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Rational(BigRational::from(a).min(b)))
+                }
+                (RealKind::Real(a), RealKind::Rational(b)) => {
+                    Number::Real(RealKind::Real(a.min(b.to_f64().unwrap_or(0.0))))
+                }
+                (RealKind::Rational(a), RealKind::Real(b)) => {
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0).min(b)))
+                }
+                (RealKind::Real(a), RealKind::Integer(b)) => {
+                    Number::Real(RealKind::Real(a.min(b.to_f64().unwrap_or(0.0))))
+                }
+                (RealKind::Integer(a), RealKind::Real(b)) => {
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0).min(b)))
+                }
+            },
+        }
+    }
 }
 
 impl Add for Number {

@@ -34,6 +34,26 @@ pub mod test_util {
     }
     pub(crate) use int_datum;
 
+    macro_rules! rational_datum {
+        ($n:expr,$d:expr) => {
+            $crate::datum::Datum::Simple($crate::datum::SimpleDatum::Number(
+                $crate::number::Number::Real($crate::number::RealKind::Rational(
+                    num::BigRational::new(num::BigInt::from($n), num::BigInt::from($d)),
+                )),
+            ))
+        };
+    }
+    pub(crate) use rational_datum;
+
+    macro_rules! real_datum {
+        ($n:expr) => {
+            $crate::datum::Datum::Simple($crate::datum::SimpleDatum::Number(
+                $crate::number::Number::Real($crate::number::RealKind::Real($n)),
+            ))
+        };
+    }
+    pub(crate) use real_datum;
+
     macro_rules! bool_datum {
         ($b:expr) => {
             $crate::datum::Datum::Simple($crate::datum::SimpleDatum::Boolean($b))

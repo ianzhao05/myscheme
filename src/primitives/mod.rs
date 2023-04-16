@@ -1,3 +1,4 @@
+mod bool;
 mod delay;
 mod eq;
 mod list;
@@ -24,24 +25,36 @@ fn merge(maps: &[PrimitiveMap]) -> PrimitiveMap {
 }
 
 pub fn primitives() -> HashMap<String, ObjectRef> {
-    merge(&[numeric::primitives(), eq::primitives(), list::primitives()])
-        .into_iter()
-        .map(|(k, v)| {
-            (
-                k.to_owned(),
-                ObjectRef::new(Object::Procedure(Procedure::Primitive(Primitive::new(
-                    k, v,
-                )))),
-            )
-        })
-        .collect()
+    merge(&[
+        numeric::primitives(),
+        eq::primitives(),
+        list::primitives(),
+        bool::primitives(),
+    ])
+    .into_iter()
+    .map(|(k, v)| {
+        (
+            k.to_owned(),
+            ObjectRef::new(Object::Procedure(Procedure::Primitive(Primitive::new(
+                k, v,
+            )))),
+        )
+    })
+    .collect()
 }
 
 pub fn prelude() -> &'static [ExprOrDef] {
     lazy_static! {
-        static ref PRELUDE: Vec<ExprOrDef> =
-            parse_str(&vec![numeric::PRELUDE, list::PRELUDE, delay::PRELUDE].join(""))
-                .expect("Prelude should parse without error");
+        static ref PRELUDE: Vec<ExprOrDef> = parse_str(
+            &vec![
+                numeric::PRELUDE,
+                list::PRELUDE,
+                delay::PRELUDE,
+                bool::PRELUDE
+            ]
+            .join("")
+        )
+        .expect("Prelude should parse without error");
     }
     &PRELUDE
 }

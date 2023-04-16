@@ -58,6 +58,20 @@ fn arithmetic() {
 fn num_primitives() {
     let env = Env::primitives();
 
+    assert_eval_eq!("(number? 3)", "#t", env);
+    assert_eval_eq!("(number? 6/10)", "#t", env);
+    assert_eval_eq!("(number? 3.5)", "#t", env);
+    assert_eval_eq!("(number? (lambda () 10))", "#f", env);
+    assert_eval_eq!("(integer? 3)", "#t", env);
+    assert_eval_eq!("(integer? 3.0)", "#t", env);
+    assert_eval_eq!("(integer? 8/4)", "#t", env);
+    assert_eval_eq!("(integer? #t)", "#f", env);
+
+    assert_eval_eq!("(exact? 3)", "#t", env);
+    assert_eval_eq!("(exact? 3.0)", "#f", env);
+    assert_eval_eq!("(exact? 8/5)", "#t", env);
+    assert_eval_eq!("(inexact? 5.3)", "#t", env);
+
     assert_eval_eq!("(zero? 0)", "#t", env);
     assert_eval_eq!("(zero? 1)", "#f", env);
     assert_eval_eq!("(zero? -1)", "#f", env);
@@ -69,6 +83,25 @@ fn num_primitives() {
     assert_eval_eq!("(negative? 0)", "#f", env);
     assert_eval_eq!("(negative? 1)", "#f", env);
     assert_eval_eq!("(negative? -1)", "#t", env);
+
+    assert_eval_eq!("(max 1 2 3 4 5)", "5", env);
+    assert_eval_eq!("(max 1 2 3.0 4 5)", "5.0", env);
+
+    assert_eval_eq!("(min 1 2 -3 4 5)", "-3", env);
+    assert_eval_eq!("(min 1 2 -3 4.0 5)", "-3.0", env);
+}
+
+#[test]
+fn bool_primitives() {
+    let env = Env::primitives();
+
+    assert_eval_eq!("(boolean? #t)", "#t", env);
+    assert_eval_eq!("(boolean? #f)", "#t", env);
+    assert_eval_eq!("(boolean? 1)", "#f", env);
+    assert_eval_eq!("(boolean? '())", "#f", env);
+
+    assert_eval_eq!("(not 5)", "#f", env);
+    assert_eval_eq!("(not #f)", "#t", env);
 }
 
 #[test]
