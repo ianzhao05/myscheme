@@ -4,12 +4,12 @@ A Scheme interpreter written in Rust, with the aim of becoming mostly compliant 
 
 - [x] Near-complete expression parsing
 - [x] Evaluation of fundamental expressions (`define`, `lambda`, `if`, `set!`, `quote`)
-- [ ] Evaluation of derived expressions
-- [x] Proper tail recursion ([#2][pr2])
-- [ ] First-class continuations ([#2][pr2])
+- [x] Evaluation of derived expressions (`let`, `cond`, `case`, `do`, etc.)
+- [x] Proper tail recursion ([#3][pr3])
+- [ ] First-class continuations ([#3][pr3])
 - [ ] Macros
 
-[pr2]: https://github.com/ianzhao05/myscheme/pull/2
+[pr3]: https://github.com/ianzhao05/myscheme/pull/3
 
 ## Examples
 
