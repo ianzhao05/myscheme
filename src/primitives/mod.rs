@@ -6,8 +6,6 @@ mod numeric;
 
 use std::collections::HashMap;
 
-use lazy_static::lazy_static;
-
 use crate::evaler::EvalError;
 use crate::expr::ExprOrDef;
 use crate::interpret::parse_str;
@@ -43,18 +41,15 @@ pub fn primitives() -> HashMap<String, ObjectRef> {
     .collect()
 }
 
-pub fn prelude() -> &'static [ExprOrDef] {
-    lazy_static! {
-        static ref PRELUDE: Vec<ExprOrDef> = parse_str(
-            &vec![
-                numeric::PRELUDE,
-                list::PRELUDE,
-                delay::PRELUDE,
-                bool::PRELUDE
-            ]
-            .join("")
-        )
-        .expect("Prelude should parse without error");
-    }
-    &PRELUDE
+thread_local! {
+    pub static PRELUDE: Vec<ExprOrDef> = parse_str(
+        &vec![
+            numeric::PRELUDE,
+            list::PRELUDE,
+            delay::PRELUDE,
+            bool::PRELUDE,
+        ]
+        .join(""),
+    )
+    .expect("Prelude should parse without error");
 }

@@ -1,3 +1,4 @@
+pub mod cont;
 pub mod datum;
 pub mod env;
 pub mod err;
@@ -11,6 +12,7 @@ pub mod parser;
 pub mod primitives;
 pub mod proc;
 pub mod reader;
+pub mod trampoline;
 
 pub use crate::interpret::{eval_str, repl};
 
@@ -175,4 +177,11 @@ pub mod test_util {
         };
     }
     pub(crate) use atom_obj;
+
+    macro_rules! vec_rc {
+        ($($e:expr),* $(,)?) => {
+            vec![$($e.into()),*]
+        };
+    }
+    pub(crate) use vec_rc;
 }

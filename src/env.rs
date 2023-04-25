@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::evaler::eval;
 use crate::object::ObjectRef;
-use crate::primitives::{prelude, primitives};
+use crate::primitives::{primitives, PRELUDE};
 
 #[derive(Debug)]
 pub struct Env {
@@ -23,12 +23,14 @@ impl Env {
             parent: None,
             bindings: primitives(),
         }));
-        for eod in prelude() {
-            match eval(eod, env.clone()) {
-                Ok(_) => (),
-                Err(e) => panic!("Error evaluating prelude: {}", e),
+        PRELUDE.with(|prelude| {
+            for eod in prelude {
+                match eval(eod.clone(), env.clone()) {
+                    Ok(_) => (),
+                    Err(e) => panic!("Error evaluating prelude: {}", e),
+                }
             }
-        }
+        });
         env
     }
 

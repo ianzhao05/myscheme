@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::datum::Datum;
 use crate::number::Number;
 
@@ -19,17 +21,14 @@ pub enum LiteralKind {
 pub struct ProcData {
     pub args: Vec<String>,
     pub rest: Option<String>,
-    pub body: Body,
+    pub body: Vec<ExprOrDef>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Body(pub Vec<ExprOrDef>);
-
-#[derive(Debug, PartialEq, Clone)]
 pub enum Definition {
-    Variable { name: String, value: Box<Expr> },
-    Procedure { name: String, data: ProcData },
-    Begin(Vec<Definition>),
+    Variable { name: String, value: Rc<Expr> },
+    Procedure { name: String, data: Rc<ProcData> },
+    Begin(Vec<Rc<Definition>>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -65,24 +64,24 @@ pub enum Expr {
     Variable(String),
     Literal(LiteralKind),
     ProcCall {
-        operator: Box<Expr>,
-        operands: Vec<Expr>,
+        operator: Rc<Expr>,
+        operands: Vec<Rc<Expr>>,
     },
-    Lambda(ProcData),
+    Lambda(Rc<ProcData>),
     Conditional {
-        test: Box<Expr>,
-        consequent: Box<Expr>,
-        alternate: Option<Box<Expr>>,
+        test: Rc<Expr>,
+        consequent: Rc<Expr>,
+        alternate: Option<Rc<Expr>>,
     },
     Assignment {
         variable: String,
-        value: Box<Expr>,
+        value: Rc<Expr>,
     },
-    Begin(Vec<Expr>),
+    Begin(Vec<Rc<Expr>>),
     SimpleLet {
         arg: String,
-        value: Box<Expr>,
-        body: Box<Expr>,
+        value: Rc<Expr>,
+        body: Rc<Expr>,
     },
     Quasiquotation(QQTemplate),
     Undefined,
@@ -105,31 +104,33 @@ impl PartialEq for Expr {
                     operands: b2,
                 },
             ) => a1 == a2 && b1 == b2,
-            (
-                Expr::Lambda(ProcData {
-                    args: a1,
-                    rest: r1,
-                    body: b1,
-                }),
-                Expr::Lambda(ProcData {
-                    args: a2,
-                    rest: r2,
-                    body: b2,
-                }),
-            ) => {
-                (a1 == a2
-                    || (cfg!(test)
-                        && a1.len() == a2.len()
-                        && a1.iter().all(|x| x.starts_with("__temp_"))
-                        && a2.iter().all(|x| x.starts_with("__temp_"))))
-                    && (r1 == r2
+            (Expr::Lambda(d1), Expr::Lambda(d2)) => match (&**d1, &**d2) {
+                (
+                    ProcData {
+                        args: a1,
+                        rest: r1,
+                        body: b1,
+                    },
+                    ProcData {
+                        args: a2,
+                        rest: r2,
+                        body: b2,
+                    },
+                ) => {
+                    (a1 == a2
                         || (cfg!(test)
-                            && r1.is_some()
-                            && r2.is_some()
-                            && r1.as_ref().unwrap().starts_with("__temp_")
-                            && r2.as_ref().unwrap().starts_with("__temp_")))
-                    && b1 == b2
-            }
+                            && a1.len() == a2.len()
+                            && a1.iter().all(|x| x.starts_with("__temp_"))
+                            && a2.iter().all(|x| x.starts_with("__temp_"))))
+                        && (r1 == r2
+                            || (cfg!(test)
+                                && r1.is_some()
+                                && r2.is_some()
+                                && r1.as_ref().unwrap().starts_with("__temp_")
+                                && r2.as_ref().unwrap().starts_with("__temp_")))
+                        && b1 == b2
+                }
+            },
             (
                 Expr::Conditional {
                     test: a1,
@@ -181,7 +182,17 @@ impl PartialEq for Expr {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ExprOrDef {
-    Expr(Expr),
-    Definition(Definition),
+    Expr(Rc<Expr>),
+    Definition(Rc<Definition>),
     MixedBegin(Vec<ExprOrDef>),
+}
+
+impl ExprOrDef {
+    pub fn new_expr(expr: Expr) -> Self {
+        Self::Expr(Rc::new(expr))
+    }
+
+    pub fn new_def(def: Definition) -> Self {
+        Self::Definition(Rc::new(def))
+    }
 }
