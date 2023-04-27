@@ -252,7 +252,15 @@ fn closures() {
          (count)",
         "1 2 3",
         env
-    )
+    );
+
+    assert_eval_eq!(
+        "(define (make-adder x) (lambda (y) (+ x y)))
+         (define add2 (make-adder 2))
+         (add2 3)",
+        "5",
+        env
+    );
 }
 
 #[test]
@@ -416,5 +424,71 @@ fn dos() {
                ((null? x) sum)))",
         "25",
         env
-    )
+    );
+}
+
+#[test]
+fn control() {
+    let env = Env::primitives();
+
+    assert_eval_eq!("(apply + '(4 3))", "7", env);
+    assert_eval_eq!("(apply - 3 '(2 1))", "0", env);
+    assert_eval_eq!("(apply list 1 2 3 '(4 5 6))", "'(1 2 3 4 5 6)", env);
+
+    assert_eval_eq!("(map (lambda (x) (* x x)) '(1 2 3 4))", "'(1 4 9 16)", env);
+    assert_eval_eq!("(map + '(1 2 3) '(4 5 6))", "'(5 7 9)", env);
+    assert_eval_eq!(
+        "(map list '(1 2 3) '(4 5 6) '(7 8 9))",
+        "'((1 4 7) (2 5 8) (3 6 9))",
+        env
+    );
+
+    assert_eval_eq!(
+        "(let ((count 0))
+           (for-each (lambda (x) (set! count (+ count x))) '(1 2 3))
+           count)",
+        "6",
+        env
+    );
+}
+
+#[test]
+fn callcc() {
+    let env = Env::primitives();
+
+    assert_eval_eq!(
+        "(call-with-current-continuation (lambda (k) (+ 2 5)))",
+        "7",
+        env
+    );
+    assert_eval_eq!(
+        "(call-with-current-continuation (lambda (k) (+ 2 (k 3) 5)))",
+        "3",
+        env
+    );
+
+    assert_eval_eq!(
+        "((let ((comeback (call-with-current-continuation (lambda (c) c))))
+            (comeback (lambda (x) x)))
+          5)",
+        "5",
+        env
+    );
+
+    assert_eval_eq!(
+        "(define (gen lst)
+           (define (state ret)
+             (for-each
+              (lambda (x)
+               (set! ret (call-with-current-continuation
+                          (lambda (res) (set! state res) (ret x)))))
+              lst)
+             (ret 'end))
+           (lambda () (call-with-current-continuation state)))
+
+         (define g (gen '(0 1 2)))
+         (g) (g) (g) (g)",
+        "0 1 2 'end",
+        env
+    );
 }

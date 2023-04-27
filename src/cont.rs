@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::env::Env;
@@ -32,12 +33,22 @@ impl State {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Frame {
     pub cont: Rc<Cont>,
     pub env: Rc<RefCell<Env>>,
     pub rib: Vec<ObjectRef>,
     pub next: Option<Rc<Frame>>,
+}
+
+impl Debug for Frame {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Frame")
+            .field("cont", &self.cont)
+            .field("rib", &self.rib)
+            .field("next", &self.next)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -80,34 +91,43 @@ pub enum Cont {
     },
 }
 
-pub fn body_to_cont(body: &[ExprOrDef]) -> Rc<Cont> {
-    let mut bcont = Rc::new(Cont::Return);
-    for eod in body.iter().rev().cloned() {
-        match eod {
-            ExprOrDef::Expr(next) => {
-                bcont = Rc::new(Cont::Begin { next, cont: bcont });
-            }
-            ExprOrDef::Definition(def) => match &*def {
-                Definition::Variable { name, value } => {
-                    bcont = Rc::new(Cont::Begin {
-                        next: value.clone(),
-                        cont: Rc::new(Cont::Define {
+impl Cont {
+    pub fn from_body(body: &[ExprOrDef]) -> Rc<Cont> {
+        let mut bcont = Rc::new(Cont::Return);
+        for eod in body.iter().rev().cloned() {
+            match eod {
+                ExprOrDef::Expr(next) => {
+                    bcont = Rc::new(Cont::Begin { next, cont: bcont });
+                }
+                ExprOrDef::Definition(def) => match &*def {
+                    Definition::Variable { name, value } => {
+                        bcont = Rc::new(Cont::Begin {
+                            next: value.clone(),
+                            cont: Rc::new(Cont::Define {
+                                name: name.clone(),
+                                cont: bcont,
+                            }),
+                        });
+                    }
+                    Definition::Procedure { name, data } => {
+                        bcont = Rc::new(Cont::DefineProc {
                             name: name.clone(),
+                            data: data.clone(),
                             cont: bcont,
-                        }),
-                    });
-                }
-                Definition::Procedure { name, data } => {
-                    bcont = Rc::new(Cont::DefineProc {
-                        name: name.clone(),
-                        data: data.clone(),
-                        cont: bcont,
-                    })
-                }
-                Definition::Begin(_) => todo!(),
-            },
-            _ => todo!(),
+                        })
+                    }
+                    Definition::Begin(_) => todo!(),
+                },
+                _ => todo!(),
+            }
+        }
+        bcont
+    }
+
+    pub fn is_tail(&self) -> bool {
+        match self {
+            Cont::Return => true,
+            _ => false,
         }
     }
-    bcont
 }

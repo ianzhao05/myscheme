@@ -93,14 +93,12 @@ pub fn eval_expr(state: State) -> Bouncer {
             Expr::Variable(v) => {
                 let res = match env.borrow().get(v) {
                     Some(obj) => match obj {
-                        ObjectRef::Undefined => Err(EvalError {
-                            kind: EvalErrorKind::UndefinedVariable(v.clone()),
-                        }),
+                        ObjectRef::Undefined => {
+                            Err(EvalError::new(EvalErrorKind::UndefinedVariable(v.clone())))
+                        }
                         _ => Ok(obj),
                     },
-                    None => Err(EvalError {
-                        kind: EvalErrorKind::UndefinedVariable(v.clone()),
-                    }),
+                    None => Err(EvalError::new(EvalErrorKind::UndefinedVariable(v.clone()))),
                 };
                 Bouncer::Bounce(State {
                     acc: Acc::Obj(res),
@@ -126,10 +124,7 @@ pub fn eval_expr(state: State) -> Bouncer {
                 stack,
             }),
             Expr::ProcCall { operator, operands } => {
-                let tail = match &*cont {
-                    Cont::Return => true,
-                    _ => false,
-                };
+                let tail = cont.is_tail();
                 let (acc, ncont) = match operands.first() {
                     Some(first) => {
                         let mut bcont = Rc::new(Cont::Proc {
@@ -142,29 +137,22 @@ pub fn eval_expr(state: State) -> Bouncer {
                     }
                     None => (Acc::Expr(operator.clone()), Rc::new(Cont::Apply)),
                 };
-                if tail {
-                    Bouncer::Bounce(State {
-                        acc,
-                        cont: ncont,
-                        env,
-                        rib,
-                        stack,
-                    })
-                } else {
-                    let frame = Rc::new(Frame {
-                        cont,
-                        env: env.clone(),
-                        rib,
-                        next: stack,
-                    });
-                    Bouncer::Bounce(State {
-                        acc,
-                        cont: ncont,
-                        env,
-                        rib: Vec::new(),
-                        stack: Some(frame),
-                    })
-                }
+                Bouncer::Bounce(State {
+                    acc,
+                    cont: ncont,
+                    env: env.clone(),
+                    rib: Vec::new(),
+                    stack: if tail {
+                        stack
+                    } else {
+                        Some(Rc::new(Frame {
+                            cont,
+                            env,
+                            rib,
+                            next: stack,
+                        }))
+                    },
+                })
             }
             Expr::Lambda(data) => Bouncer::Bounce(State {
                 acc: Acc::Obj(match UserDefined::new(data.clone(), env.clone()) {
@@ -272,19 +260,15 @@ pub fn eval_expr(state: State) -> Bouncer {
                             rib,
                             stack,
                         }),
-                        _ => Bouncer::Land(Err(EvalError {
-                            kind: EvalErrorKind::ContractViolation {
-                                expected: "procedure".to_owned(),
-                                got: obj,
-                            },
-                        })),
-                    },
-                    None => Bouncer::Land(Err(EvalError {
-                        kind: EvalErrorKind::ContractViolation {
+                        _ => Bouncer::Land(Err(EvalError::new(EvalErrorKind::ContractViolation {
                             expected: "procedure".to_owned(),
                             got: obj,
-                        },
-                    })),
+                        }))),
+                    },
+                    None => Bouncer::Land(Err(EvalError::new(EvalErrorKind::ContractViolation {
+                        expected: "procedure".to_owned(),
+                        got: obj,
+                    }))),
                 },
                 Cont::Proc { operator } => {
                     rib.push(obj);
@@ -357,9 +341,9 @@ pub fn eval_expr(state: State) -> Bouncer {
                 }
                 Cont::Assignment { variable, cont } => {
                     if !env.borrow_mut().set(variable, obj) {
-                        Bouncer::Land(Err(EvalError {
-                            kind: EvalErrorKind::UndefinedVariable(variable.clone()),
-                        }))
+                        Bouncer::Land(Err(EvalError::new(EvalErrorKind::UndefinedVariable(
+                            variable.clone(),
+                        ))))
                     } else {
                         Bouncer::Bounce(State {
                             acc: Acc::Obj(Ok(ObjectRef::Void)),
@@ -551,9 +535,9 @@ mod tests {
 
         assert_eq!(
             eval(ExprOrDef::new_expr(var_expr!("a")), env.clone()),
-            Err(EvalError {
-                kind: EvalErrorKind::UndefinedVariable("a".to_owned())
-            })
+            Err(EvalError::new(EvalErrorKind::UndefinedVariable(
+                "a".to_owned()
+            )))
         );
         assert_eq!(
             eval(
@@ -661,13 +645,11 @@ mod tests {
                 }),
                 env.clone()
             ),
-            Err(EvalError {
-                kind: EvalErrorKind::ArityMismatch {
-                    expected: 1,
-                    got: 2,
-                    rest: false
-                }
-            })
+            Err(EvalError::new(EvalErrorKind::ArityMismatch {
+                expected: 1,
+                got: 2,
+                rest: false
+            }))
         );
 
         assert_eq!(
@@ -692,13 +674,11 @@ mod tests {
                 }),
                 env.clone()
             ),
-            Err(EvalError {
-                kind: EvalErrorKind::ArityMismatch {
-                    expected: 2,
-                    got: 1,
-                    rest: false
-                }
-            })
+            Err(EvalError::new(EvalErrorKind::ArityMismatch {
+                expected: 2,
+                got: 1,
+                rest: false
+            }))
         );
         assert_eq!(
             eval(

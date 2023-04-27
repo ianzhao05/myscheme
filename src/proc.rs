@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{cell::RefCell, rc::Rc};
 
-use crate::cont::{body_to_cont, Acc, Cont, State};
+use crate::cont::{Acc, Cont, Frame, State};
 use crate::env::Env;
 use crate::evaler::{EvalError, EvalErrorKind};
 use crate::expr::ProcData;
@@ -19,6 +19,7 @@ pub trait Call {
 pub enum Procedure {
     Primitive(Primitive),
     UserDefined(UserDefined),
+    Continuation(Continuation),
 }
 
 impl Call for Procedure {
@@ -26,14 +27,21 @@ impl Call for Procedure {
         match self {
             Procedure::Primitive(p) => p.call(state),
             Procedure::UserDefined(p) => p.call(state),
+            Procedure::Continuation(p) => p.call(state),
         }
     }
 }
 
 #[derive(Clone)]
+pub enum PrimitiveFunc {
+    Args(fn(&[ObjectRef]) -> Result<ObjectRef, EvalError>),
+    State(fn(State) -> Bouncer),
+}
+
+#[derive(Clone)]
 pub struct Primitive {
     name: &'static str,
-    func: fn(&[ObjectRef]) -> Result<ObjectRef, EvalError>,
+    func: PrimitiveFunc,
 }
 
 impl Debug for Primitive {
@@ -45,7 +53,7 @@ impl Debug for Primitive {
 }
 
 impl Primitive {
-    pub fn new(name: &'static str, func: fn(&[ObjectRef]) -> Result<ObjectRef, EvalError>) -> Self {
+    pub fn new(name: &'static str, func: PrimitiveFunc) -> Self {
         Self { name, func }
     }
 }
@@ -58,13 +66,16 @@ impl PartialEq for Primitive {
 
 impl Call for Primitive {
     fn call(&self, state: State) -> Bouncer {
-        Bouncer::Bounce(State {
-            acc: Acc::Obj((self.func)(&state.rib)),
-            cont: Rc::new(Cont::Return),
-            env: state.env,
-            rib: Vec::new(),
-            stack: state.stack,
-        })
+        match &self.func {
+            PrimitiveFunc::Args(f) => Bouncer::Bounce(State {
+                acc: Acc::Obj(f(&state.rib)),
+                cont: Rc::new(Cont::Return),
+                env: state.env,
+                rib: Vec::new(),
+                stack: state.stack,
+            }),
+            PrimitiveFunc::State(f) => f(state),
+        }
     }
 }
 
@@ -137,10 +148,59 @@ impl Call for UserDefined {
         drop(benv);
         Bouncer::Bounce(State {
             acc: Acc::Obj(Ok(ObjectRef::Undefined)),
-            cont: body_to_cont(&self.data.body),
+            cont: Cont::from_body(&self.data.body),
             env,
             rib: Vec::new(),
             stack: state.stack,
+        })
+    }
+}
+
+#[derive(Clone)]
+pub struct Continuation {
+    id: usize,
+    stack: Option<Rc<Frame>>,
+}
+
+impl Debug for Continuation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Continuation")
+            .field("id", &self.id)
+            .finish()
+    }
+}
+
+impl Continuation {
+    pub fn new(stack: Option<Rc<Frame>>) -> Self {
+        Self {
+            id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+            stack,
+        }
+    }
+}
+
+impl PartialEq for Continuation {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Call for Continuation {
+    fn call(&self, state: State) -> Bouncer {
+        if state.rib.len() != 1 {
+            return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ArityMismatch {
+                expected: 1,
+                got: state.rib.len(),
+                rest: false,
+            })));
+        }
+        let arg = state.rib[0].clone();
+        Bouncer::Bounce(State {
+            acc: Acc::Obj(Ok(arg)),
+            cont: Rc::new(Cont::Return),
+            env: state.env,
+            rib: Vec::new(),
+            stack: self.stack.clone(),
         })
     }
 }
