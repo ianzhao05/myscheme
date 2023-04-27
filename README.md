@@ -6,7 +6,7 @@ A Scheme interpreter written in Rust, with the aim of becoming mostly compliant 
 - [x] Evaluation of fundamental expressions (`define`, `lambda`, `if`, `set!`, `quote`)
 - [x] Evaluation of derived expressions (`let`, `cond`, `case`, `do`, etc.)
 - [x] Proper tail recursion ([#3][pr3])
-- [ ] First-class continuations ([#3][pr3])
+- [x] First-class continuations ([#3][pr3])
 - [ ] Macros
 
 [pr3]: https://github.com/ianzhao05/myscheme/pull/3
