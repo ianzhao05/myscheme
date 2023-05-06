@@ -25,6 +25,10 @@ pub enum EvalErrorKind {
         got: usize,
         rest: bool,
     },
+    IndexOutOfBounds {
+        index: usize,
+        len: usize,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -61,6 +65,9 @@ impl fmt::Display for EvalError {
                     expected.to_string()
                 };
                 write!(f, "Arity mismatch: expected {expected}, got {got}")
+            }
+            EvalErrorKind::IndexOutOfBounds { index, len } => {
+                write!(f, "Index out of bounds: {index} >= {len}")
             }
         }
     }

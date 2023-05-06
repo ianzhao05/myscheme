@@ -8,14 +8,9 @@ use crate::object::{Object, ObjectRef};
 
 use num::BigInt;
 
-use super::PrimitiveMap;
+use super::{cv_fn, PrimitiveMap};
 
-fn num_cv(got: &ObjectRef) -> EvalError {
-    EvalError::new(EvalErrorKind::ContractViolation {
-        expected: "number".to_owned(),
-        got: got.clone(),
-    })
-}
+cv_fn!(num_cv, "number");
 
 fn integer(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     if args.len() != 1 {

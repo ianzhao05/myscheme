@@ -22,6 +22,10 @@ impl ObjectRef {
         Self::new(Object::Pair(RefCell::new((car, cdr))))
     }
 
+    pub fn new_vector(v: Vec<ObjectRef>) -> Self {
+        Self::new(Object::Vector(RefCell::new(v)))
+    }
+
     pub fn equal(this: &Self, other: &Self) -> bool {
         match (this, other) {
             (ObjectRef::Object(o1), ObjectRef::Object(o2)) => o1 == o2,

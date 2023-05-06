@@ -4,6 +4,7 @@ mod eq;
 mod list;
 mod numeric;
 mod pred;
+mod vector;
 
 use std::collections::HashMap;
 
@@ -14,6 +15,18 @@ use crate::object::{Object, ObjectRef};
 use crate::proc::{Primitive, PrimitiveFunc, Procedure};
 
 pub type PrimitiveMap = HashMap<&'static str, fn(&[ObjectRef]) -> Result<ObjectRef, EvalError>>;
+
+macro_rules! cv_fn {
+    ($fn_name:ident, $s:expr) => {
+        fn $fn_name(got: &crate::object::ObjectRef) -> crate::evaler::EvalError {
+            crate::evaler::EvalError::new(crate::evaler::EvalErrorKind::ContractViolation {
+                expected: $s.to_owned(),
+                got: got.clone(),
+            })
+        }
+    };
+}
+pub(crate) use cv_fn;
 
 fn merge(maps: &[PrimitiveMap]) -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
@@ -29,6 +42,7 @@ pub fn primitives() -> HashMap<String, ObjectRef> {
         eq::primitives(),
         list::primitives(),
         pred::primitives(),
+        vector::primitives(),
     ])
     .into_iter()
     .map(|(k, v)| {
@@ -60,6 +74,7 @@ thread_local! {
             delay::PRELUDE,
             pred::PRELUDE,
             control::PRELUDE,
+            vector::PRELUDE,
         ]
         .join(""),
     )

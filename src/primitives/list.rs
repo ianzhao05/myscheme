@@ -3,14 +3,9 @@ use std::collections::HashMap;
 use crate::evaler::{EvalError, EvalErrorKind};
 use crate::object::{Object, ObjectRef};
 
-use super::PrimitiveMap;
+use super::{cv_fn, PrimitiveMap};
 
-fn pair_cv(got: &ObjectRef) -> EvalError {
-    EvalError::new(EvalErrorKind::ContractViolation {
-        expected: "pair".to_owned(),
-        got: got.clone(),
-    })
-}
+cv_fn!(pair_cv, "pair");
 
 fn cons(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     if args.len() != 2 {
@@ -199,6 +194,33 @@ mod tests {
                 expected: "pair".to_owned(),
                 got: ObjectRef::EmptyList
             }))
+        );
+    }
+
+    #[test]
+    fn test_set_car_cdr() {
+        let p = ObjectRef::new_pair(
+            ObjectRef::new(atom_obj!(int_datum!(1))),
+            ObjectRef::new(atom_obj!(int_datum!(2))),
+        );
+        assert_eq!(
+            set_select(&[p.clone(), ObjectRef::new(atom_obj!(int_datum!(3)))], true),
+            Ok(ObjectRef::Void)
+        );
+        assert_eq!(
+            select(&[p.clone()], true),
+            Ok(ObjectRef::new(atom_obj!(int_datum!(3))))
+        );
+        assert_eq!(
+            set_select(
+                &[p.clone(), ObjectRef::new(atom_obj!(int_datum!(4)))],
+                false
+            ),
+            Ok(ObjectRef::Void)
+        );
+        assert_eq!(
+            select(&[p], false),
+            Ok(ObjectRef::new(atom_obj!(int_datum!(4))))
         );
     }
 }
