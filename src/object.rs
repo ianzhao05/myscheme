@@ -31,7 +31,14 @@ impl ObjectRef {
         }
     }
 
-    pub fn try_deref<E, F: FnOnce(&Self) -> E>(&self, err: F) -> Result<&Object, E> {
+    pub fn try_deref(&self) -> Option<&Object> {
+        match self {
+            ObjectRef::Object(o) => Some(o),
+            _ => None,
+        }
+    }
+
+    pub fn try_deref_or<E, F: FnOnce(&Self) -> E>(&self, err: F) -> Result<&Object, E> {
         match self {
             ObjectRef::Object(o) => Ok(o),
             _ => Err(err(self)),

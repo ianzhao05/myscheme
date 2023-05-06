@@ -42,7 +42,7 @@ pub fn eval_str(s: &str, env: Rc<RefCell<Env>>) -> Result<Vec<EvalResult>, Schem
     let data = Reader::new(tokens).scan(&mut re, until_err);
     let exprs = data.map(parse).scan(&mut pe, until_err);
     let res = exprs
-        .map(|expr| eval(&expr, env.clone()).map_err(Into::into))
+        .map(|expr| eval(expr, env.clone()).map_err(Into::into))
         .collect();
     le?;
     re?;
