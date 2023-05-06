@@ -1,9 +1,9 @@
-mod bool;
 mod control;
 mod delay;
 mod eq;
 mod list;
 mod numeric;
+mod pred;
 
 use std::collections::HashMap;
 
@@ -28,7 +28,7 @@ pub fn primitives() -> HashMap<String, ObjectRef> {
         numeric::primitives(),
         eq::primitives(),
         list::primitives(),
-        bool::primitives(),
+        pred::primitives(),
     ])
     .into_iter()
     .map(|(k, v)| {
@@ -58,7 +58,7 @@ thread_local! {
             numeric::PRELUDE,
             list::PRELUDE,
             delay::PRELUDE,
-            bool::PRELUDE,
+            pred::PRELUDE,
             control::PRELUDE,
         ]
         .join(""),

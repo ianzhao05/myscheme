@@ -28,6 +28,48 @@ macro_rules! assert_eval_eq {
 }
 
 #[test]
+fn predicates() {
+    let env = Env::primitives();
+
+    assert_eval_eq!("(not 5)", "#f", env);
+    assert_eval_eq!("(not #f)", "#t", env);
+
+    assert_eval_eq!("(number? 3)", "#t", env);
+    assert_eval_eq!("(number? 6/10)", "#t", env);
+    assert_eval_eq!("(number? 3.5)", "#t", env);
+    assert_eval_eq!("(number? (lambda () 10))", "#f", env);
+
+    assert_eval_eq!("(boolean? #t)", "#t", env);
+    assert_eval_eq!("(boolean? #f)", "#t", env);
+    assert_eval_eq!("(boolean? 1)", "#f", env);
+    assert_eval_eq!("(boolean? '())", "#f", env);
+
+    assert_eval_eq!("(symbol? 'a)", "#t", env);
+    assert_eval_eq!("(symbol? '())", "#f", env);
+
+    assert_eval_eq!("(char? #\\a)", "#t", env);
+    assert_eval_eq!("(char? #\\newline)", "#t", env);
+    assert_eval_eq!("(char? \"a\")", "#f", env);
+
+    assert_eval_eq!("(string? \"a\")", "#t", env);
+    assert_eval_eq!("(string? 'a)", "#f", env);
+
+    assert_eval_eq!("(vector? '#(1 2 3))", "#t", env);
+    assert_eval_eq!("(vector? '(1 2 3))", "#f", env);
+
+    assert_eval_eq!("(procedure? (lambda () 0))", "#t", env);
+    assert_eval_eq!("(define (f x) x) (procedure? f)", "#t", env);
+
+    assert_eval_eq!("(null? '())", "#t", env);
+    assert_eval_eq!("(null? '(1 2 3))", "#f", env);
+
+    assert_eval_eq!("(pair? 1)", "#f", env);
+    assert_eval_eq!("(pair? '())", "#f", env);
+    assert_eval_eq!("(pair? '(1 2 3))", "#t", env);
+    assert_eval_eq!("(pair? '(1 . 2))", "#t", env);
+}
+
+#[test]
 fn arithmetic() {
     let env = Env::primitives();
 
@@ -58,10 +100,6 @@ fn arithmetic() {
 fn num_primitives() {
     let env = Env::primitives();
 
-    assert_eval_eq!("(number? 3)", "#t", env);
-    assert_eval_eq!("(number? 6/10)", "#t", env);
-    assert_eval_eq!("(number? 3.5)", "#t", env);
-    assert_eval_eq!("(number? (lambda () 10))", "#f", env);
     assert_eval_eq!("(integer? 3)", "#t", env);
     assert_eval_eq!("(integer? 3.0)", "#t", env);
     assert_eval_eq!("(integer? 8/4)", "#t", env);
@@ -92,19 +130,6 @@ fn num_primitives() {
 }
 
 #[test]
-fn bool_primitives() {
-    let env = Env::primitives();
-
-    assert_eval_eq!("(boolean? #t)", "#t", env);
-    assert_eval_eq!("(boolean? #f)", "#t", env);
-    assert_eval_eq!("(boolean? 1)", "#f", env);
-    assert_eval_eq!("(boolean? '())", "#f", env);
-
-    assert_eval_eq!("(not 5)", "#f", env);
-    assert_eval_eq!("(not #f)", "#t", env);
-}
-
-#[test]
 fn list_primitives() {
     let env = Env::primitives();
 
@@ -118,14 +143,6 @@ fn list_primitives() {
     assert_eval_eq!("(list? '(1 2 . 3))", "#f", env);
 
     assert_eval_eq!("(cadadr '((a b) (c d) (e f)))", "'d", env);
-
-    assert_eval_eq!("(null? '())", "#t", env);
-    assert_eval_eq!("(null? '(1 2 3))", "#f", env);
-
-    assert_eval_eq!("(pair? 1)", "#f", env);
-    assert_eval_eq!("(pair? '())", "#f", env);
-    assert_eval_eq!("(pair? '(1 2 3))", "#t", env);
-    assert_eval_eq!("(pair? '(1 . 2))", "#t", env);
 
     assert_eval_eq!("(let ((x '(1 . 2))) (set-car! x 3) (car x))", "3", env);
     assert_eval_eq!("(let ((x '(1 . 2))) (set-cdr! x 3) (cdr x))", "3", env);
@@ -491,4 +508,6 @@ fn callcc() {
         "0 1 2 'end",
         env
     );
+
+    assert_eval_eq!("(call-with-current-continuation procedure?)", "#t", env);
 }

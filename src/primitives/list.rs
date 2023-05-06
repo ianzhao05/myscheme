@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crate::datum::SimpleDatum;
 use crate::evaler::{EvalError, EvalErrorKind};
 use crate::object::{Object, ObjectRef};
 
@@ -64,38 +63,6 @@ fn set_select(args: &[ObjectRef], first: bool) -> Result<ObjectRef, EvalError> {
     }
 }
 
-fn null(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: false,
-        }));
-    }
-    Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(
-        args[0] == ObjectRef::EmptyList,
-    ))))
-}
-
-fn pair(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: false,
-        }));
-    }
-    Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(
-        match &args[0] {
-            ObjectRef::Object(o) => match **o {
-                Object::Pair(_) => true,
-                _ => false,
-            },
-            _ => false,
-        },
-    ))))
-}
-
 pub fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("cons", cons);
@@ -103,8 +70,6 @@ pub fn primitives() -> PrimitiveMap {
     m.insert("cdr", |args| select(args, false));
     m.insert("set-car!", |args| set_select(args, true));
     m.insert("set-cdr!", |args| set_select(args, false));
-    m.insert("null?", null);
-    m.insert("pair?", pair);
     m
 }
 
@@ -234,36 +199,6 @@ mod tests {
                 expected: "pair".to_owned(),
                 got: ObjectRef::EmptyList
             }))
-        );
-    }
-
-    #[test]
-    fn test_null() {
-        assert_eq!(
-            null(&[ObjectRef::EmptyList]),
-            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
-        );
-        assert_eq!(
-            null(&[ObjectRef::new_pair(
-                ObjectRef::new(atom_obj!(int_datum!(1))),
-                ObjectRef::new(atom_obj!(int_datum!(2)))
-            )]),
-            Ok(ObjectRef::new(atom_obj!(bool_datum!(false))))
-        );
-    }
-
-    #[test]
-    fn test_pair() {
-        assert_eq!(
-            pair(&[ObjectRef::EmptyList]),
-            Ok(ObjectRef::new(atom_obj!(bool_datum!(false))))
-        );
-        assert_eq!(
-            pair(&[ObjectRef::new_pair(
-                ObjectRef::new(atom_obj!(int_datum!(1))),
-                ObjectRef::new(atom_obj!(int_datum!(2)))
-            )]),
-            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
         );
     }
 }

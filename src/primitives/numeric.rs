@@ -17,25 +17,6 @@ fn num_cv(got: &ObjectRef) -> EvalError {
     })
 }
 
-fn number(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: false,
-        }));
-    }
-    Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(
-        match &args[0] {
-            ObjectRef::Object(o) => match **o {
-                Object::Atom(SimpleDatum::Number(_)) => true,
-                _ => false,
-            },
-            _ => false,
-        },
-    ))))
-}
-
 fn integer(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     if args.len() != 1 {
         return Err(EvalError::new(EvalErrorKind::ArityMismatch {
@@ -239,7 +220,6 @@ fn maxmin(args: &[ObjectRef], max: bool) -> Result<ObjectRef, EvalError> {
 
 pub fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
-    m.insert("number?", number);
     m.insert("integer?", integer);
     m.insert("exact?", exact);
     m.insert("+", add);
@@ -271,23 +251,6 @@ mod tests {
 
     #[test]
     fn predicates() {
-        assert_eq!(
-            number(&[ObjectRef::new(atom_obj!(int_datum!(1)))]),
-            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
-        );
-        assert_eq!(
-            number(&[ObjectRef::new(atom_obj!(rational_datum!(1, 2)))]),
-            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
-        );
-        assert_eq!(
-            number(&[ObjectRef::new(atom_obj!(real_datum!(0.5)))]),
-            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
-        );
-        assert_eq!(
-            number(&[ObjectRef::new(atom_obj!(bool_datum!(true)))]),
-            Ok(ObjectRef::new(atom_obj!(bool_datum!(false))))
-        );
-
         assert_eq!(
             integer(&[ObjectRef::new(atom_obj!(int_datum!(1)))]),
             Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
