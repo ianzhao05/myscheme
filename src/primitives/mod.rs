@@ -70,6 +70,7 @@ thread_local! {
     pub static PRELUDE: Vec<ExprOrDef> = parse_str(
         &vec![
             numeric::PRELUDE,
+            eq::PRELUDE,
             list::PRELUDE,
             delay::PRELUDE,
             pred::PRELUDE,

@@ -132,7 +132,7 @@ impl PartialEq for Object {
                 let b2 = &*v2.borrow();
                 b1.len() == b2.len() && b1.iter().zip(b2).all(|(a, b)| ObjectRef::equal(&*a, &*b))
             }
-            (Object::Procedure(_), Object::Procedure(_)) => false,
+            (Object::Procedure(p1), Object::Procedure(p2)) => p1 == p2,
             _ => false,
         }
     }

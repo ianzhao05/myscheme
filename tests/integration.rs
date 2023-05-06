@@ -398,6 +398,27 @@ fn num_primitives() {
 }
 
 #[test]
+fn equivalence() {
+    assert_eval_eq!("(eqv? 'a 'a)", "#t");
+    assert_eval_eq!("(eqv? 'a 'b)", "#f");
+    assert_eval_eq!("(eqv? 2 2)", "#t");
+    assert_eval_eq!("(eqv? '() '())", "#t");
+    assert_eval_eq!("(eqv? 100000000 100000000)", "#t");
+    assert_eval_eq!("(eqv? (cons 1 2) (cons 1 2))", "#f");
+    assert_eval_eq!("(eqv? (lambda () 1) (lambda () 2))", "#f");
+    assert_eval_eq!("(eqv? car car)", "#t");
+    assert_eval_eq!("(eqv? cadr cadr)", "#t");
+    assert_eval_eq!("(eqv? #f 'nil)", "#f");
+    assert_eval_eq!("(let ((p (lambda (x) x))) (eqv? p p))", "#t");
+    assert_eval_eq!("(let ((p (cons 1 2))) (eqv? p p))", "#t");
+
+    assert_eval_eq!("(equal? '(a (b) c) '(a (b) c))", "#t");
+    assert_eval_eq!("(equal? 2 2)", "#t");
+    assert_eval_eq!("(equal? (make-vector 5 'a) (make-vector 5 'a))", "#t");
+    assert_eval_eq!("(equal? '#((1 2) #(3 4)) '#((1 2) #(3 4)))", "#t");
+}
+
+#[test]
 fn list_primitives() {
     assert_eval_eq!("(cons 1 2)", "'(1 . 2)");
     assert_eval_eq!("(car (cons 1 2))", "1");

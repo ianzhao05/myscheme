@@ -41,19 +41,25 @@ fn eq(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ))))
 }
 
-pub fn equal(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 2 {
-        return Err(equiv_am(args.len()));
-    }
-    Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(
-        ObjectRef::equal(&args[0], &args[1]),
-    ))))
-}
-
 pub fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("eqv?", eqv);
     m.insert("eq?", eq);
-    m.insert("equal?", equal);
     m
 }
+
+pub const PRELUDE: &str = "
+(define (equal? a b)
+  (cond
+    ((pair? a)
+     (and (pair? b) (equal? (car a) (car b)) (equal? (cdr a) (cdr b))))
+    ((vector? a)
+     (and (vector? b)
+          (let ((al (vector-length a)) (bl (vector-length b)))
+            (and (= al bl)
+                 (let h ((i 0))
+                   (if (= i al) #t
+                       (and (equal? (vector-ref a i) (vector-ref b i))
+                            (h (+ i 1)))))))))
+    (else (eqv? a b))))
+";
