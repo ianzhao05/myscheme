@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt;
 use std::{cell::RefCell, rc::Rc};
 
 use crate::env::Env;
@@ -6,13 +6,13 @@ use crate::evaler::EvalError;
 use crate::expr::*;
 use crate::object::ObjectRef;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Acc {
     Expr(Rc<Expr>),
     Obj(Result<ObjectRef, EvalError>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct State {
     pub acc: Acc,
     pub cont: Rc<Cont>,
@@ -44,8 +44,8 @@ pub struct Frame {
     pub next: Option<Rc<Frame>>,
 }
 
-impl Debug for Frame {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for Frame {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_struct("Frame")
             .field("cont", &self.cont)
             .field("rib", &self.rib)

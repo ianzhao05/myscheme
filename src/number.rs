@@ -58,6 +58,18 @@ pub enum Number {
     Real(RealKind),
 }
 
+impl fmt::Display for Number {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Number::Real(r) => match r {
+                RealKind::Real(r) => r.fmt(f),
+                RealKind::Rational(r) => r.fmt(f),
+                RealKind::Integer(r) => r.fmt(f),
+            },
+        }
+    }
+}
+
 impl Number {
     pub fn eq_val(this: &Self, other: &Self) -> bool {
         match (this, other) {

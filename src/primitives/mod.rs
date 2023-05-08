@@ -1,6 +1,7 @@
 mod control;
 mod delay;
 mod eq;
+mod io;
 mod list;
 mod numeric;
 mod pred;
@@ -15,6 +16,8 @@ use crate::object::{Object, ObjectRef};
 use crate::proc::{Primitive, PrimitiveFunc, Procedure};
 
 pub type PrimitiveMap = HashMap<&'static str, fn(&[ObjectRef]) -> Result<ObjectRef, EvalError>>;
+
+pub use io::ReadError;
 
 macro_rules! cv_fn {
     ($fn_name:ident, $s:expr) => {
@@ -43,6 +46,7 @@ pub fn primitives() -> HashMap<String, ObjectRef> {
         list::primitives(),
         pred::primitives(),
         vector::primitives(),
+        io::primitives(),
     ])
     .into_iter()
     .map(|(k, v)| {
@@ -76,6 +80,7 @@ thread_local! {
             pred::PRELUDE,
             control::PRELUDE,
             vector::PRELUDE,
+            io::PRELUDE,
         ]
         .join(""),
     )

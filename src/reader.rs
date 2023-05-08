@@ -20,6 +20,12 @@ pub struct ReaderError {
     kind: ReaderErrorKind,
 }
 
+impl ReaderError {
+    pub fn new(kind: ReaderErrorKind) -> ReaderError {
+        ReaderError { kind }
+    }
+}
+
 impl Error for ReaderError {}
 
 impl fmt::Display for ReaderError {
