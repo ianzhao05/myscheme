@@ -22,10 +22,13 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(expr: Rc<Expr>, env: Rc<RefCell<Env>>) -> Self {
+    pub fn new(acc: Acc, env: Rc<RefCell<Env>>, cont: Option<Rc<Cont>>) -> Self {
         Self {
-            acc: Acc::Expr(expr),
-            cont: Rc::new(Cont::Return),
+            acc,
+            cont: match cont {
+                Some(cont) => cont,
+                None => Rc::new(Cont::Return),
+            },
             env,
             rib: Vec::new(),
             stack: None,
@@ -92,8 +95,11 @@ pub enum Cont {
 }
 
 impl Cont {
-    pub fn from_body(body: &[ExprOrDef]) -> Rc<Cont> {
-        let mut bcont = Rc::new(Cont::Return);
+    pub fn from_body(body: &[ExprOrDef], cont: Option<Rc<Cont>>) -> Rc<Cont> {
+        let mut bcont = match cont {
+            Some(cont) => cont,
+            None => Rc::new(Cont::Return),
+        };
         for eod in body.iter().rev().cloned() {
             match eod {
                 ExprOrDef::Expr(next) => {
@@ -116,9 +122,42 @@ impl Cont {
                             cont: bcont,
                         })
                     }
-                    Definition::Begin(_) => todo!(),
+                    Definition::Begin(defs) => {
+                        bcont = Self::from_defs(defs, Some(bcont));
+                    }
                 },
                 _ => todo!(),
+            }
+        }
+        bcont
+    }
+
+    pub fn from_defs(defs: &[Rc<Definition>], cont: Option<Rc<Cont>>) -> Rc<Cont> {
+        let mut bcont = match cont {
+            Some(cont) => cont,
+            None => Rc::new(Cont::Return),
+        };
+        for def in defs.iter().rev().cloned() {
+            match &*def {
+                Definition::Variable { name, value } => {
+                    bcont = Rc::new(Cont::Begin {
+                        next: value.clone(),
+                        cont: Rc::new(Cont::Define {
+                            name: name.clone(),
+                            cont: bcont,
+                        }),
+                    });
+                }
+                Definition::Procedure { name, data } => {
+                    bcont = Rc::new(Cont::DefineProc {
+                        name: name.clone(),
+                        data: data.clone(),
+                        cont: bcont,
+                    })
+                }
+                Definition::Begin(defs) => {
+                    bcont = Self::from_defs(defs, Some(bcont));
+                }
             }
         }
         bcont

@@ -1,28 +1,33 @@
 macro_rules! assert_eval_eq {
     ($lhs:expr, $rhs:expr) => {{
-        use myscheme::{env::Env, eval_str, evaler::EvalResult::Expr, object::ObjectRef};
+        use myscheme::{env::Env, eval_str, object::ObjectRef};
         let env = Env::primitives();
         let lv: Vec<_> = eval_str($lhs, env.clone())
             .unwrap()
             .into_iter()
             .filter_map(|r| match r {
-                Expr(o) => Some(o),
-                _ => None,
+                ObjectRef::Void => None,
+                _ => Some(r),
             })
             .collect();
         let rv: Vec<_> = eval_str($rhs, env)
             .unwrap()
             .into_iter()
             .filter_map(|r| match r {
-                Expr(o) => Some(o),
-                _ => None,
+                ObjectRef::Void => None,
+                _ => Some(r),
             })
             .collect();
-        assert!(lv.len() == rv.len());
-        assert!(lv
-            .iter()
-            .zip(rv.iter())
-            .all(|(l, r)| ObjectRef::equal(l, r)));
+        assert!(
+            lv.len() == rv.len(),
+            "Expressions produced different number of results"
+        );
+        assert!(
+            lv.iter()
+                .zip(rv.iter())
+                .all(|(l, r)| ObjectRef::equal(l, r)),
+            "Expressions produced different results"
+        );
     }};
 }
 
@@ -30,7 +35,17 @@ macro_rules! assert_eval_eq {
 fn simple_defines() {
     assert_eval_eq!("(define x 1) x", "1");
     assert_eval_eq!("(define y (+ 2 3)) y", "5");
-    assert_eval_eq!("(define z 0) (set! z 1) z", "(if #f #f) 1");
+    assert_eval_eq!("(define z 0) (set! z 1) z", " 1");
+    assert_eval_eq!(
+        "(begin
+          (begin (define a 1) (define b 2))
+          (define c 3)
+          (begin
+            (define (f x) x)
+            (define (g x) (f x))))
+         a (f b) (g c)",
+        "1 2 3"
+    );
 }
 
 #[test]
@@ -102,7 +117,7 @@ fn closures() {
 fn sequencing() {
     assert_eval_eq!("(begin 1 2 3)", "3");
     assert_eval_eq!("(let ((x 1)) (begin (set! x 2) x))", "2");
-    assert_eval_eq!("(begin)", "(if #f #f)");
+    assert_eval_eq!("(begin)", "");
 }
 
 #[test]
@@ -243,7 +258,7 @@ fn dos() {
         "'#(0 1 2 3 4)"
     );
 
-    assert_eval_eq!("(do () (#t))", "(if #f #f)");
+    assert_eval_eq!("(do () (#t))", "");
 }
 
 #[test]
@@ -299,6 +314,13 @@ fn callcc() {
     );
 
     assert_eval_eq!("(call-with-current-continuation procedure?)", "#t");
+
+    assert_eval_eq!(
+        "(define c (call-with-current-continuation (lambda (c) c)))
+         (procedure? c)
+         (c 99) c",
+        "#t 99"
+    );
 }
 
 #[test]

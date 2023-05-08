@@ -148,7 +148,7 @@ impl Call for UserDefined {
         drop(benv);
         Bouncer::Bounce(State {
             acc: Acc::Obj(Ok(ObjectRef::Undefined)),
-            cont: Cont::from_body(&self.data.body),
+            cont: Cont::from_body(&self.data.body, None),
             env,
             rib: Vec::new(),
             stack: state.stack,
