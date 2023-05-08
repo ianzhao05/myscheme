@@ -68,7 +68,7 @@ pub fn primitives() -> PrimitiveMap {
     m
 }
 
-pub const PRELUDE: &str = r#"
+pub const PRELUDE: &str = "
 (define (list? x)
   (if (null? x) #t (if (pair? x) (list? (cdr x)) #f)))
 
@@ -152,7 +152,7 @@ pub const PRELUDE: &str = r#"
 (define (assoc o al)
   (if (null? al) #f
       (if (equal? (caar al) o) (car al) (assoc o (cdr al)))))
-"#;
+";
 
 #[cfg(test)]
 mod tests {

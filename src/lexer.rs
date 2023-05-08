@@ -175,7 +175,11 @@ impl<'a> Iterator for Lexer<'a> {
                 '"' => {
                     return if let Some(c) = STRING.captures(rest) {
                         self.pos += c.get(0).unwrap().end();
-                        Some(Ok(Token::String(c.get(1).unwrap().as_str().to_owned())))
+                        Some(Ok(Token::String(
+                            c[1].to_owned()
+                                .replace(r"\\", r"\")
+                                .replace(r#"\""#, r#"""#),
+                        )))
                     } else {
                         Some(Err(LexerError {
                             kind: LexerErrorKind::UnclosedString,
@@ -304,8 +308,8 @@ mod tests {
             tokenize!(r#""foo bar" "foo\\bar" "foo\"bar" "foo\nbar""#),
             Ok(vec![
                 Token::String("foo bar".to_owned()),
-                Token::String(r"foo\\bar".to_owned()),
-                Token::String(r#"foo\"bar"#.to_owned()),
+                Token::String(r"foo\bar".to_owned()),
+                Token::String(r#"foo"bar"#.to_owned()),
                 Token::String(r"foo\nbar".to_owned()),
             ]),
         );
