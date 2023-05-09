@@ -53,9 +53,9 @@ impl fmt::Display for EvalError {
             EvalErrorKind::ZeroDivision => write!(f, "Division by zero"),
             EvalErrorKind::UndefinedVariable(s) => write!(f, "Undefined variable: {s}"),
             EvalErrorKind::ContractViolation { expected, got } => {
-                write!(f, "Contract violation: expected {expected}, got {got}")
+                write!(f, "Contract violation: expected {expected}, got {got:#}")
             }
-            EvalErrorKind::NotAProcedure(o) => write!(f, "Not a procedure: {o}"),
+            EvalErrorKind::NotAProcedure(o) => write!(f, "Not a procedure: {o:#}"),
             EvalErrorKind::DuplicateArg(s) => write!(f, "Duplicate argument name: {s}"),
             EvalErrorKind::ArityMismatch {
                 expected,
