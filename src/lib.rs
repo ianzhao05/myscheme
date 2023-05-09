@@ -14,7 +14,7 @@ pub mod proc;
 pub mod reader;
 pub mod trampoline;
 
-pub use crate::interpret::{eval_str, repl};
+pub use crate::interpret::{eval_str, repl, write_results};
 
 #[cfg(test)]
 pub mod test_util {
