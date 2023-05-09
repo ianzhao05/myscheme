@@ -50,27 +50,126 @@ pub fn eval_str(s: &str, env: Rc<RefCell<Env>>) -> Result<Vec<ObjectRef>, Scheme
     res
 }
 
-pub fn repl() {
-    let env = Env::primitives();
-    loop {
-        let mut line = String::new();
-        print!(">>> ");
-        io::stdout().flush().unwrap();
-        if io::stdin().read_line(&mut line).unwrap() == 0 {
-            break;
+pub fn write_results(res: Result<Vec<ObjectRef>, SchemeError>) {
+    match res {
+        Ok(objs) => {
+            for o in objs {
+                match o {
+                    ObjectRef::Void => (),
+                    _ => println!("{o:#}"),
+                }
+            }
         }
-        match eval_str(&line, env.clone()) {
-            Ok(res) => {
-                for r in res {
-                    match r {
-                        ObjectRef::Void => (),
-                        _ => println!("{r:#}"),
+        Err(e) => {
+            println!("{e}");
+        }
+    }
+}
+
+fn is_ready(s: &str) -> bool {
+    let mut open_count = 0;
+    let mut in_string = false;
+    let mut in_comment = false;
+    let mut prev = '\0';
+    let mut pprev = '\0';
+    let mut esc = false;
+    for c in s.chars() {
+        match c {
+            '\n' => in_comment = false,
+            _ if in_comment => (),
+            '(' => {
+                if !in_string && pprev != '#' && prev != '\\' {
+                    open_count += 1;
+                }
+            }
+            ')' => {
+                if !in_string && pprev != '#' && prev != '\\' {
+                    if open_count == 0 {
+                        return true;
+                    } else {
+                        open_count -= 1;
                     }
                 }
             }
-            Err(e) => {
-                println!("{e}");
+            '"' => {
+                if prev != '\\' || !esc {
+                    in_string = !in_string;
+                }
             }
+            ';' => {
+                if !in_string && pprev != '#' && prev != '\\' {
+                    in_comment = true;
+                }
+            }
+            _ => (),
         }
+        pprev = prev;
+        prev = c;
+        esc = !esc && c == '\\';
+    }
+    open_count == 0 && in_string == false
+}
+
+pub fn repl() -> std::io::Result<()> {
+    let env = Env::primitives();
+    let mut line = String::new();
+    loop {
+        if line.is_empty() {
+            print!("> ");
+        } else {
+            print!("| ");
+        }
+        io::stdout().flush()?;
+        if io::stdin().read_line(&mut line)? == 0 {
+            break;
+        }
+        if is_ready(&line) {
+            write_results(eval_str(&line, env.clone()));
+            line.clear();
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_ready;
+
+    #[test]
+    fn is_ready_unclosed_paren() {
+        assert!(!is_ready("(+ 1 2"));
+        assert!(is_ready("(+ 1 2)"));
+        assert!(is_ready("(+ 1 2))"));
+        assert!(!is_ready("()(()()"));
+        assert!(is_ready("()(()())"));
+        assert!(is_ready(r#" "(" "#));
+        assert!(!is_ready(r#" ( ")" "#));
+    }
+
+    #[test]
+    fn is_ready_unclosed_string() {
+        assert!(!is_ready(r#" "hello "#));
+        assert!(is_ready(r#" "hello" "#));
+        assert!(!is_ready(r#" "hello\" "#));
+        assert!(is_ready(r#" "hello\"" "#));
+        assert!(!is_ready(r#" "hello\\"" "#));
+        assert!(is_ready(r#" "hello\\\"" "#));
+        assert!(!is_ready(r#" "hello\\\\"" "#));
+    }
+
+    #[test]
+    fn is_ready_comments() {
+        assert!(!is_ready("( ; )))"));
+        assert!(is_ready(r#" " ; " "#));
+        assert!(is_ready("( ; )\n )"));
+    }
+
+    #[test]
+    fn is_ready_chars() {
+        assert!(is_ready(r"#\("));
+        assert!(!is_ready(r"(#\)"));
+        assert!(is_ready(r#" #\" "#));
+        assert!(!is_ready(r##" "#\" "##));
+        assert!(is_ready(r"( #\; )"));
     }
 }
