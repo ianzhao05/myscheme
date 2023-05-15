@@ -3,54 +3,30 @@ use std::fmt;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Write};
 
-pub enum IPort {
-    Open(Box<dyn BufRead>),
-    Closed,
-}
-
-impl IPort {
-    pub fn close(&mut self) {
-        match self {
-            IPort::Open(_) => {
-                *self = IPort::Closed;
-            }
-            IPort::Closed => (),
-        }
-    }
-}
-
-pub enum OPort {
-    Open(Box<dyn Write>),
-    Closed,
-}
-
-impl OPort {
-    pub fn close(&mut self) {
-        match self {
-            OPort::Open(_) => {
-                *self = OPort::Closed;
-            }
-            OPort::Closed => (),
-        }
-    }
-}
-
 pub enum Port {
-    Input(RefCell<IPort>),
-    Output(RefCell<OPort>),
+    Input(RefCell<Option<Box<dyn BufRead>>>),
+    Output(RefCell<Option<Box<dyn Write>>>),
 }
 
 impl Port {
     pub fn new_input(file: &str) -> io::Result<Self> {
-        Ok(Port::Input(RefCell::new(IPort::Open(Box::new(
-            BufReader::new(File::open(file)?),
-        )))))
+        Ok(Port::Input(RefCell::new(Some(Box::new(BufReader::new(
+            File::open(file)?,
+        ))))))
     }
 
     pub fn new_output(file: &str) -> io::Result<Self> {
-        Ok(Port::Output(RefCell::new(OPort::Open(Box::new(
-            File::create(file)?,
-        )))))
+        Ok(Port::Output(RefCell::new(Some(Box::new(File::create(
+            file,
+        )?)))))
+    }
+
+    pub fn new_stdin() -> Self {
+        Port::Input(RefCell::new(Some(Box::new(io::stdin().lock()))))
+    }
+
+    pub fn new_stdout() -> Self {
+        Port::Output(RefCell::new(Some(Box::new(io::stdout()))))
     }
 }
 
