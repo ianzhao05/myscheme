@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::datum::SimpleDatum;
 use crate::evaler::{EvalError, EvalErrorKind};
 use crate::object::{Object, ObjectRef};
+use crate::port::Port;
 
 use super::PrimitiveMap;
 
@@ -17,6 +18,10 @@ enum Type {
     Number,
     String,
     Null,
+    Port,
+    IPort,
+    OPort,
+    Eof,
 }
 
 fn pred(args: &[ObjectRef], t: Type) -> Result<ObjectRef, EvalError> {
@@ -29,21 +34,27 @@ fn pred(args: &[ObjectRef], t: Type) -> Result<ObjectRef, EvalError> {
     }
     Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(
         match &args[0] {
-            ObjectRef::Object(o) => {
-                t == match &**o {
-                    Object::Atom(a) => match a {
-                        SimpleDatum::Boolean(_) => Type::Boolean,
-                        SimpleDatum::Number(_) => Type::Number,
-                        SimpleDatum::Character(_) => Type::Char,
-                        SimpleDatum::String(_) => Type::String,
-                        SimpleDatum::Symbol(_) => Type::Symbol,
-                    },
-                    Object::Pair(_) => Type::Pair,
-                    Object::Vector(_) => Type::Vector,
-                    Object::Procedure(_) => Type::Procedure,
+            ObjectRef::Object(o) => match &**o {
+                Object::Atom(a) => match a {
+                    SimpleDatum::Boolean(_) => t == Type::Boolean,
+                    SimpleDatum::Number(_) => t == Type::Number,
+                    SimpleDatum::Character(_) => t == Type::Char,
+                    SimpleDatum::String(_) => t == Type::String,
+                    SimpleDatum::Symbol(_) => t == Type::Symbol,
+                },
+                Object::Pair(_) => t == Type::Pair,
+                Object::Vector(_) => t == Type::Vector,
+                Object::Procedure(_) => t == Type::Procedure,
+                Object::Port(p) => {
+                    t == Type::Port
+                        || match p {
+                            Port::Input(_) => t == Type::IPort,
+                            Port::Output(_) => t == Type::OPort,
+                        }
                 }
-            }
+            },
             ObjectRef::EmptyList => t == Type::Null,
+            ObjectRef::Eof => t == Type::Eof,
             _ => false,
         },
     ))))
@@ -60,6 +71,10 @@ pub fn primitives() -> PrimitiveMap {
     m.insert("number?", |args| pred(args, Type::Number));
     m.insert("string?", |args| pred(args, Type::String));
     m.insert("null?", |args| pred(args, Type::Null));
+    m.insert("port?", |args| pred(args, Type::Port));
+    m.insert("input-port?", |args| pred(args, Type::IPort));
+    m.insert("output-port?", |args| pred(args, Type::OPort));
+    m.insert("eof-object?", |args| pred(args, Type::Eof));
     m
 }
 

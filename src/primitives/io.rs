@@ -1,16 +1,22 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use crate::datum::SimpleDatum;
 use crate::err::SchemeError;
 use crate::evaler::{EvalError, EvalErrorKind};
 use crate::interpret::until_err;
 use crate::lexer::{Lexer, LexerError};
-use crate::object::ObjectRef;
+use crate::object::{Object, ObjectRef};
+use crate::port::{IPort, OPort, Port};
 use crate::reader::{Reader, ReaderError, ReaderErrorKind};
 
-use super::PrimitiveMap;
+use super::{cv_fn, PrimitiveMap};
 
-fn display(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
+cv_fn!(string_cv, "string");
+cv_fn!(oport_cv, "output-port");
+cv_fn!(iport_cv, "input-port");
+
+fn open_file(args: &[ObjectRef], out: bool) -> Result<ObjectRef, EvalError> {
     if args.len() != 1 {
         return Err(EvalError::new(EvalErrorKind::ArityMismatch {
             expected: 1,
@@ -18,11 +24,20 @@ fn display(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
             rest: false,
         }));
     }
-    print!("{}", args[0]);
-    Ok(ObjectRef::Void)
+    match &args[0].try_deref_or(string_cv)? {
+        Object::Atom(SimpleDatum::String(s)) => Ok(ObjectRef::new(Object::Port(
+            (if out {
+                Port::new_output(&s)
+            } else {
+                Port::new_input(&s)
+            })
+            .map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
+        ))),
+        _ => Err(string_cv(&args[0])),
+    }
 }
 
-fn write(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
+fn close_input_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     if args.len() != 1 {
         return Err(EvalError::new(EvalErrorKind::ArityMismatch {
             expected: 1,
@@ -30,7 +45,60 @@ fn write(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
             rest: false,
         }));
     }
-    print!("{:#}", args[0]);
+    match &args[0].try_deref_or(iport_cv)? {
+        Object::Port(Port::Input(op)) => {
+            op.borrow_mut().close();
+            Ok(ObjectRef::Void)
+        }
+        _ => Err(iport_cv(&args[0])),
+    }
+}
+
+fn close_output_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
+    if args.len() != 1 {
+        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
+            expected: 1,
+            got: args.len(),
+            rest: false,
+        }));
+    }
+    match &args[0].try_deref_or(oport_cv)? {
+        Object::Port(Port::Output(op)) => {
+            op.borrow_mut().close();
+            Ok(ObjectRef::Void)
+        }
+        _ => Err(oport_cv(&args[0])),
+    }
+}
+
+fn display_write(args: &[ObjectRef], write: bool) -> Result<ObjectRef, EvalError> {
+    if args.len() != 1 && args.len() != 2 {
+        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
+            expected: usize::MAX,
+            got: args.len(),
+            rest: false,
+        }));
+    }
+    if args.len() == 1 {
+        if write {
+            print!("{:#}", args[0]);
+        } else {
+            print!("{}", args[0]);
+        }
+    } else {
+        match &args[1].try_deref_or(oport_cv)? {
+            Object::Port(Port::Output(op)) => match &mut *op.borrow_mut() {
+                OPort::Open(w) => (if write {
+                    write!(w, "{:#}", args[0])
+                } else {
+                    write!(w, "{}", args[0])
+                })
+                .map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
+                OPort::Closed => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
+            },
+            _ => return Err(oport_cv(&args[1])),
+        }
+    }
     Ok(ObjectRef::Void)
 }
 
@@ -58,9 +126,22 @@ fn read(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
         }));
     }
     let mut buf = String::new();
-    std::io::stdin()
-        .read_line(&mut buf)
-        .map_err(|_| EvalError::new(EvalErrorKind::IOError))?;
+    if args.len() == 1 {
+        std::io::stdin()
+            .read_line(&mut buf)
+            .map_err(|_| EvalError::new(EvalErrorKind::IOError))?;
+    } else {
+        match &args[1].try_deref_or(iport_cv)? {
+            Object::Port(Port::Input(ip)) => match &mut *ip.borrow_mut() {
+                IPort::Open(r) => {
+                    r.read_line(&mut buf)
+                        .map_err(|_| EvalError::new(EvalErrorKind::IOError))?;
+                }
+                IPort::Closed => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
+            },
+            _ => return Err(iport_cv(&args[1])),
+        }
+    }
     let (mut le, mut re) = (Ok(()), Ok(()));
     let tokens = Lexer::new(&buf).scan(&mut le, until_err);
     let mut data = Reader::new(tokens).scan(&mut re, until_err);
@@ -87,13 +168,23 @@ fn read(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 
 pub fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
-    m.insert("display", display);
-    m.insert("write", write);
+    m.insert("open-input-file", |args| open_file(args, false));
+    m.insert("open-output-file", |args| open_file(args, true));
+    m.insert("close-input-port", close_input_port);
+    m.insert("close-output-port", close_output_port);
+    m.insert("display", |args| display_write(args, false));
+    m.insert("write", |args| display_write(args, true));
     m.insert("read", read);
     m
 }
 
 pub const PRELUDE: &str = "
-(define (newline)
-  (display #\\newline))
+(define (call-with-input-file filename proc)
+  (proc (open-input-file filename)))
+
+(define (call-with-output-file filename proc)
+  (proc (open-output-file filename)))
+
+(define (newline . port)
+  (apply display (cons #\\newline port)))
 ";

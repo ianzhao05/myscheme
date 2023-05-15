@@ -32,6 +32,7 @@ pub enum EvalErrorKind {
     },
     IOError,
     ReadError(ReadError),
+    ClosedPort,
 }
 
 #[derive(Debug, PartialEq)]
@@ -63,17 +64,20 @@ impl fmt::Display for EvalError {
                 rest,
             } => {
                 let expected = if *rest {
-                    format!("at least {expected}")
+                    format!("expected at least {expected}, ")
+                } else if *expected != usize::MAX {
+                    format!("expected {expected}, ")
                 } else {
-                    expected.to_string()
+                    String::new()
                 };
-                write!(f, "Arity mismatch: expected {expected}, got {got}")
+                write!(f, "Arity mismatch: {expected}got {got}")
             }
             EvalErrorKind::IndexOutOfBounds { index, len } => {
                 write!(f, "Index out of bounds: {index} >= {len}")
             }
             EvalErrorKind::IOError => write!(f, "IO error"),
             EvalErrorKind::ReadError(e) => write!(f, "read: {e}"),
+            EvalErrorKind::ClosedPort => write!(f, "Attempted read or write from closed port"),
         }
     }
 }

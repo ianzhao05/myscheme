@@ -4,6 +4,7 @@ use std::fmt::{self, Write};
 use std::rc::Rc;
 
 use crate::datum::*;
+use crate::port::Port;
 use crate::proc::Procedure;
 
 #[derive(Debug, Clone)]
@@ -12,6 +13,7 @@ pub enum ObjectRef {
     Undefined,
     EmptyList,
     Void,
+    Eof,
 }
 
 impl ObjectRef {
@@ -32,6 +34,7 @@ impl ObjectRef {
             (ObjectRef::Object(o1), ObjectRef::Object(o2)) => o1 == o2,
             (ObjectRef::EmptyList, ObjectRef::EmptyList) => true,
             (ObjectRef::Void, ObjectRef::Void) => true,
+            (ObjectRef::Eof, ObjectRef::Eof) => true,
             _ => false,
         }
     }
@@ -74,6 +77,7 @@ impl PartialEq for ObjectRef {
             },
             (ObjectRef::EmptyList, ObjectRef::EmptyList) => true,
             (ObjectRef::Void, ObjectRef::Void) => true,
+            (ObjectRef::Eof, ObjectRef::Eof) => true,
             _ => false,
         }
     }
@@ -160,20 +164,23 @@ impl fmt::Display for ObjectRef {
                     f.write_char(')')
                 }
                 Object::Procedure(p) => p.fmt(f),
+                Object::Port(p) => p.fmt(f),
             },
             ObjectRef::EmptyList => f.write_str("()"),
             ObjectRef::Undefined => panic!("Undefined value should not be encountered"),
             ObjectRef::Void => f.write_str("#<void>"),
+            ObjectRef::Eof => f.write_str("#<eof>"),
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Object {
     Atom(SimpleDatum),
     Pair(RefCell<(ObjectRef, ObjectRef)>),
     Vector(RefCell<Vec<ObjectRef>>),
     Procedure(Procedure),
+    Port(Port),
 }
 
 impl PartialEq for Object {
@@ -198,8 +205,6 @@ impl PartialEq for Object {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
-
     use super::*;
     use crate::test_util::*;
 
@@ -349,55 +354,36 @@ mod tests {
 
     #[test]
     fn display() {
-        let mut buf = Vec::new();
-        write!(&mut buf, "{}", ObjectRef::from(int_datum!(1))).unwrap();
-        assert_eq!(buf, b"1");
+        assert_eq!(ObjectRef::from(int_datum!(1)).to_string(), "1");
 
-        buf.clear();
-        write!(&mut buf, "{}", ObjectRef::from(bool_datum!(true))).unwrap();
-        assert_eq!(buf, b"#t");
+        assert_eq!(ObjectRef::from(bool_datum!(true)).to_string(), "#t");
 
-        buf.clear();
-        write!(&mut buf, "{}", ObjectRef::from(char_datum!('a'))).unwrap();
-        assert_eq!(buf, b"a");
+        assert_eq!(ObjectRef::from(char_datum!('a')).to_string(), "a");
 
-        buf.clear();
-        write!(&mut buf, "{}", ObjectRef::from(str_datum!("abc"))).unwrap();
-        assert_eq!(buf, b"abc");
+        assert_eq!(ObjectRef::from(str_datum!("abc")).to_string(), "abc");
 
-        buf.clear();
-        write!(
-            &mut buf,
-            "{}",
+        assert_eq!(
             ObjectRef::from(proper_list_datum![
                 int_datum!(1),
                 int_datum!(2),
                 int_datum!(3)
             ])
-        )
-        .unwrap();
-        assert_eq!(buf, b"(1 2 3)");
+            .to_string(),
+            "(1 2 3)"
+        );
 
-        buf.clear();
-        write!(
-            &mut buf,
-            "{}",
+        assert_eq!(
             ObjectRef::from(improper_list_datum![
                 int_datum!(1),
                 proper_list_datum!(int_datum!(2), int_datum!(3));
-                int_datum!(4)
-            ])
-        )
-        .unwrap();
-        assert_eq!(buf, b"(1 (2 3) . 4)");
+                int_datum!(4)])
+            .to_string(),
+            "(1 (2 3) . 4)"
+        );
 
-        buf.clear();
-        write!(
-            &mut buf,
-            "{}",
-            ObjectRef::from(vector_datum![int_datum!(1), int_datum!(2), int_datum!(3)])
-        )
-        .unwrap();
-        assert_eq!(buf, b"#(1 2 3)");
+        assert_eq!(
+            ObjectRef::from(vector_datum![int_datum!(1), int_datum!(2), int_datum!(3)]).to_string(),
+            "#(1 2 3)"
+        );
     }
 }
