@@ -5,6 +5,7 @@ use std::io::{self, BufRead, BufReader, Write};
 
 use crate::datum::Datum;
 use crate::lexer::{LexerError, SexpReader};
+use crate::object::{Object, ObjectRef};
 use crate::reader::{read, ReaderError};
 
 #[derive(Debug, PartialEq)]
@@ -35,11 +36,6 @@ impl IPort {
             file,
             sreader: SexpReader::new(String::new()),
         }
-    }
-
-    pub fn read_line(&mut self) -> io::Result<()> {
-        self.file.read_line(&mut self.sreader.buf)?;
-        Ok(())
     }
 
     pub fn read(&mut self) -> io::Result<Result<Datum, ReadError>> {
@@ -81,11 +77,13 @@ impl Port {
         )?)))))
     }
 
-    pub fn new_stdin() -> Self {
-        Port::Input(RefCell::new(Some(IPort::new(Box::new(io::stdin().lock())))))
+    fn new_stdin() -> Self {
+        Port::Input(RefCell::new(Some(IPort::new(Box::new(BufReader::new(
+            io::stdin(),
+        ))))))
     }
 
-    pub fn new_stdout() -> Self {
+    fn new_stdout() -> Self {
         Port::Output(RefCell::new(Some(Box::new(io::stdout()))))
     }
 }
@@ -106,4 +104,9 @@ impl fmt::Display for Port {
             Port::Output(_) => "#<output-port>",
         })
     }
+}
+
+thread_local! {
+    pub static STDIN: ObjectRef = ObjectRef::new(Object::Port(Port::new_stdin()));
+    pub static STDOUT: ObjectRef = ObjectRef::new(Object::Port(Port::new_stdout()));
 }

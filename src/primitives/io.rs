@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::datum::SimpleDatum;
 use crate::evaler::{EvalError, EvalErrorKind};
 use crate::object::{Object, ObjectRef};
-use crate::port::{Port, ReadError};
+use crate::port::{Port, ReadError, STDIN, STDOUT};
 
 use super::{cv_fn, PrimitiveMap};
 
@@ -75,7 +75,7 @@ fn current_input_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
             rest: false,
         }));
     }
-    Ok(ObjectRef::new(Object::Port(Port::new_stdin())))
+    Ok(STDIN.with(|s| s.clone()))
 }
 
 fn current_output_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
@@ -86,7 +86,7 @@ fn current_output_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
             rest: false,
         }));
     }
-    Ok(ObjectRef::new(Object::Port(Port::new_stdout())))
+    Ok(STDOUT.with(|s| s.clone()))
 }
 
 fn write_char(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
@@ -101,16 +101,16 @@ fn write_char(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
         Object::Atom(SimpleDatum::Character(c)) => *c,
         _ => return Err(char_cv(&args[0])),
     };
-    if args.len() == 1 {
-        print!("{c}");
-    } else {
-        match &args[1].try_deref_or(oport_cv)? {
-            Object::Port(Port::Output(op)) => match &mut *op.borrow_mut() {
-                Some(w) => write!(w, "{c}").map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
-                None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
-            },
-            _ => return Err(oport_cv(&args[1])),
-        }
+    let port = args
+        .get(1)
+        .cloned()
+        .unwrap_or_else(|| STDOUT.with(|s| s.clone()));
+    match port.try_deref_or(oport_cv)? {
+        Object::Port(Port::Output(op)) => match &mut *op.borrow_mut() {
+            Some(w) => write!(w, "{c}").map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
+            None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
+        },
+        _ => return Err(oport_cv(&port)),
     }
     Ok(ObjectRef::Void)
 }
@@ -123,25 +123,21 @@ fn display_write(args: &[ObjectRef], write: bool) -> Result<ObjectRef, EvalError
             rest: false,
         }));
     }
-    if args.len() == 1 {
-        if write {
-            print!("{:#}", args[0]);
-        } else {
-            print!("{}", args[0]);
-        }
-    } else {
-        match &args[1].try_deref_or(oport_cv)? {
-            Object::Port(Port::Output(op)) => match &mut *op.borrow_mut() {
-                Some(w) => (if write {
-                    write!(w, "{:#}", args[0])
-                } else {
-                    write!(w, "{}", args[0])
-                })
-                .map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
-                None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
-            },
-            _ => return Err(oport_cv(&args[1])),
-        }
+    let port = args
+        .get(1)
+        .cloned()
+        .unwrap_or_else(|| STDOUT.with(|s| s.clone()));
+    match port.try_deref_or(oport_cv)? {
+        Object::Port(Port::Output(op)) => match &mut *op.borrow_mut() {
+            Some(w) => (if write {
+                write!(w, "{:#}", args[0])
+            } else {
+                write!(w, "{}", args[0])
+            })
+            .map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
+            None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
+        },
+        _ => return Err(oport_cv(&port)),
     }
     Ok(ObjectRef::Void)
 }
@@ -154,18 +150,18 @@ fn read(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
             rest: false,
         }));
     }
-    let datum = if args.len() == 0 {
-        todo!()
-    } else {
-        match &args[0].try_deref_or(iport_cv)? {
-            Object::Port(Port::Input(ip)) => match &mut *ip.borrow_mut() {
-                Some(r) => r
-                    .read()
-                    .map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
-                None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
-            },
-            _ => return Err(iport_cv(&args[1])),
-        }
+    let port = args
+        .first()
+        .cloned()
+        .unwrap_or_else(|| STDIN.with(|s| s.clone()));
+    let datum = match port.try_deref_or(iport_cv)? {
+        Object::Port(Port::Input(ip)) => match &mut *ip.borrow_mut() {
+            Some(r) => r
+                .read()
+                .map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
+            None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
+        },
+        _ => return Err(iport_cv(&args[0])),
     };
     match datum {
         Ok(d) => Ok(ObjectRef::from(d)),
