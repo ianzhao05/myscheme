@@ -7,7 +7,7 @@ use crate::datum::SimpleDatum;
 use crate::env::Env;
 use crate::expr::*;
 use crate::object::{Object, ObjectRef};
-use crate::primitives::ReadError;
+use crate::port::ReadError;
 use crate::proc::{Call, Procedure, UserDefined};
 use crate::trampoline::{trampoline, Bouncer};
 

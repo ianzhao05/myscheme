@@ -1,14 +1,9 @@
 use std::collections::HashMap;
-use std::fmt;
 
 use crate::datum::SimpleDatum;
-use crate::err::SchemeError;
 use crate::evaler::{EvalError, EvalErrorKind};
-use crate::interpret::until_err;
-use crate::lexer::{Lexer, LexerError};
 use crate::object::{Object, ObjectRef};
-use crate::port::Port;
-use crate::reader::{Reader, ReaderError, ReaderErrorKind};
+use crate::port::{Port, ReadError};
 
 use super::{cv_fn, PrimitiveMap};
 
@@ -151,21 +146,6 @@ fn display_write(args: &[ObjectRef], write: bool) -> Result<ObjectRef, EvalError
     Ok(ObjectRef::Void)
 }
 
-#[derive(Debug, PartialEq)]
-pub enum ReadError {
-    Reader(ReaderError),
-    Lexer(LexerError),
-}
-
-impl fmt::Display for ReadError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ReadError::Reader(e) => e.fmt(f),
-            ReadError::Lexer(e) => e.fmt(f),
-        }
-    }
-}
-
 fn read(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     if args.len() > 1 {
         return Err(EvalError::new(EvalErrorKind::ArityMismatch {
@@ -174,45 +154,24 @@ fn read(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
             rest: false,
         }));
     }
-    let mut buf = String::new();
-    if args.len() == 0 {
-        std::io::stdin()
-            .read_line(&mut buf)
-            .map_err(|_| EvalError::new(EvalErrorKind::IOError))?;
+    let datum = if args.len() == 0 {
+        todo!()
     } else {
         match &args[0].try_deref_or(iport_cv)? {
             Object::Port(Port::Input(ip)) => match &mut *ip.borrow_mut() {
-                Some(r) => {
-                    r.read_line(&mut buf)
-                        .map_err(|_| EvalError::new(EvalErrorKind::IOError))?;
-                }
+                Some(r) => r
+                    .read()
+                    .map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
                 None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
             },
             _ => return Err(iport_cv(&args[1])),
         }
-    }
-    let (mut le, mut re) = (Ok(()), Ok(()));
-    let tokens = Lexer::new(&buf).scan(&mut le, until_err);
-    let mut data = Reader::new(tokens).scan(&mut re, until_err);
-    let res = match data.next() {
-        Some(d) => Ok(ObjectRef::from(d)),
-        None => Err(EvalError::new(EvalErrorKind::ReadError(ReadError::Reader(
-            ReaderError::new(ReaderErrorKind::UnexpectedEndOfInput),
-        )))),
     };
-    le.map_err(|e| {
-        EvalError::new(EvalErrorKind::ReadError(ReadError::Lexer(match e {
-            SchemeError::Lexer(e) => e,
-            _ => unreachable!(),
-        })))
-    })?;
-    re.map_err(|e| {
-        EvalError::new(EvalErrorKind::ReadError(ReadError::Reader(match e {
-            SchemeError::Reader(e) => e,
-            _ => unreachable!(),
-        })))
-    })?;
-    res
+    match datum {
+        Ok(d) => Ok(ObjectRef::from(d)),
+        Err(ReadError::Eof) => Ok(ObjectRef::Eof),
+        Err(e) => Err(EvalError::new(EvalErrorKind::ReadError(e))),
+    }
 }
 
 pub fn primitives() -> PrimitiveMap {

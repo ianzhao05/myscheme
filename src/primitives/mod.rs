@@ -17,8 +17,6 @@ use crate::proc::{Primitive, PrimitiveFunc, Procedure};
 
 pub type PrimitiveMap = HashMap<&'static str, fn(&[ObjectRef]) -> Result<ObjectRef, EvalError>>;
 
-pub use io::ReadError;
-
 macro_rules! cv_fn {
     ($fn_name:ident, $s:expr) => {
         fn $fn_name(got: &crate::object::ObjectRef) -> crate::evaler::EvalError {
