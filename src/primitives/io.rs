@@ -170,6 +170,55 @@ fn read(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     }
 }
 
+fn read_peek_char(args: &[ObjectRef], peek: bool) -> Result<ObjectRef, EvalError> {
+    if args.len() > 1 {
+        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
+            expected: usize::MAX,
+            got: args.len(),
+            rest: false,
+        }));
+    }
+    let port = args
+        .first()
+        .cloned()
+        .unwrap_or_else(|| STDIN.with(|s| s.clone()));
+    let c = match port.try_deref_or(iport_cv)? {
+        Object::Port(Port::Input(ip)) => match &mut *ip.borrow_mut() {
+            Some(r) => r
+                .read_char(peek)
+                .map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
+            None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
+        },
+        _ => return Err(iport_cv(&args[0])),
+    };
+    match c {
+        Some(c) => Ok(ObjectRef::new(Object::Atom(SimpleDatum::Character(c)))),
+        None => Ok(ObjectRef::Eof),
+    }
+}
+
+fn char_ready(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
+    if args.len() > 1 {
+        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
+            expected: usize::MAX,
+            got: args.len(),
+            rest: false,
+        }));
+    }
+    let port = args
+        .first()
+        .cloned()
+        .unwrap_or_else(|| STDIN.with(|s| s.clone()));
+    let res = match port.try_deref_or(iport_cv)? {
+        Object::Port(Port::Input(ip)) => match &mut *ip.borrow_mut() {
+            Some(r) => r.char_ready(),
+            None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
+        },
+        _ => return Err(iport_cv(&args[0])),
+    };
+    Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(res))))
+}
+
 pub fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("open-input-file", |args| open_file(args, false));
@@ -182,6 +231,9 @@ pub fn primitives() -> PrimitiveMap {
     m.insert("display", |args| display_write(args, false));
     m.insert("write", |args| display_write(args, true));
     m.insert("read", read);
+    m.insert("read-char", |args| read_peek_char(args, false));
+    m.insert("peek-char", |args| read_peek_char(args, true));
+    m.insert("char-ready?", char_ready);
     m
 }
 

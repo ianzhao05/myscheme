@@ -305,6 +305,28 @@ impl SexpReader {
         self.open_count = 0;
         std::mem::take(&mut self.token_buf)
     }
+
+    pub fn read_char(&mut self, peek: bool) -> Option<char> {
+        let oc = self.buf[self.pos..].chars().next();
+        if !peek {
+            if let Some(c) = oc {
+                self.pos += c.len_utf8();
+            }
+        }
+        oc
+    }
+
+    pub fn char_ready(&self) -> bool {
+        self.pos < self.buf.len()
+    }
+
+    pub fn reset(&mut self) {
+        self.buf.clear();
+        self.token_buf.clear();
+        self.pos = 0;
+        self.open_count = 0;
+        self.prev_quote = false;
+    }
 }
 
 #[cfg(test)]

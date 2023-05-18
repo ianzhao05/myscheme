@@ -28,13 +28,15 @@ impl fmt::Display for ReadError {
 pub struct IPort {
     file: Box<dyn BufRead>,
     sreader: SexpReader,
+    interactive: bool,
 }
 
 impl IPort {
-    fn new(file: Box<dyn BufRead>) -> Self {
+    fn new(file: Box<dyn BufRead>, interactive: bool) -> Self {
         Self {
             file,
             sreader: SexpReader::new(String::new()),
+            interactive,
         }
     }
 
@@ -57,6 +59,22 @@ impl IPort {
             }
         }
     }
+
+    pub fn read_char(&mut self, peek: bool) -> io::Result<Option<char>> {
+        let oc = self.sreader.read_char(peek);
+        match oc {
+            Some(c) => Ok(Some(c)),
+            None => {
+                self.sreader.reset();
+                self.file.read_line(&mut self.sreader.buf)?;
+                Ok(self.sreader.read_char(peek))
+            }
+        }
+    }
+
+    pub fn char_ready(&mut self) -> bool {
+        !self.interactive || self.sreader.char_ready()
+    }
 }
 
 pub enum Port {
@@ -66,9 +84,10 @@ pub enum Port {
 
 impl Port {
     pub fn new_input(file: &str) -> io::Result<Self> {
-        Ok(Port::Input(RefCell::new(Some(IPort::new(Box::new(
-            BufReader::new(File::open(file)?),
-        ))))))
+        Ok(Port::Input(RefCell::new(Some(IPort::new(
+            Box::new(BufReader::new(File::open(file)?)),
+            false,
+        )))))
     }
 
     pub fn new_output(file: &str) -> io::Result<Self> {
@@ -78,9 +97,10 @@ impl Port {
     }
 
     fn new_stdin() -> Self {
-        Port::Input(RefCell::new(Some(IPort::new(Box::new(BufReader::new(
-            io::stdin(),
-        ))))))
+        Port::Input(RefCell::new(Some(IPort::new(
+            Box::new(BufReader::new(io::stdin())),
+            true,
+        ))))
     }
 
     fn new_stdout() -> Self {
