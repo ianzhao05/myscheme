@@ -1,6 +1,7 @@
 mod control;
 mod delay;
 mod eq;
+mod io;
 mod list;
 mod numeric;
 mod pred;
@@ -43,6 +44,7 @@ pub fn primitives() -> HashMap<String, ObjectRef> {
         list::primitives(),
         pred::primitives(),
         vector::primitives(),
+        io::primitives(),
     ])
     .into_iter()
     .map(|(k, v)| {
@@ -76,6 +78,7 @@ thread_local! {
             pred::PRELUDE,
             control::PRELUDE,
             vector::PRELUDE,
+            io::PRELUDE,
         ]
         .join(""),
     )

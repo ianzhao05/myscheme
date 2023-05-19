@@ -1,8 +1,10 @@
 use core::ops::Deref;
 use std::cell::RefCell;
+use std::fmt::{self, Write};
 use std::rc::Rc;
 
 use crate::datum::*;
+use crate::port::Port;
 use crate::proc::Procedure;
 
 #[derive(Debug, Clone)]
@@ -11,6 +13,7 @@ pub enum ObjectRef {
     Undefined,
     EmptyList,
     Void,
+    Eof,
 }
 
 impl ObjectRef {
@@ -31,6 +34,7 @@ impl ObjectRef {
             (ObjectRef::Object(o1), ObjectRef::Object(o2)) => o1 == o2,
             (ObjectRef::EmptyList, ObjectRef::EmptyList) => true,
             (ObjectRef::Void, ObjectRef::Void) => true,
+            (ObjectRef::Eof, ObjectRef::Eof) => true,
             _ => false,
         }
     }
@@ -69,10 +73,12 @@ impl PartialEq for ObjectRef {
                 (Object::Pair(_), Object::Pair(_)) => Rc::ptr_eq(o1, o2),
                 (Object::Vector(_), Object::Vector(_)) => Rc::ptr_eq(o1, o2),
                 (Object::Procedure(_), Object::Procedure(_)) => Rc::ptr_eq(o1, o2),
+                (Object::Port(_), Object::Port(_)) => Rc::ptr_eq(o1, o2),
                 _ => false,
             },
             (ObjectRef::EmptyList, ObjectRef::EmptyList) => true,
             (ObjectRef::Void, ObjectRef::Void) => true,
+            (ObjectRef::Eof, ObjectRef::Eof) => true,
             _ => false,
         }
     }
@@ -110,12 +116,72 @@ impl From<Datum> for ObjectRef {
     }
 }
 
-#[derive(Debug, Clone)]
+impl fmt::Display for ObjectRef {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ObjectRef::Object(o) => match &**o {
+                Object::Atom(a) => a.fmt(f),
+                Object::Pair(p) => {
+                    let mut first = true;
+                    let mut cur = p.clone();
+                    loop {
+                        cur = {
+                            if first {
+                                first = false;
+                                f.write_char('(')?;
+                            } else {
+                                f.write_char(' ')?;
+                            }
+                            let b = cur.borrow();
+                            b.0.fmt(f)?;
+                            match &b.1 {
+                                ObjectRef::Object(o) => match &**o {
+                                    Object::Pair(p) => p.clone(),
+                                    _ => {
+                                        f.write_str(" . ")?;
+                                        b.1.fmt(f)?;
+                                        break f.write_char(')');
+                                    }
+                                },
+                                ObjectRef::EmptyList => break f.write_char(')'),
+                                uov => {
+                                    f.write_str(" . ")?;
+                                    uov.fmt(f)?;
+                                    break f.write_char(')');
+                                }
+                            }
+                        }
+                    }
+                }
+                Object::Vector(v) => {
+                    let b = v.borrow();
+                    f.write_str("#(")?;
+                    for (i, o) in b.iter().enumerate() {
+                        if i > 0 {
+                            f.write_char(' ')?;
+                        }
+                        o.fmt(f)?;
+                    }
+                    f.write_char(')')
+                }
+                Object::Procedure(p) => p.fmt(f),
+                Object::Port(p) => p.fmt(f),
+            },
+            ObjectRef::EmptyList => f.write_str("()"),
+            ObjectRef::Undefined => panic!("Undefined value should not be encountered"),
+            ObjectRef::Void => f.write_str("#<void>"),
+            ObjectRef::Eof => f.write_str("#<eof>"),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum Object {
     Atom(SimpleDatum),
     Pair(RefCell<(ObjectRef, ObjectRef)>),
     Vector(RefCell<Vec<ObjectRef>>),
     Procedure(Procedure),
+    Port(Port),
 }
 
 impl PartialEq for Object {
@@ -285,5 +351,40 @@ mod tests {
         assert_ne!(o1, o4);
         assert!(!ObjectRef::equal(&o1, &o3));
         assert!(!ObjectRef::equal(&o1, &o4));
+    }
+
+    #[test]
+    fn display() {
+        assert_eq!(ObjectRef::from(int_datum!(1)).to_string(), "1");
+
+        assert_eq!(ObjectRef::from(bool_datum!(true)).to_string(), "#t");
+
+        assert_eq!(ObjectRef::from(char_datum!('a')).to_string(), "a");
+
+        assert_eq!(ObjectRef::from(str_datum!("abc")).to_string(), "abc");
+
+        assert_eq!(
+            ObjectRef::from(proper_list_datum![
+                int_datum!(1),
+                int_datum!(2),
+                int_datum!(3)
+            ])
+            .to_string(),
+            "(1 2 3)"
+        );
+
+        assert_eq!(
+            ObjectRef::from(improper_list_datum![
+                int_datum!(1),
+                proper_list_datum!(int_datum!(2), int_datum!(3));
+                int_datum!(4)])
+            .to_string(),
+            "(1 (2 3) . 4)"
+        );
+
+        assert_eq!(
+            ObjectRef::from(vector_datum![int_datum!(1), int_datum!(2), int_datum!(3)]).to_string(),
+            "#(1 2 3)"
+        );
     }
 }

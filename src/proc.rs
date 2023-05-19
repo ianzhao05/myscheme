@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{cell::RefCell, rc::Rc};
 
@@ -32,6 +32,16 @@ impl Call for Procedure {
     }
 }
 
+impl fmt::Display for Procedure {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Procedure::Primitive(p) => p.fmt(f),
+            Procedure::UserDefined(p) => p.fmt(f),
+            Procedure::Continuation(p) => p.fmt(f),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum PrimitiveFunc {
     Args(fn(&[ObjectRef]) -> Result<ObjectRef, EvalError>),
@@ -44,11 +54,17 @@ pub struct Primitive {
     func: PrimitiveFunc,
 }
 
-impl Debug for Primitive {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for Primitive {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_struct("Primitive")
             .field("name", &self.name)
             .finish()
+    }
+}
+
+impl fmt::Display for Primitive {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "#<primitive:{}>", self.name)
     }
 }
 
@@ -86,12 +102,18 @@ pub struct UserDefined {
     env: Rc<RefCell<Env>>,
 }
 
-impl Debug for UserDefined {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for UserDefined {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_struct("UserDefined")
             .field("id", &self.id)
             .field("data", &self.data)
             .finish()
+    }
+}
+
+impl fmt::Display for UserDefined {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("#<procedure>")
     }
 }
 
@@ -162,11 +184,17 @@ pub struct Continuation {
     stack: Option<Rc<Frame>>,
 }
 
-impl Debug for Continuation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for Continuation {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_struct("Continuation")
             .field("id", &self.id)
             .finish()
+    }
+}
+
+impl fmt::Display for Continuation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("#<continuation>")
     }
 }
 

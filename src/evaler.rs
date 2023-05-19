@@ -7,10 +7,11 @@ use crate::datum::SimpleDatum;
 use crate::env::Env;
 use crate::expr::*;
 use crate::object::{Object, ObjectRef};
+use crate::port::ReadError;
 use crate::proc::{Call, Procedure, UserDefined};
 use crate::trampoline::{trampoline, Bouncer};
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub enum EvalErrorKind {
     ZeroDivision,
     UndefinedVariable(String),
@@ -18,7 +19,7 @@ pub enum EvalErrorKind {
         expected: String,
         got: ObjectRef,
     },
-    NotAProcedure(Object),
+    NotAProcedure(ObjectRef),
     DuplicateArg(String),
     ArityMismatch {
         expected: usize,
@@ -29,9 +30,12 @@ pub enum EvalErrorKind {
         index: usize,
         len: usize,
     },
+    IOError,
+    ReadError(ReadError),
+    ClosedPort,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct EvalError {
     kind: EvalErrorKind,
 }
@@ -50,9 +54,9 @@ impl fmt::Display for EvalError {
             EvalErrorKind::ZeroDivision => write!(f, "Division by zero"),
             EvalErrorKind::UndefinedVariable(s) => write!(f, "Undefined variable: {s}"),
             EvalErrorKind::ContractViolation { expected, got } => {
-                write!(f, "Contract violation: expected {expected}, got {got:?}")
+                write!(f, "Contract violation: expected {expected}, got {got:#}")
             }
-            EvalErrorKind::NotAProcedure(o) => write!(f, "Not a procedure: {o:?}"),
+            EvalErrorKind::NotAProcedure(o) => write!(f, "Not a procedure: {o:#}"),
             EvalErrorKind::DuplicateArg(s) => write!(f, "Duplicate argument name: {s}"),
             EvalErrorKind::ArityMismatch {
                 expected,
@@ -60,15 +64,20 @@ impl fmt::Display for EvalError {
                 rest,
             } => {
                 let expected = if *rest {
-                    format!("at least {}", expected)
+                    format!("expected at least {expected}, ")
+                } else if *expected != usize::MAX {
+                    format!("expected {expected}, ")
                 } else {
-                    expected.to_string()
+                    String::new()
                 };
-                write!(f, "Arity mismatch: expected {expected}, got {got}")
+                write!(f, "Arity mismatch: {expected}got {got}")
             }
             EvalErrorKind::IndexOutOfBounds { index, len } => {
                 write!(f, "Index out of bounds: {index} >= {len}")
             }
+            EvalErrorKind::IOError => write!(f, "IO error"),
+            EvalErrorKind::ReadError(e) => write!(f, "read: {e}"),
+            EvalErrorKind::ClosedPort => write!(f, "Attempted read or write from closed port"),
         }
     }
 }
@@ -252,15 +261,9 @@ pub fn eval_expr(state: State) -> Bouncer {
                             rib,
                             stack,
                         }),
-                        _ => Bouncer::Land(Err(EvalError::new(EvalErrorKind::ContractViolation {
-                            expected: "procedure".to_owned(),
-                            got: obj,
-                        }))),
+                        _ => Bouncer::Land(Err(EvalError::new(EvalErrorKind::NotAProcedure(obj)))),
                     },
-                    None => Bouncer::Land(Err(EvalError::new(EvalErrorKind::ContractViolation {
-                        expected: "procedure".to_owned(),
-                        got: obj,
-                    }))),
+                    None => Bouncer::Land(Err(EvalError::new(EvalErrorKind::NotAProcedure(obj)))),
                 },
                 Cont::Proc { operator } => {
                     rib.push(obj);

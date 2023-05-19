@@ -9,12 +9,13 @@ pub mod lexer;
 pub mod number;
 pub mod object;
 pub mod parser;
+pub mod port;
 pub mod primitives;
 pub mod proc;
 pub mod reader;
 pub mod trampoline;
 
-pub use crate::interpret::{eval_str, repl};
+pub use crate::interpret::{eval_str, repl, write_results};
 
 #[cfg(test)]
 pub mod test_util {

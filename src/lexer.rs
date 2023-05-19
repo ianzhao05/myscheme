@@ -88,6 +88,10 @@ impl<'a> Lexer<'a> {
     pub fn new(exp: &'a str) -> Self {
         Self { exp, pos: 0 }
     }
+
+    pub fn pos(&self) -> usize {
+        self.pos
+    }
 }
 
 impl<'a> Iterator for Lexer<'a> {
@@ -211,6 +215,117 @@ impl<'a> Iterator for Lexer<'a> {
             }
         }
         None
+    }
+}
+
+#[derive(Debug)]
+pub struct SexpReader {
+    pub buf: String,
+    pub token_buf: Vec<Token>,
+    pos: usize,
+    open_count: usize,
+    prev_quote: bool,
+}
+
+impl SexpReader {
+    pub fn new(buf: String) -> Self {
+        Self {
+            buf,
+            token_buf: Vec::new(),
+            pos: 0,
+            open_count: 0,
+            prev_quote: false,
+        }
+    }
+
+    pub fn try_tokenize(&mut self, partial: bool) -> Result<bool, LexerError> {
+        let mut lexer = Lexer::new(&self.buf[self.pos..]);
+        let mut has_tokens = false;
+        while let Some(token) = lexer.next() {
+            has_tokens = true;
+            match token {
+                Ok(token) => {
+                    if let Token::Quote
+                    | Token::Quasiquote
+                    | Token::Unquote
+                    | Token::UnquoteSplicing = &token
+                    {
+                        self.prev_quote = true;
+                    } else {
+                        self.prev_quote = false;
+                    }
+                    match token {
+                        Token::LParen | Token::Vector => self.open_count += 1,
+                        Token::RParen => {
+                            if self.open_count == 0 || (partial && self.open_count == 1) {
+                                if partial {
+                                    self.pos += lexer.pos();
+                                } else {
+                                    self.pos = self.buf.len();
+                                }
+                                self.token_buf.push(token);
+                                self.open_count = 0;
+                                return Ok(true);
+                            }
+                            self.open_count -= 1;
+                        }
+                        _ => {
+                            if partial && self.open_count == 0 && !self.prev_quote {
+                                self.pos += lexer.pos();
+                                self.token_buf.push(token);
+                                return Ok(true);
+                            }
+                        }
+                    }
+                    self.token_buf.push(token)
+                }
+                Err(e) => match e.kind {
+                    LexerErrorKind::UnclosedString
+                        if self.open_count > 0 || self.token_buf.is_empty() =>
+                    {
+                        self.pos += lexer.pos();
+                        return Ok(false);
+                    }
+                    _ => {
+                        self.buf.clear();
+                        self.pos = 0;
+                        self.open_count = 0;
+                        return Err(e);
+                    }
+                },
+            }
+        }
+        self.pos += lexer.pos();
+        Ok(has_tokens && self.open_count == 0 && !self.prev_quote)
+    }
+
+    pub fn take_tokens(&mut self) -> Vec<Token> {
+        self.buf = self.buf.split_off(self.pos);
+        self.pos = 0;
+        self.open_count = 0;
+        std::mem::take(&mut self.token_buf)
+    }
+
+    pub fn read_char(&mut self, peek: bool) -> Option<char> {
+        let oc = self.buf[self.pos..].chars().next();
+        if !peek {
+            if let Some(c) = oc {
+                self.pos += c.len_utf8();
+            }
+        }
+        oc
+    }
+
+    pub fn char_ready(&self) -> bool {
+        self.pos < self.buf.len()
+    }
+
+    pub fn reset(&mut self) {
+        self.buf.clear();
+        self.token_buf.clear();
+        self.pos = 0;
+        self.open_count = 0;
+        self.prev_quote = false;
     }
 }
 

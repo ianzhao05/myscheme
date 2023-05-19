@@ -41,12 +41,12 @@ impl From<EvalError> for SchemeError {
 impl Error for SchemeError {}
 
 impl fmt::Display for SchemeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            SchemeError::Lexer(e) => write!(f, "Lexer error: {}", e),
-            SchemeError::Reader(e) => write!(f, "Reader error: {}", e),
-            SchemeError::Parser(e) => write!(f, "Parser error: {}", e),
-            SchemeError::Eval(e) => write!(f, "Eval error: {}", e),
+            SchemeError::Lexer(e) => write!(f, "Lexer error: {e}"),
+            SchemeError::Reader(e) => write!(f, "Reader error: {e}"),
+            SchemeError::Parser(e) => write!(f, "Parser error: {e}"),
+            SchemeError::Eval(e) => write!(f, "Eval error: {e}"),
         }
     }
 }
