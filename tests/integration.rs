@@ -513,3 +513,98 @@ fn vector_primitives() {
     assert_eval_eq!("(vector->list '#(1 2 3))", "'(1 2 3)");
     assert_eval_eq!("(list->vector '(1 2 3))", "'#(1 2 3)");
 }
+
+#[test]
+fn io_primitives() {
+    use assert_fs::prelude::*;
+
+    let tmp_dir = assert_fs::TempDir::new().unwrap();
+
+    let outfile = tmp_dir.child("outfile.txt");
+    assert_eval_eq!(
+        &format!(
+            r#"
+        (call-with-output-file
+          "{}"
+          (lambda (p)
+            (do ((data '(42 (#\a #\space) #("a\\b" "a\"b") (a (1 (2 3) 4) () . b)) (cdr data)))
+                ((null? data))
+              (display (car data) p)
+              (newline p)
+              (write (car data) p)
+              (newline p))
+            (write-char #\a p)
+            (write-char #\b p)
+            (write-char #\c p)))
+             "#,
+            outfile.path().display()
+        ),
+        ""
+    );
+    outfile.assert(
+        r#"42
+42
+(a  )
+(#\a #\space)
+#(a\b a"b)
+#("a\\b" "a\"b")
+(a (1 (2 3) 4) () . b)
+(a (1 (2 3) 4) () . b)
+abc"#,
+    );
+
+    let infile = tmp_dir.child("infile.txt");
+    infile
+        .write_str(
+            r#"hello world
+        (* (+ 4 5) (- 7 3)
+         #(1 2 3 4)
+         abc "Hello,
+world!" (
+
+
+         #\a)) '(
+
+        ) `
+         (a ,b
+        ,@
+        (1 2 3))
+
+        "#,
+        )
+        .unwrap();
+    assert_eval_eq!(
+        &format!(
+            r#"
+        (call-with-input-file
+          "{}"
+          (lambda (p)
+            (define res '())
+            (define (add x) (set! res (cons x res)))
+            (add (read-char p))
+            (add (read p))
+            (add (peek-char p))
+            (add (read-char p))
+            (add (read p))
+            (add (read-char p))
+            (add (read p))
+            (add (read p))
+            (add (read p))
+            (add (eof-object? (read p)))
+            (add (eof-object? (read-char p)))
+            (add (eof-object? (peek-char p)))
+            (reverse res)))
+             "#,
+            infile.path().display()
+        ),
+        r#"(list
+             #\h 'ello #\space #\space 'world #\newline
+             '(* (+ 4 5) (- 7 3) #(1 2 3 4) abc "Hello,
+world!" (#\a))
+             ''()
+             '`(a ,b ,@(1 2 3))
+             #t #t #t)"#
+    );
+
+    tmp_dir.close().unwrap();
+}

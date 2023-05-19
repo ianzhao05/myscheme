@@ -73,6 +73,7 @@ impl PartialEq for ObjectRef {
                 (Object::Pair(_), Object::Pair(_)) => Rc::ptr_eq(o1, o2),
                 (Object::Vector(_), Object::Vector(_)) => Rc::ptr_eq(o1, o2),
                 (Object::Procedure(_), Object::Procedure(_)) => Rc::ptr_eq(o1, o2),
+                (Object::Port(_), Object::Port(_)) => Rc::ptr_eq(o1, o2),
                 _ => false,
             },
             (ObjectRef::EmptyList, ObjectRef::EmptyList) => true,
