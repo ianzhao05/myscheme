@@ -1,13 +1,14 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::evaler::eval;
+use crate::interner::Symbol;
 use crate::object::ObjectRef;
 use crate::primitives::{primitives, PRELUDE};
 
 #[derive(Debug)]
 pub struct Env {
     parent: Option<Rc<RefCell<Env>>>,
-    bindings: HashMap<String, ObjectRef>,
+    bindings: HashMap<Symbol, ObjectRef>,
 }
 
 impl Env {
@@ -34,8 +35,8 @@ impl Env {
         env
     }
 
-    pub fn get(&self, name: &str) -> Option<ObjectRef> {
-        match self.bindings.get(name) {
+    pub fn get(&self, name: Symbol) -> Option<ObjectRef> {
+        match self.bindings.get(&name) {
             Some(obj) => Some(obj.clone()),
             None => match &self.parent {
                 Some(parent) => parent.borrow().get(name),
@@ -44,13 +45,13 @@ impl Env {
         }
     }
 
-    pub fn insert(&mut self, name: &str, val: ObjectRef) {
-        self.bindings.insert(name.to_owned(), val);
+    pub fn insert(&mut self, name: Symbol, val: ObjectRef) {
+        self.bindings.insert(name, val);
     }
 
-    pub fn set(&mut self, name: &str, val: ObjectRef) -> bool {
-        if self.bindings.contains_key(name) {
-            self.bindings.insert(name.to_owned(), val);
+    pub fn set(&mut self, name: Symbol, val: ObjectRef) -> bool {
+        if self.bindings.contains_key(&name) {
+            self.bindings.insert(name, val);
             true
         } else {
             match &self.parent {

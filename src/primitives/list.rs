@@ -191,7 +191,7 @@ mod tests {
         assert_eq!(
             select(&[ObjectRef::EmptyList], false),
             Err(EvalError::new(EvalErrorKind::ContractViolation {
-                expected: "pair".to_owned(),
+                expected: "pair".into(),
                 got: ObjectRef::EmptyList
             }))
         );

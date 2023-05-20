@@ -4,20 +4,25 @@ use std::rc::Rc;
 
 use crate::datum::*;
 use crate::expr::*;
+use crate::interner::Symbol;
 
 use uuid::Uuid;
 
-fn gen_temp_name() -> String {
-    format!("__temp_{}", Uuid::new_v4().simple())
+fn gen_temp_name() -> Symbol {
+    if cfg!(test) {
+        "__temp_var".into()
+    } else {
+        format!("__temp_{}", Uuid::new_v4().simple()).into()
+    }
 }
 
 #[derive(Debug, PartialEq)]
 pub enum ParserErrorKind {
-    BadSyntax(String),
+    BadSyntax(Symbol),
     IllegalEmptyList,
     IllegalVector,
     IllegalDot,
-    IllegalVariableName(String),
+    IllegalVariableName(Symbol),
     IllegalDefine,
     IllegalUnquote,
     IllegalUnquoteSplicing,
@@ -51,41 +56,66 @@ impl fmt::Display for ParserError {
     }
 }
 
-fn is_keyword(symb: &str) -> bool {
-    matches!(
-        symb,
-        "quote"
-            | "lambda"
-            | "if"
-            | "set!"
-            | "begin"
-            | "cond"
-            | "and"
-            | "or"
-            | "case"
-            | "let"
-            | "let*"
-            | "letrec"
-            | "do"
-            | "delay"
-            | "quasiquote"
-            | "else"
-            | "=>"
-            | "define"
-            | "unquote"
-            | "unquote-splicing"
-    )
+fn is_keyword(symb: Symbol) -> bool {
+    // matches!(
+    //     symb,
+    //     "quote"
+    //         | "lambda"
+    //         | "if"
+    //         | "set!"
+    //         | "begin"
+    //         | "cond"
+    //         | "and"
+    //         | "or"
+    //         | "case"
+    //         | "let"
+    //         | "let*"
+    //         | "letrec"
+    //         | "do"
+    //         | "delay"
+    //         | "quasiquote"
+    //         | "else"
+    //         | "=>"
+    //         | "define"
+    //         | "unquote"
+    //         | "unquote-splicing"
+    // )
+    [
+        "quote",
+        "lambda",
+        "if",
+        "set!",
+        "begin",
+        "cond",
+        "and",
+        "or",
+        "case",
+        "let",
+        "let*",
+        "letrec",
+        "do",
+        "delay",
+        "quasiquote",
+        "else",
+        "=>",
+        "define",
+        "unquote",
+        "unquote-splicing",
+    ]
+    .into_iter()
+    .map(Symbol::from)
+    .any(|k| k == symb)
 }
 
 fn process_proc<I: DoubleEndedIterator<Item = Datum>>(
     list: ListKind,
     body: I,
     named: bool,
-) -> Result<(Option<String>, ProcData), ParserError> {
+) -> Result<(Option<Symbol>, ProcData), ParserError> {
     let bs_err = || ParserError {
-        kind: ParserErrorKind::BadSyntax((if named { "define" } else { "lambda" }).to_owned()),
+        kind: ParserErrorKind::BadSyntax((if named { "define" } else { "lambda" }).into()),
     };
-    let process_forms = |forms: Vec<Datum>| -> Result<(Option<String>, Vec<String>), ParserError> {
+    let process_forms = |forms: Vec<Datum>| -> Result<(Option<Symbol>, Vec<Symbol>), ParserError> {
         let mut name = None;
         let mut fi = forms.into_iter();
         if named {
@@ -102,7 +132,7 @@ fn process_proc<I: DoubleEndedIterator<Item = Datum>>(
             fi.into_iter()
                 .map(|d| match d {
                     Datum::Simple(SimpleDatum::Symbol(s)) => {
-                        if is_keyword(&s) {
+                        if is_keyword(s) {
                             Err(ParserError {
                                 kind: ParserErrorKind::IllegalVariableName(s),
                             })
@@ -135,7 +165,7 @@ fn process_proc<I: DoubleEndedIterator<Item = Datum>>(
                     args,
                     rest: match *rest {
                         Datum::Simple(SimpleDatum::Symbol(s)) => {
-                            if is_keyword(&s) {
+                            if is_keyword(s) {
                                 return Err(ParserError {
                                     kind: ParserErrorKind::IllegalVariableName(s),
                                 });
@@ -159,11 +189,11 @@ fn process_define<I: DoubleEndedIterator<Item = Datum>>(
     mut body: I,
 ) -> Result<Rc<Definition>, ParserError> {
     let bs_err = || ParserError {
-        kind: ParserErrorKind::BadSyntax("define".to_owned()),
+        kind: ParserErrorKind::BadSyntax("define".into()),
     };
     match var {
         Datum::Simple(SimpleDatum::Symbol(s)) => {
-            if is_keyword(&s) {
+            if is_keyword(s) {
                 Err(ParserError {
                     kind: ParserErrorKind::IllegalVariableName(s),
                 })
@@ -239,7 +269,9 @@ fn process_qq_template_or_splice(
             )?)),
             Datum::Compound(CompoundDatum::List(ListKind::Proper(list))) => {
                 return match list.first() {
-                    Some(Datum::Simple(SimpleDatum::Symbol(s))) if s == "unquote-splicing" => {
+                    Some(Datum::Simple(SimpleDatum::Symbol(s)))
+                        if *s == "unquote-splicing".into() =>
+                    {
                         Ok(QQTemplateOrSplice::Splice(process_qq_template(
                             list.into_iter().nth(1).ok_or(ParserError {
                                 kind: ParserErrorKind::IllegalUnquoteSplicing,
@@ -277,8 +309,8 @@ fn process_qq_template(datum: Datum, qq_level: usize) -> Result<QQTemplate, Pars
                         kind: ParserErrorKind::IllegalEmptyList,
                     })?;
                     match first {
-                        Datum::Simple(SimpleDatum::Symbol(ref s))
-                            if s == "unquote" || s == "quasiquote" =>
+                        Datum::Simple(SimpleDatum::Symbol(s))
+                            if s == "unquote".into() || s == "quasiquote".into() =>
                         {
                             let arg = li.next().ok_or_else(|| ParserError {
                                 kind: ParserErrorKind::BadSyntax(s.to_owned()),
@@ -288,7 +320,7 @@ fn process_qq_template(datum: Datum, qq_level: usize) -> Result<QQTemplate, Pars
                                     kind: ParserErrorKind::BadSyntax(s.to_owned()),
                                 });
                             }
-                            if s == "unquote" {
+                            if s == "unquote".into() {
                                 Box::new(QQTemplateData::Unquotation(process_qq_template(
                                     arg,
                                     qq_level - 1,
@@ -343,14 +375,14 @@ fn process_qq_template(datum: Datum, qq_level: usize) -> Result<QQTemplate, Pars
 }
 
 fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
-    kw: &str,
+    kw: Symbol,
     mut operands: I,
 ) -> Result<ExprOrDef, ParserError> {
     let bs_err = || ParserError {
-        kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+        kind: ParserErrorKind::BadSyntax(kw),
     };
     let process_bindings =
-        |binding_data: Vec<Datum>| -> Result<Vec<(String, Rc<Expr>)>, ParserError> {
+        |binding_data: Vec<Datum>| -> Result<Vec<(Symbol, Rc<Expr>)>, ParserError> {
             Ok(binding_data
                 .into_iter()
                 .map(|binding| {
@@ -371,11 +403,11 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 .collect::<Result<Vec<_>, _>>()?)
         };
     match kw {
-        "define" => {
+        _ if kw == "define".into() => {
             let var = operands.next().ok_or_else(bs_err)?;
             Ok(ExprOrDef::Definition(process_define(var, operands)?))
         }
-        "quote" => {
+        _ if kw == "quote".into() => {
             let operand = operands.next().ok_or_else(bs_err)?;
             if operands.next().is_none() {
                 Ok(ExprOrDef::new_expr(Expr::Literal(LiteralKind::Quotation(
@@ -385,7 +417,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 Err(bs_err())
             }
         }
-        "lambda" => {
+        _ if kw == "lambda".into() => {
             let formals = operands.next().ok_or_else(bs_err)?;
             match formals {
                 Datum::Compound(CompoundDatum::List(list)) => {
@@ -393,7 +425,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                     Ok(ExprOrDef::new_expr(Expr::Lambda(Rc::new(args))))
                 }
                 Datum::Simple(SimpleDatum::Symbol(rest)) => {
-                    if is_keyword(&rest) {
+                    if is_keyword(rest) {
                         return Err(ParserError {
                             kind: ParserErrorKind::IllegalVariableName(rest),
                         });
@@ -412,7 +444,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 _ => Err(bs_err()),
             }
         }
-        "begin" => {
+        _ if kw == "begin".into() => {
             let mut children = vec![];
             let mut has_def = false;
             let mut has_expr = false;
@@ -452,7 +484,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 )))
             }
         }
-        "set!" => {
+        _ if kw == "set!".into() => {
             let variable = operands.next().ok_or_else(bs_err)?;
             let value = operands.next().ok_or_else(bs_err)?;
             if operands.next().is_none() {
@@ -469,7 +501,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 Err(bs_err())
             }
         }
-        "if" => {
+        _ if kw == "if".into() => {
             let test = operands.next().ok_or_else(bs_err)?;
             let consequent = operands.next().ok_or_else(bs_err)?;
             let alternate = operands.next();
@@ -487,7 +519,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 Err(bs_err())
             }
         }
-        "cond" => {
+        _ if kw == "cond".into() => {
             let mut acc: Option<Rc<Expr>> = None;
             for clause in operands.rev() {
                 if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = clause {
@@ -496,7 +528,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                         kind: ParserErrorKind::IllegalEmptyList,
                     })?;
                     match first {
-                        Datum::Simple(SimpleDatum::Symbol(s)) if s == "else" => {
+                        Datum::Simple(SimpleDatum::Symbol(s)) if s == "else".into() => {
                             if let Some(_) = acc {
                                 return Err(bs_err());
                             }
@@ -529,7 +561,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                                 continue;
                             }
                             match second.unwrap() {
-                                Datum::Simple(SimpleDatum::Symbol(ref s)) if s == "=>" => {
+                                Datum::Simple(SimpleDatum::Symbol(s)) if s == "=>".into() => {
                                     let third = pi.next().ok_or_else(bs_err)?;
                                     if pi.next().is_some() {
                                         return Err(bs_err());
@@ -579,8 +611,8 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 None => Err(bs_err()),
             }
         }
-        "else" => Err(bs_err()),
-        "and" => {
+        _ if kw == "else".into() => Err(bs_err()),
+        _ if kw == "and".into() => {
             let ops = operands
                 .rev()
                 .map(parse_expr)
@@ -605,7 +637,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 }
             }))
         }
-        "or" => {
+        _ if kw == "or".into() => {
             let ops = operands
                 .rev()
                 .map(parse_expr)
@@ -633,7 +665,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 }
             }))
         }
-        "case" => {
+        _ if kw == "case".into() => {
             let key = parse_expr(operands.next().ok_or_else(bs_err)?)?;
             let temp = gen_temp_name();
             let mut acc: Option<Rc<Expr>> = None;
@@ -648,7 +680,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                         return Err(bs_err());
                     }
                     match first {
-                        Datum::Simple(SimpleDatum::Symbol(s)) if s == "else" => {
+                        Datum::Simple(SimpleDatum::Symbol(s)) if s == "else".into() => {
                             if let Some(_) = acc {
                                 return Err(bs_err());
                             }
@@ -661,7 +693,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                         Datum::Compound(CompoundDatum::List(ListKind::Proper(_))) => {
                             acc = Some(Rc::new(Expr::Conditional {
                                 test: Rc::new(Expr::ProcCall {
-                                    operator: Rc::new(Expr::Variable("memv".to_owned())),
+                                    operator: Rc::new(Expr::Variable("memv".into())),
                                     operands: vec![
                                         Rc::new(Expr::Variable(temp.clone())),
                                         Rc::new(Expr::Literal(LiteralKind::Quotation(first))),
@@ -690,9 +722,9 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 None => Err(bs_err()),
             }
         }
-        "let" => {
+        _ if kw == "let".into() => {
             let mut first = operands.next().ok_or_else(bs_err)?;
-            let name: Option<String> = if let Datum::Simple(SimpleDatum::Symbol(n)) = first {
+            let name: Option<Symbol> = if let Datum::Simple(SimpleDatum::Symbol(n)) = first {
                 first = operands.next().ok_or_else(bs_err)?;
                 Some(n)
             } else {
@@ -709,11 +741,11 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             match name {
                 Some(n) => Ok(ExprOrDef::new_expr(Expr::ProcCall {
                     operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                        args: vec![n.clone()],
+                        args: vec![n],
                         rest: None,
                         body: vec![
                             ExprOrDef::new_expr(Expr::Assignment {
-                                variable: n.clone(),
+                                variable: n,
                                 value: Rc::new(Expr::Lambda(Rc::new(ProcData {
                                     args,
                                     rest: None,
@@ -738,7 +770,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 })),
             }
         }
-        "let*" => {
+        _ if kw == "let*".into() => {
             let first = operands.next().ok_or_else(bs_err)?;
             let bindings = match first {
                 Datum::Compound(CompoundDatum::List(ListKind::Proper(binding_data))) => {
@@ -774,7 +806,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             }
             Ok(ExprOrDef::new_expr(acc.unwrap()))
         }
-        "letrec" => {
+        _ if kw == "letrec".into() => {
             let first = operands.next().ok_or_else(bs_err)?;
             let bindings = match first {
                 Datum::Compound(CompoundDatum::List(ListKind::Proper(binding_data))) => {
@@ -798,12 +830,11 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             let temps: Vec<_> = args.iter().map(|_| gen_temp_name()).collect();
             let setters = args
                 .iter()
-                .cloned()
-                .zip(temps.iter().cloned())
+                .zip(temps.iter())
                 .map(|(arg, temp)| {
                     ExprOrDef::new_expr(Expr::Assignment {
-                        variable: arg,
-                        value: Rc::new(Expr::Variable(temp)),
+                        variable: *arg,
+                        value: Rc::new(Expr::Variable(*temp)),
                     })
                 })
                 .collect();
@@ -828,7 +859,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 operands,
             }))
         }
-        "do" => {
+        _ if kw == "do".into() => {
             let first = operands.next().ok_or_else(bs_err)?;
             match first {
                 Datum::Compound(CompoundDatum::List(ListKind::Proper(_))) | Datum::EmptyList => {
@@ -905,11 +936,11 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 _ => Err(bs_err()),
             }
         }
-        "delay" => {
+        _ if kw == "delay".into() => {
             let expr = parse_expr(operands.next().ok_or_else(bs_err)?)?;
             if operands.next().is_none() {
                 Ok(ExprOrDef::new_expr(Expr::ProcCall {
-                    operator: Rc::new(Expr::Variable("make-promise".to_owned())),
+                    operator: Rc::new(Expr::Variable("make-promise".into())),
                     operands: vec![Rc::new(Expr::Lambda(Rc::new(ProcData {
                         args: vec![],
                         rest: None,
@@ -920,7 +951,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 Err(bs_err())
             }
         }
-        "quasiquote" => {
+        _ if kw == "quasiquote".into() => {
             let template = process_qq_template(operands.next().ok_or_else(bs_err)?, 1)?;
             if operands.next().is_none() {
                 Ok(ExprOrDef::new_expr(Expr::Quasiquotation(template)))
@@ -928,10 +959,10 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 Err(bs_err())
             }
         }
-        "unquote" => Err(ParserError {
+        _ if kw == "unquote".into() => Err(ParserError {
             kind: ParserErrorKind::IllegalUnquote,
         }),
-        "unquote-splicing" => Err(ParserError {
+        _ if kw == "unquote-splicing".into() => Err(ParserError {
             kind: ParserErrorKind::IllegalUnquoteSplicing,
         }),
         _ => unreachable!("keyword should have been handled"),
@@ -962,9 +993,9 @@ pub fn parse(datum: Datum) -> Result<ExprOrDef, ParserError> {
             SimpleDatum::String(s) => Ok(ExprOrDef::new_expr(Expr::Literal(
                 LiteralKind::SelfEvaluating(SelfEvaluatingKind::String(s)),
             ))),
-            SimpleDatum::Symbol(symb) => match &symb {
+            SimpleDatum::Symbol(symb) => match symb {
                 kw if is_keyword(kw) => Err(ParserError {
-                    kind: ParserErrorKind::BadSyntax(kw.to_owned()),
+                    kind: ParserErrorKind::BadSyntax(kw),
                 }),
                 _ => Ok(ExprOrDef::new_expr(Expr::Variable(symb))),
             },
@@ -976,7 +1007,7 @@ pub fn parse(datum: Datum) -> Result<ExprOrDef, ParserError> {
                     let first = li.next().ok_or(ParserError {
                         kind: ParserErrorKind::IllegalEmptyList,
                     })?;
-                    match &first {
+                    match first {
                         Datum::Simple(SimpleDatum::Symbol(kw)) if is_keyword(kw) => {
                             process_keyword(kw, li)
                         }
@@ -1092,7 +1123,7 @@ mod tests {
                 int_datum!(42),
             ]),
             Ok(ExprOrDef::new_def(Definition::Variable {
-                name: "x".to_owned(),
+                name: "x".into(),
                 value: Rc::new(int_expr!(42)),
             }))
         );
@@ -1116,13 +1147,13 @@ mod tests {
                 proper_list_datum![symbol_datum!("+"), symbol_datum!("x"), symbol_datum!("y")],
             ]),
             Ok(ExprOrDef::new_def(Definition::Procedure {
-                name: "f".to_owned(),
+                name: "f".into(),
                 data: Rc::new(ProcData {
-                    args: vec!["x".to_owned()],
+                    args: vec!["x".into()],
                     rest: None,
                     body: vec![
                         ExprOrDef::new_def(Definition::Variable {
-                            name: "y".to_owned(),
+                            name: "y".into(),
                             value: Rc::new(int_expr!(1)),
                         }),
                         ExprOrDef::new_expr(Expr::ProcCall {
@@ -1146,10 +1177,10 @@ mod tests {
                 symbol_datum!("z"),
             ]),
             Ok(ExprOrDef::new_def(Definition::Procedure {
-                name: "f".to_owned(),
+                name: "f".into(),
                 data: Rc::new(ProcData {
-                    args: vec!["x".to_owned(), "y".to_owned()],
-                    rest: Some("z".to_owned()),
+                    args: vec!["x".into(), "y".into()],
+                    rest: Some("z".into()),
                     body: vec![ExprOrDef::new_expr(var_expr!("z"))],
                 })
             }))
@@ -1162,14 +1193,14 @@ mod tests {
                 int_datum!(2),
             ]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("define".to_owned()),
+                kind: ParserErrorKind::BadSyntax("define".into()),
             })
         );
 
         assert_eq!(
             parse(proper_list_datum![symbol_datum!("define")]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("define".to_owned())
+                kind: ParserErrorKind::BadSyntax("define".into())
             })
         );
 
@@ -1180,19 +1211,7 @@ mod tests {
                 int_datum!(2),
             ]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("define".to_owned())
-            })
-        );
-
-        assert_eq!(
-            parse(proper_list_datum![
-                symbol_datum!("define"),
-                symbol_datum!("x"),
-                int_datum!(1),
-                int_datum!(2),
-            ]),
-            Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("define".to_owned())
+                kind: ParserErrorKind::BadSyntax("define".into())
             })
         );
 
@@ -1204,7 +1223,19 @@ mod tests {
                 int_datum!(2),
             ]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("define".to_owned())
+                kind: ParserErrorKind::BadSyntax("define".into())
+            })
+        );
+
+        assert_eq!(
+            parse(proper_list_datum![
+                symbol_datum!("define"),
+                symbol_datum!("x"),
+                int_datum!(1),
+                int_datum!(2),
+            ]),
+            Err(ParserError {
+                kind: ParserErrorKind::BadSyntax("define".into())
             })
         );
 
@@ -1240,7 +1271,7 @@ mod tests {
                 proper_list_datum![symbol_datum!("+"), symbol_datum!("x"), symbol_datum!("y")],
             ]),
             Ok(ExprOrDef::new_expr(Expr::Lambda(Rc::new(ProcData {
-                args: vec!["x".to_owned(), "y".to_owned()],
+                args: vec!["x".into(), "y".into()],
                 rest: None,
                 body: vec![ExprOrDef::new_expr(Expr::ProcCall {
                     operator: Rc::new(var_expr!("+")),
@@ -1266,11 +1297,11 @@ mod tests {
                 ],
             ]),
             Ok(ExprOrDef::new_expr(Expr::Lambda(Rc::new(ProcData {
-                args: vec!["x".to_owned(), "y".to_owned()],
-                rest: Some("z".to_owned()),
+                args: vec!["x".into(), "y".into()],
+                rest: Some("z".into()),
                 body: vec![
                     ExprOrDef::new_def(Definition::Variable {
-                        name: "a".to_owned(),
+                        name: "a".into(),
                         value: Rc::new(int_expr!(42)),
                     }),
                     ExprOrDef::new_expr(Expr::ProcCall {
@@ -1296,7 +1327,7 @@ mod tests {
             ]),
             Ok(ExprOrDef::new_expr(Expr::Lambda(Rc::new(ProcData {
                 args: vec![],
-                rest: Some("args".to_owned()),
+                rest: Some("args".into()),
                 body: vec![ExprOrDef::new_expr(int_expr!(1))],
             }))))
         );
@@ -1317,7 +1348,7 @@ mod tests {
         assert_eq!(
             parse(proper_list_datum![symbol_datum!("lambda")]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("lambda".to_owned())
+                kind: ParserErrorKind::BadSyntax("lambda".into())
             })
         );
 
@@ -1359,7 +1390,7 @@ mod tests {
         assert_eq!(
             parse(proper_list_datum![symbol_datum!("quote")]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("quote".to_owned())
+                kind: ParserErrorKind::BadSyntax("quote".into())
             })
         );
 
@@ -1383,7 +1414,7 @@ mod tests {
                 int_datum!(1),
             ]),
             Ok(ExprOrDef::new_expr(Expr::Assignment {
-                variable: "x".to_owned(),
+                variable: "x".into(),
                 value: Rc::new(int_expr!(1)),
             }))
         );
@@ -1391,7 +1422,7 @@ mod tests {
         assert_eq!(
             parse(proper_list_datum![symbol_datum!("set!")]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("set!".to_owned())
+                kind: ParserErrorKind::BadSyntax("set!".into())
             })
         );
 
@@ -1403,7 +1434,7 @@ mod tests {
                 int_datum!(2),
             ]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("set!".to_owned())
+                kind: ParserErrorKind::BadSyntax("set!".into())
             })
         );
     }
@@ -1440,7 +1471,7 @@ mod tests {
         assert_eq!(
             parse(proper_list_datum![symbol_datum!("if")]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("if".to_owned())
+                kind: ParserErrorKind::BadSyntax("if".into())
             })
         );
 
@@ -1453,7 +1484,7 @@ mod tests {
                 int_datum!(4),
             ]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("if".to_owned())
+                kind: ParserErrorKind::BadSyntax("if".into())
             })
         );
     }
@@ -1471,7 +1502,7 @@ mod tests {
             ]),
             Ok(ExprOrDef::MixedBegin(vec![
                 ExprOrDef::new_def(Definition::Variable {
-                    name: "x".to_owned(),
+                    name: "x".into(),
                     value: Rc::new(int_expr!(42))
                 }),
                 ExprOrDef::new_expr(str_expr!("hello")),
@@ -1489,11 +1520,11 @@ mod tests {
             ]),
             Ok(ExprOrDef::new_def(Definition::Begin(vec_rc![
                 Definition::Variable {
-                    name: "x".to_owned(),
+                    name: "x".into(),
                     value: Rc::new(int_expr!(42)),
                 },
                 Definition::Variable {
-                    name: "y".to_owned(),
+                    name: "y".into(),
                     value: Rc::new(int_expr!(43)),
                 },
             ])))
@@ -1547,7 +1578,7 @@ mod tests {
                     }),
                     consequent: Rc::new(Expr::Begin(vec_rc![int_expr!(3), int_expr!(4)])),
                     alternate: Some(Rc::new(Expr::SimpleLet {
-                        arg: "__temp_var".to_owned(),
+                        arg: "__temp_var".into(),
                         value: Rc::new(Expr::ProcCall {
                             operator: Rc::new(var_expr!("cons")),
                             operands: vec_rc![int_expr!(5), int_expr!(6)]
@@ -1572,7 +1603,7 @@ mod tests {
                 proper_list_datum![bool_datum!(true), int_datum!(1)],
             ]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("cond".to_owned())
+                kind: ParserErrorKind::BadSyntax("cond".into())
             })
         );
 
@@ -1583,7 +1614,7 @@ mod tests {
                 proper_list_datum![symbol_datum!("else"), int_datum!(1)],
             ]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("cond".to_owned())
+                kind: ParserErrorKind::BadSyntax("cond".into())
             })
         );
     }
@@ -1630,7 +1661,7 @@ mod tests {
                 bool_datum!(true),
             ]),
             Ok(ExprOrDef::new_expr(Expr::SimpleLet {
-                arg: "__temp_var".to_owned(),
+                arg: "__temp_var".into(),
                 value: Rc::new(int_expr!(1)),
                 body: Rc::new(Expr::Conditional {
                     test: Rc::new(var_expr!("__temp_var")),
@@ -1655,7 +1686,7 @@ mod tests {
                 proper_list_datum![symbol_datum!("else"), int_datum!(6)],
             ]),
             Ok(ExprOrDef::new_expr(Expr::SimpleLet {
-                arg: "__temp_var".to_owned(),
+                arg: "__temp_var".into(),
                 value: Rc::new(int_expr!(42)),
                 body: Rc::new(Expr::Conditional {
                     test: Rc::new(Expr::ProcCall {
@@ -1694,7 +1725,7 @@ mod tests {
                 proper_list_datum![int_datum!(1), int_datum!(2)],
             ]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("case".to_owned())
+                kind: ParserErrorKind::BadSyntax("case".into())
             })
         );
 
@@ -1706,7 +1737,7 @@ mod tests {
                 proper_list_datum![symbol_datum!("else"), int_datum!(1)],
             ]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("case".to_owned())
+                kind: ParserErrorKind::BadSyntax("case".into())
             })
         );
     }
@@ -1738,11 +1769,11 @@ mod tests {
             ]),
             Ok(ExprOrDef::new_expr(Expr::ProcCall {
                 operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                    args: vec!["x".to_owned()],
+                    args: vec!["x".into()],
                     rest: None,
                     body: vec![
                         ExprOrDef::new_def(Definition::Variable {
-                            name: "y".to_owned(),
+                            name: "y".into(),
                             value: Rc::new(int_expr!(2)),
                         }),
                         ExprOrDef::new_expr(Expr::ProcCall {
@@ -1766,11 +1797,11 @@ mod tests {
             ]),
             Ok(ExprOrDef::new_expr(Expr::ProcCall {
                 operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                    args: vec!["x".to_owned()],
+                    args: vec!["x".into()],
                     rest: None,
                     body: vec![ExprOrDef::new_expr(Expr::ProcCall {
                         operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                            args: vec!["y".to_owned()],
+                            args: vec!["y".into()],
                             rest: None,
                             body: vec![ExprOrDef::new_expr(var_expr!("y"))],
                         }))),
@@ -1789,15 +1820,15 @@ mod tests {
             ]),
             Ok(ExprOrDef::new_expr(Expr::ProcCall {
                 operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                    args: vec!["x".to_owned()],
+                    args: vec!["x".into()],
                     rest: None,
                     body: vec![
                         ExprOrDef::new_expr(Expr::ProcCall {
                             operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                                args: vec!["__temp_var".to_owned()],
+                                args: vec!["__temp_var".into()],
                                 rest: None,
                                 body: vec![ExprOrDef::new_expr(Expr::Assignment {
-                                    variable: "x".to_owned(),
+                                    variable: "x".into(),
                                     value: Rc::new(var_expr!("__temp_var"))
                                 })]
                             }))),
@@ -1819,13 +1850,13 @@ mod tests {
             ]),
             Ok(ExprOrDef::new_expr(Expr::ProcCall {
                 operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                    args: vec!["foo".to_owned()],
+                    args: vec!["foo".into()],
                     rest: None,
                     body: vec![
                         ExprOrDef::new_expr(Expr::Assignment {
-                            variable: "foo".to_owned(),
+                            variable: "foo".into(),
                             value: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                                args: vec!["x".to_owned()],
+                                args: vec!["x".into()],
                                 rest: None,
                                 body: vec![ExprOrDef::new_expr(Expr::ProcCall {
                                     operator: Rc::new(var_expr!("foo")),
@@ -1851,21 +1882,21 @@ mod tests {
                 proper_list_datum![symbol_datum!("foo"), symbol_datum!("x")],
             ],),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("let*".to_owned())
+                kind: ParserErrorKind::BadSyntax("let*".into())
             })
         );
 
         assert_eq!(
             parse(proper_list_datum![symbol_datum!("let")]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("let".to_owned())
+                kind: ParserErrorKind::BadSyntax("let".into())
             })
         );
 
         assert_eq!(
             parse(proper_list_datum![symbol_datum!("let"), int_datum!(1)]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("let".to_owned())
+                kind: ParserErrorKind::BadSyntax("let".into())
             })
         );
 
@@ -1876,7 +1907,7 @@ mod tests {
                 symbol_datum!("x")
             ]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("let".to_owned())
+                kind: ParserErrorKind::BadSyntax("let".into())
             })
         );
     }
@@ -1901,13 +1932,13 @@ mod tests {
             ]),
             Ok(ExprOrDef::new_expr(Expr::ProcCall {
                 operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                    args: vec!["__temp_var".to_owned()],
+                    args: vec!["__temp_var".into()],
                     rest: None,
                     body: vec![
                         ExprOrDef::new_expr(Expr::Assignment {
-                            variable: "__temp_var".to_owned(),
+                            variable: "__temp_var".into(),
                             value: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                                args: vec!["x".to_owned(), "y".to_owned()],
+                                args: vec!["x".into(), "y".into()],
                                 rest: None,
                                 body: vec![ExprOrDef::new_expr(Expr::Conditional {
                                     test: Rc::new(Expr::ProcCall {
@@ -1952,11 +1983,11 @@ mod tests {
             ]),
             Ok(ExprOrDef::new_expr(Expr::ProcCall {
                 operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                    args: vec!["__temp_var".to_owned()],
+                    args: vec!["__temp_var".into()],
                     rest: None,
                     body: vec![
                         ExprOrDef::new_expr(Expr::Assignment {
-                            variable: "__temp_var".to_owned(),
+                            variable: "__temp_var".into(),
                             value: Rc::new(Expr::Lambda(Rc::new(ProcData {
                                 args: vec![],
                                 rest: None,
@@ -1995,7 +2026,7 @@ mod tests {
                 proper_list_datum![symbol_datum!("f"), int_datum!(1)]
             ]),
             Ok(ExprOrDef::new_expr(Expr::ProcCall {
-                operator: Rc::new(Expr::Variable("make-promise".to_owned())),
+                operator: Rc::new(Expr::Variable("make-promise".into())),
                 operands: vec_rc![Expr::Lambda(Rc::new(ProcData {
                     args: vec![],
                     rest: None,
@@ -2010,7 +2041,7 @@ mod tests {
         assert_eq!(
             parse(proper_list_datum![symbol_datum!("delay")]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("delay".to_owned())
+                kind: ParserErrorKind::BadSyntax("delay".into())
             })
         );
 
@@ -2021,7 +2052,7 @@ mod tests {
                 int_datum!(2)
             ]),
             Err(ParserError {
-                kind: ParserErrorKind::BadSyntax("delay".to_owned())
+                kind: ParserErrorKind::BadSyntax("delay".into())
             })
         );
     }

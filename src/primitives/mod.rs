@@ -11,6 +11,7 @@ use std::collections::HashMap;
 
 use crate::evaler::EvalError;
 use crate::expr::ExprOrDef;
+use crate::interner::Symbol;
 use crate::interpret::parse_str;
 use crate::object::{Object, ObjectRef};
 use crate::proc::{Primitive, PrimitiveFunc, Procedure};
@@ -21,7 +22,7 @@ macro_rules! cv_fn {
     ($fn_name:ident, $s:expr) => {
         fn $fn_name(got: &crate::object::ObjectRef) -> crate::evaler::EvalError {
             crate::evaler::EvalError::new(crate::evaler::EvalErrorKind::ContractViolation {
-                expected: $s.to_owned(),
+                expected: $s.into(),
                 got: got.clone(),
             })
         }
@@ -37,7 +38,7 @@ fn merge(maps: &[PrimitiveMap]) -> PrimitiveMap {
     m
 }
 
-pub fn primitives() -> HashMap<String, ObjectRef> {
+pub fn primitives() -> HashMap<Symbol, ObjectRef> {
     merge(&[
         numeric::primitives(),
         eq::primitives(),
@@ -49,7 +50,7 @@ pub fn primitives() -> HashMap<String, ObjectRef> {
     .into_iter()
     .map(|(k, v)| {
         (
-            k.to_owned(),
+            k.into(),
             ObjectRef::new(Object::Procedure(Procedure::Primitive(Primitive::new(
                 k,
                 PrimitiveFunc::Args(v),
@@ -58,7 +59,7 @@ pub fn primitives() -> HashMap<String, ObjectRef> {
     })
     .chain(control::primitives().into_iter().map(|(k, v)| {
         (
-            k.to_owned(),
+            k.into(),
             ObjectRef::new(Object::Procedure(Procedure::Primitive(Primitive::new(
                 k,
                 PrimitiveFunc::State(v),

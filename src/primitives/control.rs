@@ -65,7 +65,7 @@ fn apply(state: State) -> Bouncer {
                 }
                 _ => {
                     return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ContractViolation {
-                        expected: "list".to_owned(),
+                        expected: "list".into(),
                         got: last.clone(),
                     })))
                 }
@@ -73,7 +73,7 @@ fn apply(state: State) -> Bouncer {
             ObjectRef::EmptyList => break,
             _ => {
                 return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ContractViolation {
-                    expected: "list".to_owned(),
+                    expected: "list".into(),
                     got: last.clone(),
                 })))
             }

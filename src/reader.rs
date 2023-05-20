@@ -209,7 +209,7 @@ mod tests {
         );
 
         assert_eq!(
-            read(vec![Token::Identifier("foo".to_owned())].into_iter()).unwrap(),
+            read(vec![Token::Identifier("foo".into())].into_iter()).unwrap(),
             symbol_datum!("foo")
         );
     }
@@ -243,7 +243,7 @@ mod tests {
                     Token::Number("123".to_owned()),
                     Token::Number("456".to_owned()),
                     Token::Dot,
-                    Token::Identifier("bar".to_owned()),
+                    Token::Identifier("bar".into()),
                     Token::RParen,
                 ]
                 .into_iter(),
@@ -345,12 +345,12 @@ mod tests {
                 vec![
                     Token::LParen,
                     Token::LParen,
-                    Token::Identifier("a".to_owned()),
-                    Token::Identifier("b".to_owned()),
-                    Token::Identifier("c".to_owned()),
+                    Token::Identifier("a".into()),
+                    Token::Identifier("b".into()),
+                    Token::Identifier("c".into()),
                     Token::RParen,
                     Token::LParen,
-                    Token::Identifier("+".to_owned()),
+                    Token::Identifier("+".into()),
                     Token::Number("1".to_owned()),
                     Token::Number("2".to_owned()),
                     Token::RParen,
@@ -368,12 +368,12 @@ mod tests {
             read(
                 vec![
                     Token::LParen,
-                    Token::Identifier("a".to_owned()),
+                    Token::Identifier("a".into()),
                     Token::Dot,
                     Token::LParen,
-                    Token::Identifier("b".to_owned()),
+                    Token::Identifier("b".into()),
                     Token::Dot,
-                    Token::Identifier("c".to_owned()),
+                    Token::Identifier("c".into()),
                     Token::RParen,
                     Token::RParen,
                 ]
@@ -390,7 +390,7 @@ mod tests {
                 vec![
                     Token::Quasiquote,
                     Token::LParen,
-                    Token::Identifier("a".to_owned()),
+                    Token::Identifier("a".into()),
                     Token::Unquote,
                     Token::LParen,
                     Token::Boolean(true),
@@ -403,7 +403,7 @@ mod tests {
                     Token::RParen,
                     Token::UnquoteSplicing,
                     Token::LParen,
-                    Token::Identifier("b".to_owned()),
+                    Token::Identifier("b".into()),
                     Token::String("str".to_owned()),
                     Token::RParen,
                     Token::RParen,

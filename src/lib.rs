@@ -4,6 +4,7 @@ pub mod env;
 pub mod err;
 pub mod evaler;
 pub mod expr;
+pub mod interner;
 pub mod interpret;
 pub mod lexer;
 pub mod number;
@@ -80,7 +81,7 @@ pub mod test_util {
 
     macro_rules! symbol_datum {
         ($s:expr) => {
-            $crate::datum::Datum::Simple($crate::datum::SimpleDatum::Symbol($s.to_owned()))
+            $crate::datum::Datum::Simple($crate::datum::SimpleDatum::Symbol($s.into()))
         };
     }
     pub(crate) use symbol_datum;
@@ -164,7 +165,7 @@ pub mod test_util {
 
     macro_rules! var_expr {
         ($s:expr) => {
-            $crate::expr::Expr::Variable($s.to_owned())
+            $crate::expr::Expr::Variable($s.into())
         };
     }
     pub(crate) use var_expr;

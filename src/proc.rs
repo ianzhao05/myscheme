@@ -123,7 +123,7 @@ impl UserDefined {
         let mut set = std::collections::HashSet::new();
         for arg in args {
             if set.contains(arg) {
-                return Err(EvalError::new(EvalErrorKind::DuplicateArg(arg.to_owned())));
+                return Err(EvalError::new(EvalErrorKind::DuplicateArg(*arg)));
             }
             set.insert(arg);
         }
@@ -157,11 +157,11 @@ impl Call for UserDefined {
         let mut benv = env.borrow_mut();
         let mut args_iter = args.iter().cloned();
         for (arg, val) in self.data.args.iter().zip(args_iter.by_ref()) {
-            benv.insert(arg, val);
+            benv.insert(*arg, val);
         }
         if let Some(rest) = &self.data.rest {
             benv.insert(
-                rest,
+                *rest,
                 args_iter
                     .rev()
                     .fold(ObjectRef::EmptyList, |a, b| ObjectRef::new_pair(b, a)),
