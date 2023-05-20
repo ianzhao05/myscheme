@@ -569,10 +569,10 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                                     let recipient = parse_expr(third)?;
                                     let temp = gen_temp_name();
                                     acc = Some(Rc::new(Expr::SimpleLet {
-                                        arg: temp.clone(),
+                                        arg: temp,
                                         value: test,
                                         body: Rc::new(Expr::Conditional {
-                                            test: Rc::new(Expr::Variable(temp.clone())),
+                                            test: Rc::new(Expr::Variable(temp)),
                                             consequent: Rc::new(Expr::ProcCall {
                                                 operator: recipient,
                                                 operands: vec![Rc::new(Expr::Variable(temp))],
@@ -652,10 +652,10 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                     for op in oi {
                         let temp = gen_temp_name();
                         acc = Rc::new(Expr::SimpleLet {
-                            arg: temp.clone(),
+                            arg: temp,
                             value: op,
                             body: Rc::new(Expr::Conditional {
-                                test: Rc::new(Expr::Variable(temp.clone())),
+                                test: Rc::new(Expr::Variable(temp)),
                                 consequent: Rc::new(Expr::Variable(temp)),
                                 alternate: Some(acc),
                             }),
@@ -695,7 +695,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                                 test: Rc::new(Expr::ProcCall {
                                     operator: Rc::new(Expr::Variable("memv".into())),
                                     operands: vec![
-                                        Rc::new(Expr::Variable(temp.clone())),
+                                        Rc::new(Expr::Variable(temp)),
                                         Rc::new(Expr::Literal(LiteralKind::Quotation(first))),
                                     ],
                                 }),
@@ -879,10 +879,11 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                                 if let Datum::Simple(SimpleDatum::Symbol(name)) = pi.next().unwrap()
                                 {
                                     inits.push(parse_expr(pi.next().unwrap())?);
-                                    let step =
-                                        pi.next().map(parse_expr).transpose()?.unwrap_or_else(
-                                            || Rc::new(Expr::Variable(name.clone())),
-                                        );
+                                    let step = pi
+                                        .next()
+                                        .map(parse_expr)
+                                        .transpose()?
+                                        .unwrap_or_else(|| Rc::new(Expr::Variable(name)));
                                     vars.push(name);
                                     steps.push(step);
                                 } else {
@@ -901,16 +902,16 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                         let mut body = operands.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
                         let temp = gen_temp_name();
                         body.push(Rc::new(Expr::ProcCall {
-                            operator: Rc::new(Expr::Variable(temp.clone())),
+                            operator: Rc::new(Expr::Variable(temp)),
                             operands: steps,
                         }));
                         Ok(ExprOrDef::new_expr(Expr::ProcCall {
                             operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                                args: vec![temp.clone()],
+                                args: vec![temp],
                                 rest: None,
                                 body: vec![
                                     ExprOrDef::new_expr(Expr::Assignment {
-                                        variable: temp.clone(),
+                                        variable: temp,
                                         value: Rc::new(Expr::Lambda(Rc::new(ProcData {
                                             args: vars,
                                             rest: None,

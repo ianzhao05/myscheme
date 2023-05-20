@@ -32,6 +32,18 @@ impl Interner {
         }
     }
 
+    fn intern_ref(&mut self, s: &str) -> Symbol {
+        match self.map.get(s) {
+            Some(&sym) => sym,
+            None => {
+                let sym = Symbol(self.strings.len());
+                self.map.insert(s.to_owned(), sym);
+                self.strings.push(s.to_owned());
+                sym
+            }
+        }
+    }
+
     fn resolve(&self, sym: Symbol) -> &str {
         &self.strings[sym.0]
     }
@@ -49,7 +61,7 @@ impl From<String> for Symbol {
 
 impl From<&str> for Symbol {
     fn from(s: &str) -> Self {
-        INTERNER.lock().unwrap().intern(s.to_owned())
+        INTERNER.lock().unwrap().intern_ref(s)
     }
 }
 

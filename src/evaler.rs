@@ -96,11 +96,11 @@ pub fn eval_expr(state: State) -> Bouncer {
                 let res = match env.borrow().get(*v) {
                     Some(obj) => match obj {
                         ObjectRef::Undefined => {
-                            Err(EvalError::new(EvalErrorKind::UndefinedVariable(v.clone())))
+                            Err(EvalError::new(EvalErrorKind::UndefinedVariable(*v)))
                         }
                         _ => Ok(obj),
                     },
-                    None => Err(EvalError::new(EvalErrorKind::UndefinedVariable(v.clone()))),
+                    None => Err(EvalError::new(EvalErrorKind::UndefinedVariable(*v))),
                 };
                 Bouncer::Bounce(State {
                     acc: Acc::Obj(res),
@@ -186,7 +186,7 @@ pub fn eval_expr(state: State) -> Bouncer {
             Expr::Assignment { variable, value } => Bouncer::Bounce(State {
                 acc: Acc::Expr(value.clone()),
                 cont: Rc::new(Cont::Assignment {
-                    variable: variable.clone(),
+                    variable: *variable,
                     cont,
                 }),
                 env,
@@ -218,7 +218,7 @@ pub fn eval_expr(state: State) -> Bouncer {
             Expr::SimpleLet { arg, value, body } => Bouncer::Bounce(State {
                 acc: Acc::Expr(value.clone()),
                 cont: Rc::new(Cont::SimpleLet {
-                    arg: arg.clone(),
+                    arg: *arg,
                     body: body.clone(),
                     cont,
                 }),
@@ -338,7 +338,7 @@ pub fn eval_expr(state: State) -> Bouncer {
                 Cont::Assignment { variable, cont } => {
                     if !env.borrow_mut().set(*variable, obj) {
                         Bouncer::Land(Err(EvalError::new(EvalErrorKind::UndefinedVariable(
-                            variable.clone(),
+                            *variable,
                         ))))
                     } else {
                         Bouncer::Bounce(State {
@@ -395,7 +395,7 @@ fn eval_def(def: Rc<Definition>, env: Rc<RefCell<Env>>) -> Result<ObjectRef, Eva
             Acc::Expr(value.clone()),
             env.clone(),
             Some(Rc::new(Cont::Define {
-                name: name.clone(),
+                name: *name,
                 cont: Rc::new(Cont::Return),
             })),
         ))),
