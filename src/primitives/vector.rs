@@ -27,6 +27,10 @@ fn get_len(arg: &ObjectRef) -> Result<usize, EvalError> {
     }
 }
 
+fn vector(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
+    Ok(ObjectRef::new_vector(args.to_vec()))
+}
+
 fn make_vector(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     if args.len() != 1 && args.len() != 2 {
         return Err(EvalError::new(EvalErrorKind::ArityMismatch {
@@ -111,6 +115,7 @@ fn vector_set(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 
 pub fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
+    m.insert("vector", vector);
     m.insert("make-vector", make_vector);
     m.insert("vector-length", vector_length);
     m.insert("vector-ref", vector_ref);
@@ -135,9 +140,6 @@ pub const PRELUDE: &str = "
   (do ((i 0 (+ i 1)))
       ((= i (vector-length vec)))
     (vector-set! vec i val)))
-
-(define (vector . args)
-  (list->vector args))
 ";
 
 #[cfg(test)]
