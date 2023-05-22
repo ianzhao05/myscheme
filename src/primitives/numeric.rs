@@ -50,7 +50,7 @@ fn exact(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn add(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     let mut sum = Number::Real(RealKind::Integer(BigInt::from(0)));
     for arg in args {
-        match &*arg.try_deref_or(num_cv)? {
+        match arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => sum += n.clone(),
             _ => return Err(num_cv(arg)),
         }
@@ -77,7 +77,7 @@ fn sub(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     }
     let mut res = first.clone();
     for arg in &args[1..] {
-        match &*arg.try_deref_or(num_cv)? {
+        match arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => res -= n.clone(),
             _ => return Err(num_cv(arg)),
         }
@@ -88,7 +88,7 @@ fn sub(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn mul(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     let mut prod = Number::Real(RealKind::Integer(BigInt::from(1)));
     for arg in args {
-        match &*arg.try_deref_or(num_cv)? {
+        match arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => prod *= n.clone(),
             _ => return Err(num_cv(arg)),
         }
@@ -119,7 +119,7 @@ fn div(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     }
     let mut res = first.clone();
     for arg in &args[1..] {
-        match &*arg.try_deref_or(num_cv)? {
+        match arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => {
                 if Number::eq_val(n, &zero) {
                     return Err(EvalError::new(EvalErrorKind::ZeroDivision));
@@ -145,7 +145,7 @@ fn eq(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
         _ => return Err(num_cv(&args[0])),
     };
     for arg in &args[1..] {
-        match &*arg.try_deref_or(num_cv)? {
+        match arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => {
                 if !Number::eq_val(first, n) {
                     return Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(false))));
@@ -199,7 +199,7 @@ fn maxmin(args: &[ObjectRef], max: bool) -> Result<ObjectRef, EvalError> {
     };
     let mut res = first.clone();
     for arg in &args[1..] {
-        match &*arg.try_deref_or(num_cv)? {
+        match arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => {
                 res = if max {
                     res.max(n.clone())

@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::datum::Datum;
@@ -9,7 +10,7 @@ pub enum SelfEvaluatingKind {
     Boolean(bool),
     Number(Number),
     Character(char),
-    String(String),
+    String(RefCell<String>),
 }
 
 #[derive(Debug, PartialEq, Clone)]

@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::error::Error;
 use std::fmt;
 use std::iter::Peekable;
@@ -50,7 +51,7 @@ fn read_impl<I: Iterator<Item = Token>>(tip: &mut Peekable<I>) -> Result<Datum, 
     match token {
         Token::Boolean(b) => Ok(Datum::Simple(SimpleDatum::Boolean(b))),
         Token::Character(c) => Ok(Datum::Simple(SimpleDatum::Character(c))),
-        Token::String(s) => Ok(Datum::Simple(SimpleDatum::String(s))),
+        Token::String(s) => Ok(Datum::Simple(SimpleDatum::String(RefCell::new(s)))),
         Token::Identifier(s) => Ok(Datum::Simple(SimpleDatum::Symbol(s))),
         Token::Number(n) => {
             let number = Number::from_str(&n);

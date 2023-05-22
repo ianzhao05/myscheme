@@ -74,7 +74,9 @@ pub mod test_util {
 
     macro_rules! str_datum {
         ($s:expr) => {
-            $crate::datum::Datum::Simple($crate::datum::SimpleDatum::String($s.to_owned()))
+            $crate::datum::Datum::Simple($crate::datum::SimpleDatum::String(
+                std::cell::RefCell::new($s.to_owned()),
+            ))
         };
     }
     pub(crate) use str_datum;
@@ -157,7 +159,7 @@ pub mod test_util {
     macro_rules! str_expr {
         ($s:expr) => {
             $crate::expr::Expr::Literal($crate::expr::LiteralKind::SelfEvaluating(
-                $crate::expr::SelfEvaluatingKind::String($s.to_owned()),
+                $crate::expr::SelfEvaluatingKind::String(std::cell::RefCell::new($s.to_owned())),
             ))
         };
     }

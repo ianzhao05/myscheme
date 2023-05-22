@@ -23,9 +23,9 @@ fn open_file(args: &[ObjectRef], out: bool) -> Result<ObjectRef, EvalError> {
     match &args[0].try_deref_or(string_cv)? {
         Object::Atom(SimpleDatum::String(s)) => Ok(ObjectRef::new(Object::Port(
             (if out {
-                Port::new_output(&s)
+                Port::new_output(&s.borrow())
             } else {
-                Port::new_input(&s)
+                Port::new_input(&s.borrow())
             })
             .map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
         ))),
