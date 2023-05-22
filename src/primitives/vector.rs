@@ -12,7 +12,7 @@ use super::{cv_fn, PrimitiveMap};
 cv_fn!(vector_cv, "vector");
 cv_fn!(len_cv, "valid length");
 
-fn get_len(arg: &ObjectRef) -> Result<usize, EvalError> {
+pub fn get_len(arg: &ObjectRef) -> Result<usize, EvalError> {
     match arg.try_deref_or(len_cv)? {
         Object::Atom(SimpleDatum::Number(Number::Real(n))) => match n {
             RealKind::Rational(r) if r.is_integer() && r.numer().sign() != Sign::Minus => {

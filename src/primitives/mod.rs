@@ -5,6 +5,7 @@ mod io;
 mod list;
 mod numeric;
 mod pred;
+mod string;
 mod vector;
 
 use std::collections::HashMap;
@@ -46,6 +47,7 @@ pub fn primitives() -> HashMap<Symbol, ObjectRef> {
         pred::primitives(),
         vector::primitives(),
         io::primitives(),
+        string::primitives(),
     ])
     .into_iter()
     .map(|(k, v)| {
@@ -80,6 +82,7 @@ thread_local! {
             control::PRELUDE,
             vector::PRELUDE,
             io::PRELUDE,
+            string::PRELUDE,
         ]
         .join(""),
     )

@@ -29,6 +29,10 @@ impl ObjectRef {
         Self::new(Object::Vector(RefCell::new(v)))
     }
 
+    pub fn new_string(s: String) -> Self {
+        Self::new(Object::Atom(SimpleDatum::String(RefCell::new(s))))
+    }
+
     pub fn equal(this: &Self, other: &Self) -> bool {
         match (this, other) {
             (ObjectRef::Object(o1), ObjectRef::Object(o2)) => o1 == o2,
@@ -194,7 +198,7 @@ impl PartialEq for Object {
             (Object::Vector(v1), Object::Vector(v2)) => {
                 let b1 = &*v1.borrow();
                 let b2 = &*v2.borrow();
-                b1.len() == b2.len() && b1.iter().zip(b2).all(|(a, b)| ObjectRef::equal(&*a, &*b))
+                b1.len() == b2.len() && b1.iter().zip(b2).all(|(a, b)| ObjectRef::equal(a, b))
             }
             (Object::Procedure(p1), Object::Procedure(p2)) => p1 == p2,
             _ => false,
