@@ -4,9 +4,11 @@ use std::fmt;
 use lazy_static::lazy_static;
 use regex::Regex;
 
+use crate::interner::Symbol;
+
 #[derive(Debug, PartialEq)]
 pub enum Token {
-    Identifier(String),
+    Identifier(Symbol),
     Boolean(bool),
     Number(String),
     Character(char),
@@ -201,7 +203,7 @@ impl<'a> Iterator for Lexer<'a> {
                     } else if let Some(c) = IDENTIFIER.captures(rest) {
                         let m = c.get(1).unwrap();
                         self.pos += m.end();
-                        return Some(Ok(Token::Identifier(m.as_str().to_owned())));
+                        return Some(Ok(Token::Identifier(m.as_str().into())));
                     } else if DOT.is_match(rest) {
                         self.pos += 1;
                         return Some(Ok(Token::Dot));
@@ -339,10 +341,10 @@ mod tests {
         assert_eq!(
             tokenize!("foo bar2 _baz !w@w"),
             Ok(vec![
-                Token::Identifier("foo".to_owned()),
-                Token::Identifier("bar2".to_owned()),
-                Token::Identifier("_baz".to_owned()),
-                Token::Identifier("!w@w".to_owned()),
+                Token::Identifier("foo".into()),
+                Token::Identifier("bar2".into()),
+                Token::Identifier("_baz".into()),
+                Token::Identifier("!w@w".into()),
             ]),
         );
         assert_eq!(
@@ -361,12 +363,12 @@ mod tests {
             Ok(vec![
                 Token::LParen,
                 Token::LParen,
-                Token::Identifier("a".to_owned()),
-                Token::Identifier("b".to_owned()),
-                Token::Identifier("c".to_owned()),
+                Token::Identifier("a".into()),
+                Token::Identifier("b".into()),
+                Token::Identifier("c".into()),
                 Token::RParen,
                 Token::LParen,
-                Token::Identifier("+".to_owned()),
+                Token::Identifier("+".into()),
                 Token::Number("1".to_owned()),
                 Token::Number("2".to_owned()),
                 Token::RParen,
@@ -380,7 +382,7 @@ mod tests {
         assert_eq!(
             tokenize!("foo ; this is a comment\n 69"),
             Ok(vec![
-                Token::Identifier("foo".to_owned()),
+                Token::Identifier("foo".into()),
                 Token::Number("69".to_owned())
             ]),
         );
@@ -402,7 +404,7 @@ mod tests {
                 Token::Character('a'),
                 Token::LParen,
                 Token::Character('!'),
-                Token::Identifier("f".to_owned()),
+                Token::Identifier("f".into()),
                 Token::Character(' '),
                 Token::Character(' '),
                 Token::Character('\n')
@@ -481,12 +483,12 @@ mod tests {
             tokenize!("(a . (b .;\nc))"),
             Ok(vec![
                 Token::LParen,
-                Token::Identifier("a".to_owned()),
+                Token::Identifier("a".into()),
                 Token::Dot,
                 Token::LParen,
-                Token::Identifier("b".to_owned()),
+                Token::Identifier("b".into()),
                 Token::Dot,
-                Token::Identifier("c".to_owned()),
+                Token::Identifier("c".into()),
                 Token::RParen,
                 Token::RParen,
             ]),

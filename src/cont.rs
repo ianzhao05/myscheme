@@ -4,6 +4,7 @@ use std::{cell::RefCell, rc::Rc};
 use crate::env::Env;
 use crate::evaler::EvalError;
 use crate::expr::*;
+use crate::interner::Symbol;
 use crate::object::ObjectRef;
 
 #[derive(Debug)]
@@ -66,7 +67,7 @@ pub enum Cont {
         cont: Rc<Cont>,
     },
     SimpleLet {
-        arg: String,
+        arg: Symbol,
         body: Rc<Expr>,
         cont: Rc<Cont>,
     },
@@ -76,7 +77,7 @@ pub enum Cont {
         cont: Rc<Cont>,
     },
     Assignment {
-        variable: String,
+        variable: Symbol,
         cont: Rc<Cont>,
     },
     Begin {
@@ -84,11 +85,11 @@ pub enum Cont {
         cont: Rc<Cont>,
     },
     Define {
-        name: String,
+        name: Symbol,
         cont: Rc<Cont>,
     },
     DefineProc {
-        name: String,
+        name: Symbol,
         data: Rc<ProcData>,
         cont: Rc<Cont>,
     },
@@ -110,14 +111,14 @@ impl Cont {
                         bcont = Rc::new(Cont::Begin {
                             next: value.clone(),
                             cont: Rc::new(Cont::Define {
-                                name: name.clone(),
+                                name: *name,
                                 cont: bcont,
                             }),
                         });
                     }
                     Definition::Procedure { name, data } => {
                         bcont = Rc::new(Cont::DefineProc {
-                            name: name.clone(),
+                            name: *name,
                             data: data.clone(),
                             cont: bcont,
                         })
@@ -143,14 +144,14 @@ impl Cont {
                     bcont = Rc::new(Cont::Begin {
                         next: value.clone(),
                         cont: Rc::new(Cont::Define {
-                            name: name.clone(),
+                            name: *name,
                             cont: bcont,
                         }),
                     });
                 }
                 Definition::Procedure { name, data } => {
                     bcont = Rc::new(Cont::DefineProc {
-                        name: name.clone(),
+                        name: *name,
                         data: data.clone(),
                         cont: bcont,
                     })

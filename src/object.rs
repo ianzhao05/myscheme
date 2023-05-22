@@ -101,9 +101,7 @@ impl From<Datum> for ObjectRef {
                         .map(ObjectRef::from)
                         .fold(ObjectRef::from(*b), |a, b| ObjectRef::new_pair(b, a)),
                     ListKind::Abbreviation(p, b) => ObjectRef::new_pair(
-                        ObjectRef::new(Object::Atom(SimpleDatum::Symbol(
-                            p.to_keyword().to_string(),
-                        ))),
+                        ObjectRef::new(Object::Atom(SimpleDatum::Symbol(p.to_keyword().into()))),
                         ObjectRef::new_pair(ObjectRef::from(*b), ObjectRef::EmptyList),
                     ),
                 },

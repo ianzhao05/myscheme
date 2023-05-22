@@ -1,5 +1,6 @@
 use std::fmt;
 
+use crate::interner::Symbol;
 use crate::number::Number;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -8,7 +9,7 @@ pub enum SimpleDatum {
     Number(Number),
     Character(char),
     String(String),
-    Symbol(String),
+    Symbol(Symbol),
 }
 
 impl fmt::Display for SimpleDatum {
@@ -54,13 +55,14 @@ pub enum AbbreviationPrefix {
 }
 
 impl AbbreviationPrefix {
-    pub fn to_keyword(&self) -> &str {
-        match self {
+    pub fn to_keyword(&self) -> Symbol {
+        (match self {
             AbbreviationPrefix::Quote => "quote",
             AbbreviationPrefix::Quasiquote => "quasiquote",
             AbbreviationPrefix::Unquote => "unquote",
             AbbreviationPrefix::UnquoteSplicing => "unquote-splicing",
-        }
+        })
+        .into()
     }
 }
 

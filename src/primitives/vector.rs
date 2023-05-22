@@ -166,7 +166,7 @@ mod tests {
         assert_eq!(
             make_vector(&[ObjectRef::new(atom_obj!(int_datum!(-1)))]),
             Err(EvalError::new(EvalErrorKind::ContractViolation {
-                expected: "valid length".to_owned(),
+                expected: "valid length".into(),
                 got: ObjectRef::new(atom_obj!(int_datum!(-1)))
             }))
         );
@@ -174,7 +174,7 @@ mod tests {
         assert_eq!(
             make_vector(&[ObjectRef::new(atom_obj!(real_datum!(3.0)))]),
             Err(EvalError::new(EvalErrorKind::ContractViolation {
-                expected: "valid length".to_owned(),
+                expected: "valid length".into(),
                 got: ObjectRef::new(atom_obj!(real_datum!(3.0)))
             }))
         );
@@ -194,7 +194,7 @@ mod tests {
         assert_eq!(
             vector_length(&[ObjectRef::EmptyList]),
             Err(EvalError::new(EvalErrorKind::ContractViolation {
-                expected: "vector".to_owned(),
+                expected: "vector".into(),
                 got: ObjectRef::EmptyList
             }))
         );

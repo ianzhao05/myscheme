@@ -6,6 +6,7 @@ use crate::cont::{Acc, Cont, Frame, State};
 use crate::datum::SimpleDatum;
 use crate::env::Env;
 use crate::expr::*;
+use crate::interner::Symbol;
 use crate::object::{Object, ObjectRef};
 use crate::port::ReadError;
 use crate::proc::{Call, Procedure, UserDefined};
@@ -14,13 +15,13 @@ use crate::trampoline::{trampoline, Bouncer};
 #[derive(Debug, PartialEq)]
 pub enum EvalErrorKind {
     ZeroDivision,
-    UndefinedVariable(String),
+    UndefinedVariable(Symbol),
     ContractViolation {
-        expected: String,
+        expected: Symbol,
         got: ObjectRef,
     },
     NotAProcedure(ObjectRef),
-    DuplicateArg(String),
+    DuplicateArg(Symbol),
     ArityMismatch {
         expected: usize,
         got: usize,
@@ -92,14 +93,14 @@ pub fn eval_expr(state: State) -> Bouncer {
             stack,
         } => match &*expr {
             Expr::Variable(v) => {
-                let res = match env.borrow().get(v) {
+                let res = match env.borrow().get(*v) {
                     Some(obj) => match obj {
                         ObjectRef::Undefined => {
-                            Err(EvalError::new(EvalErrorKind::UndefinedVariable(v.clone())))
+                            Err(EvalError::new(EvalErrorKind::UndefinedVariable(*v)))
                         }
                         _ => Ok(obj),
                     },
-                    None => Err(EvalError::new(EvalErrorKind::UndefinedVariable(v.clone()))),
+                    None => Err(EvalError::new(EvalErrorKind::UndefinedVariable(*v))),
                 };
                 Bouncer::Bounce(State {
                     acc: Acc::Obj(res),
@@ -185,7 +186,7 @@ pub fn eval_expr(state: State) -> Bouncer {
             Expr::Assignment { variable, value } => Bouncer::Bounce(State {
                 acc: Acc::Expr(value.clone()),
                 cont: Rc::new(Cont::Assignment {
-                    variable: variable.clone(),
+                    variable: *variable,
                     cont,
                 }),
                 env,
@@ -217,7 +218,7 @@ pub fn eval_expr(state: State) -> Bouncer {
             Expr::SimpleLet { arg, value, body } => Bouncer::Bounce(State {
                 acc: Acc::Expr(value.clone()),
                 cont: Rc::new(Cont::SimpleLet {
-                    arg: arg.clone(),
+                    arg: *arg,
                     body: body.clone(),
                     cont,
                 }),
@@ -286,7 +287,7 @@ pub fn eval_expr(state: State) -> Bouncer {
                     })
                 }
                 Cont::SimpleLet { arg, body, cont } => {
-                    env.borrow_mut().insert(arg, obj);
+                    env.borrow_mut().insert(*arg, obj);
                     Bouncer::Bounce(State {
                         acc: Acc::Expr(body.clone()),
                         cont: cont.clone(),
@@ -335,9 +336,9 @@ pub fn eval_expr(state: State) -> Bouncer {
                     }
                 }
                 Cont::Assignment { variable, cont } => {
-                    if !env.borrow_mut().set(variable, obj) {
+                    if !env.borrow_mut().set(*variable, obj) {
                         Bouncer::Land(Err(EvalError::new(EvalErrorKind::UndefinedVariable(
-                            variable.clone(),
+                            *variable,
                         ))))
                     } else {
                         Bouncer::Bounce(State {
@@ -357,7 +358,7 @@ pub fn eval_expr(state: State) -> Bouncer {
                     stack,
                 }),
                 Cont::Define { name, cont } => {
-                    env.borrow_mut().insert(name, obj);
+                    env.borrow_mut().insert(*name, obj);
                     Bouncer::Bounce(State {
                         acc: Acc::Obj(Ok(ObjectRef::Void)),
                         cont: cont.clone(),
@@ -373,7 +374,7 @@ pub fn eval_expr(state: State) -> Bouncer {
                             Err(e) => return Bouncer::Land(Err(e)),
                         },
                     ));
-                    env.borrow_mut().insert(name, ObjectRef::new(proc));
+                    env.borrow_mut().insert(*name, ObjectRef::new(proc));
                     Bouncer::Bounce(State {
                         acc: Acc::Obj(Ok(ObjectRef::Void)),
                         cont: cont.clone(),
@@ -394,7 +395,7 @@ fn eval_def(def: Rc<Definition>, env: Rc<RefCell<Env>>) -> Result<ObjectRef, Eva
             Acc::Expr(value.clone()),
             env.clone(),
             Some(Rc::new(Cont::Define {
-                name: name.clone(),
+                name: *name,
                 cont: Rc::new(Cont::Return),
             })),
         ))),
@@ -403,7 +404,7 @@ fn eval_def(def: Rc<Definition>, env: Rc<RefCell<Env>>) -> Result<ObjectRef, Eva
                 data.clone(),
                 env.clone(),
             )?));
-            env.borrow_mut().insert(name, ObjectRef::new(proc));
+            env.borrow_mut().insert(*name, ObjectRef::new(proc));
             Ok(ObjectRef::Void)
         }
         Definition::Begin(defs) => trampoline(Bouncer::Bounce(State::new(
@@ -526,14 +527,12 @@ mod tests {
 
         assert_eq!(
             eval(ExprOrDef::new_expr(var_expr!("a")), env.clone()),
-            Err(EvalError::new(EvalErrorKind::UndefinedVariable(
-                "a".to_owned()
-            )))
+            Err(EvalError::new(EvalErrorKind::UndefinedVariable("a".into())))
         );
         assert_eq!(
             eval(
                 ExprOrDef::new_def(Definition::Variable {
-                    name: "a".to_owned(),
+                    name: "a".into(),
                     value: Rc::new(int_expr!(1))
                 }),
                 env.clone()
@@ -549,11 +548,11 @@ mod tests {
             eval(
                 ExprOrDef::new_def(Definition::Begin(vec_rc![
                     Definition::Variable {
-                        name: "b".to_owned(),
+                        name: "b".into(),
                         value: Rc::new(int_expr!(2))
                     },
                     Definition::Variable {
-                        name: "c".to_owned(),
+                        name: "c".into(),
                         value: Rc::new(int_expr!(3))
                     },
                 ])),
@@ -577,7 +576,7 @@ mod tests {
         assert_eq!(
             eval(
                 ExprOrDef::new_def(Definition::Variable {
-                    name: "a".to_owned(),
+                    name: "a".into(),
                     value: Rc::new(int_expr!(1))
                 }),
                 env.clone()
@@ -587,7 +586,7 @@ mod tests {
         assert_eq!(
             eval(
                 ExprOrDef::new_expr(Expr::Assignment {
-                    variable: "a".to_owned(),
+                    variable: "a".into(),
                     value: Rc::new(int_expr!(2))
                 }),
                 env.clone()
@@ -607,9 +606,9 @@ mod tests {
         assert_eq!(
             eval(
                 ExprOrDef::new_def(Definition::Procedure {
-                    name: "f".to_owned(),
+                    name: "f".into(),
                     data: Rc::new(ProcData {
-                        args: vec!["x".to_owned()],
+                        args: vec!["x".into()],
                         rest: None,
                         body: vec![ExprOrDef::new_expr(var_expr!("x"))],
                     })
@@ -646,9 +645,9 @@ mod tests {
         assert_eq!(
             eval(
                 ExprOrDef::new_def(Definition::Variable {
-                    name: "g".to_owned(),
+                    name: "g".into(),
                     value: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                        args: vec!["x".to_owned(), "y".to_owned()],
+                        args: vec!["x".into(), "y".into()],
                         rest: None,
                         body: vec![ExprOrDef::new_expr(var_expr!("y"))],
                     })))
