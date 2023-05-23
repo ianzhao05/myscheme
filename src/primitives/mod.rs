@@ -8,39 +8,18 @@ mod pred;
 mod string;
 mod vector;
 
+mod utils;
+
 use std::collections::HashMap;
 
-use crate::evaler::EvalError;
 use crate::expr::ExprOrDef;
 use crate::interner::Symbol;
 use crate::interpret::parse_str;
 use crate::object::{Object, ObjectRef};
 use crate::proc::{Primitive, PrimitiveFunc, Procedure};
 
-pub type PrimitiveMap = HashMap<&'static str, fn(&[ObjectRef]) -> Result<ObjectRef, EvalError>>;
-
-macro_rules! cv_fn {
-    ($fn_name:ident, $s:expr) => {
-        fn $fn_name(got: &crate::object::ObjectRef) -> crate::evaler::EvalError {
-            crate::evaler::EvalError::new(crate::evaler::EvalErrorKind::ContractViolation {
-                expected: $s.into(),
-                got: got.clone(),
-            })
-        }
-    };
-}
-pub(crate) use cv_fn;
-
-fn merge(maps: &[PrimitiveMap]) -> PrimitiveMap {
-    let mut m: PrimitiveMap = HashMap::new();
-    for n in maps {
-        m.extend(n);
-    }
-    m
-}
-
 pub fn primitives() -> HashMap<Symbol, ObjectRef> {
-    merge(&[
+    utils::merge(&[
         numeric::primitives(),
         eq::primitives(),
         list::primitives(),

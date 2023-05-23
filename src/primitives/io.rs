@@ -5,21 +5,11 @@ use crate::evaler::{EvalError, EvalErrorKind};
 use crate::object::{Object, ObjectRef};
 use crate::port::{Port, ReadError, STDIN, STDOUT};
 
-use super::{cv_fn, PrimitiveMap};
-
-cv_fn!(string_cv, "string");
-cv_fn!(oport_cv, "output-port");
-cv_fn!(iport_cv, "input-port");
-cv_fn!(char_cv, "char");
+use super::utils::{char_cv, ensure_arity, iport_cv, oport_cv, string_cv, PrimitiveMap};
 
 fn open_file(args: &[ObjectRef], out: bool) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 1);
+
     match &args[0].try_deref_or(string_cv)? {
         Object::Atom(SimpleDatum::String(s)) => Ok(ObjectRef::new(Object::Port(
             (if out {
@@ -34,13 +24,8 @@ fn open_file(args: &[ObjectRef], out: bool) -> Result<ObjectRef, EvalError> {
 }
 
 fn close_input_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 1);
+
     match &args[0].try_deref_or(iport_cv)? {
         Object::Port(Port::Input(op)) => {
             op.borrow_mut().take();
@@ -51,13 +36,8 @@ fn close_input_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn close_output_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 1);
+
     match &args[0].try_deref_or(oport_cv)? {
         Object::Port(Port::Output(op)) => {
             op.borrow_mut().take();
@@ -68,35 +48,20 @@ fn close_output_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn current_input_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if !args.is_empty() {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 0,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 0);
+
     Ok(STDIN.with(|s| s.clone()))
 }
 
 fn current_output_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if !args.is_empty() {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 0,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 0);
+
     Ok(STDOUT.with(|s| s.clone()))
 }
 
 fn write_char(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 && args.len() != 2 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: true,
-        }));
-    }
+    ensure_arity!(args, 1, 2);
+
     let c = match &args[0].try_deref_or(char_cv)? {
         Object::Atom(SimpleDatum::Character(c)) => *c,
         _ => return Err(char_cv(&args[0])),
@@ -116,13 +81,8 @@ fn write_char(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn display_write(args: &[ObjectRef], write: bool) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 && args.len() != 2 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: usize::MAX,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 1, 2);
+
     let port = args
         .get(1)
         .cloned()
@@ -143,13 +103,8 @@ fn display_write(args: &[ObjectRef], write: bool) -> Result<ObjectRef, EvalError
 }
 
 fn read(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() > 1 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: usize::MAX,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 0, 1);
+
     let port = args
         .first()
         .cloned()
@@ -171,13 +126,8 @@ fn read(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn read_peek_char(args: &[ObjectRef], peek: bool) -> Result<ObjectRef, EvalError> {
-    if args.len() > 1 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: usize::MAX,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 0, 1);
+
     let port = args
         .first()
         .cloned()
@@ -198,13 +148,8 @@ fn read_peek_char(args: &[ObjectRef], peek: bool) -> Result<ObjectRef, EvalError
 }
 
 fn char_ready(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() > 1 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: usize::MAX,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 0, 1);
+
     let port = args
         .first()
         .cloned()

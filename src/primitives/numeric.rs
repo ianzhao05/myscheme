@@ -8,18 +8,11 @@ use crate::object::{Object, ObjectRef};
 
 use num::BigInt;
 
-use super::{cv_fn, PrimitiveMap};
-
-cv_fn!(num_cv, "number");
+use super::utils::{ensure_arity, num_cv, PrimitiveMap};
 
 fn integer(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 1);
+
     Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(
         match &args[0] {
             ObjectRef::Object(o) => match &**o {
@@ -32,13 +25,8 @@ fn integer(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn exact(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 1);
+
     Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(
         match &args[0].try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => n.is_exact(),
@@ -59,13 +47,8 @@ fn add(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn sub(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.is_empty() {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: true,
-        }));
-    }
+    ensure_arity!(args, 1, usize::MAX);
+
     let first = match &args[0].try_deref_or(num_cv)? {
         Object::Atom(SimpleDatum::Number(n)) => n,
         _ => return Err(num_cv(&args[0])),
@@ -97,13 +80,8 @@ fn mul(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn div(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.is_empty() {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: true,
-        }));
-    }
+    ensure_arity!(args, 1, usize::MAX);
+
     let first = match &args[0].try_deref_or(num_cv)? {
         Object::Atom(SimpleDatum::Number(n)) => n,
         _ => return Err(num_cv(&args[0])),
@@ -133,13 +111,8 @@ fn div(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn eq(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.is_empty() {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: true,
-        }));
-    }
+    ensure_arity!(args, 1, usize::MAX);
+
     let first = match &args[0].try_deref_or(num_cv)? {
         Object::Atom(SimpleDatum::Number(n)) => n,
         _ => return Err(num_cv(&args[0])),
@@ -158,13 +131,8 @@ fn eq(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn cmp(args: &[ObjectRef], ord: Ordering, strict: bool) -> Result<ObjectRef, EvalError> {
-    if args.is_empty() {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: true,
-        }));
-    }
+    ensure_arity!(args, 1, usize::MAX);
+
     for w in args.windows(2) {
         match &w[0].try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(Number::Real(n1))) => {
@@ -186,13 +154,8 @@ fn cmp(args: &[ObjectRef], ord: Ordering, strict: bool) -> Result<ObjectRef, Eva
 }
 
 fn maxmin(args: &[ObjectRef], max: bool) -> Result<ObjectRef, EvalError> {
-    if args.is_empty() {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: true,
-        }));
-    }
+    ensure_arity!(args, 1, usize::MAX);
+
     let first = match &args[0].try_deref_or(num_cv)? {
         Object::Atom(SimpleDatum::Number(n)) => n,
         _ => return Err(num_cv(&args[0])),
@@ -318,8 +281,8 @@ mod tests {
             sub(&[]),
             Err(EvalError::new(EvalErrorKind::ArityMismatch {
                 expected: 1,
+                max_expected: usize::MAX,
                 got: 0,
-                rest: true
             }))
         );
         assert_eq!(
@@ -349,8 +312,8 @@ mod tests {
             div(&[]),
             Err(EvalError::new(EvalErrorKind::ArityMismatch {
                 expected: 1,
+                max_expected: usize::MAX,
                 got: 0,
-                rest: true
             }))
         );
         assert_eq!(
@@ -373,8 +336,8 @@ mod tests {
             eq(&[]),
             Err(EvalError::new(EvalErrorKind::ArityMismatch {
                 expected: 1,
+                max_expected: usize::MAX,
                 got: 0,
-                rest: true
             }))
         );
         assert_eq!(

@@ -17,15 +17,15 @@ pub enum EvalErrorKind {
     ZeroDivision,
     UndefinedVariable(Symbol),
     ContractViolation {
-        expected: Symbol,
+        expected: &'static str,
         got: ObjectRef,
     },
     NotAProcedure(ObjectRef),
     DuplicateArg(Symbol),
     ArityMismatch {
         expected: usize,
+        max_expected: usize,
         got: usize,
-        rest: bool,
     },
     IndexOutOfBounds {
         index: usize,
@@ -61,17 +61,18 @@ impl fmt::Display for EvalError {
             EvalErrorKind::DuplicateArg(s) => write!(f, "Duplicate argument name: {s}"),
             EvalErrorKind::ArityMismatch {
                 expected,
+                max_expected,
                 got,
-                rest,
             } => {
-                let expected = if *rest {
-                    format!("expected at least {expected}, ")
-                } else if *expected != usize::MAX {
-                    format!("expected {expected}, ")
+                write!(f, "Arity mismatch: ")?;
+                if *max_expected == usize::MAX {
+                    write!(f, "expected at least {expected}, ")?;
+                } else if expected == max_expected {
+                    write!(f, "expected {expected}, ")?;
                 } else {
-                    String::new()
-                };
-                write!(f, "Arity mismatch: {expected}got {got}")
+                    write!(f, "expected between {expected} and {max_expected}, ")?;
+                }
+                write!(f, "got {got}")
             }
             EvalErrorKind::IndexOutOfBounds { index, len } => {
                 write!(f, "Index out of bounds: {index} >= {len}")
@@ -637,8 +638,8 @@ mod tests {
             ),
             Err(EvalError::new(EvalErrorKind::ArityMismatch {
                 expected: 1,
+                max_expected: 1,
                 got: 2,
-                rest: false
             }))
         );
 
@@ -666,8 +667,8 @@ mod tests {
             ),
             Err(EvalError::new(EvalErrorKind::ArityMismatch {
                 expected: 2,
+                max_expected: 2,
                 got: 1,
-                rest: false
             }))
         );
         assert_eq!(

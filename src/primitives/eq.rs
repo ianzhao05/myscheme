@@ -2,32 +2,22 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::datum::SimpleDatum;
-use crate::evaler::{EvalError, EvalErrorKind};
+use crate::evaler::EvalError;
 use crate::object::{Object, ObjectRef};
 
-use super::PrimitiveMap;
-
-fn equiv_am(got: usize) -> EvalError {
-    EvalError::new(EvalErrorKind::ArityMismatch {
-        expected: 2,
-        got,
-        rest: false,
-    })
-}
+use super::utils::{ensure_arity, PrimitiveMap};
 
 fn eqv(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 2 {
-        return Err(equiv_am(args.len()));
-    }
+    ensure_arity!(args, 2);
+
     Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(
         args[0] == args[1],
     ))))
 }
 
 fn eq(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 2 {
-        return Err(equiv_am(args.len()));
-    }
+    ensure_arity!(args, 2);
+
     Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(
         match (&args[0], &args[1]) {
             (ObjectRef::Object(o1), ObjectRef::Object(o2)) => match (&**o1, &**o2) {

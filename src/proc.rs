@@ -149,8 +149,12 @@ impl Call for UserDefined {
         {
             return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ArityMismatch {
                 expected: self.data.args.len(),
+                max_expected: if self.data.rest.is_some() {
+                    usize::MAX
+                } else {
+                    self.data.args.len()
+                },
                 got: args.len(),
-                rest: self.data.rest.is_some(),
             })));
         }
         let env = Rc::new(RefCell::new(Env::new(Some(self.env.clone()))));
@@ -218,8 +222,8 @@ impl Call for Continuation {
         if state.rib.len() != 1 {
             return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ArityMismatch {
                 expected: 1,
+                max_expected: 1,
                 got: state.rib.len(),
-                rest: false,
             })));
         }
         let arg = state.rib[0].clone();

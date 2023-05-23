@@ -6,20 +6,11 @@ use crate::evaler::{EvalError, EvalErrorKind};
 use crate::number::{Number, RealKind};
 use crate::object::{Object, ObjectRef};
 
-use super::vector::get_len;
-use super::{cv_fn, PrimitiveMap};
-
-cv_fn!(string_cv, "string");
-cv_fn!(char_cv, "char");
+use super::utils::{char_cv, ensure_arity, get_len, string_cv, PrimitiveMap};
 
 fn make_string(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 && args.len() != 2 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: true,
-        }));
-    }
+    ensure_arity!(args, 1, 2);
+
     let k = get_len(&args[0])?;
     let fill = if args.len() == 2 {
         match args[1].try_deref_or(char_cv)? {
@@ -44,13 +35,8 @@ fn string(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn string_length(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 1);
+
     match &args[0].try_deref_or(string_cv)? {
         Object::Atom(SimpleDatum::String(s)) => Ok(ObjectRef::new(Object::Atom(
             SimpleDatum::Number(Number::Real(RealKind::Integer(s.borrow().len().into()))),
@@ -60,13 +46,7 @@ fn string_length(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn string_ref(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 2 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 2,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 2);
 
     match &args[0].try_deref_or(string_cv)? {
         Object::Atom(SimpleDatum::String(s)) => {
@@ -90,13 +70,8 @@ fn string_ref(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn string_set(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 3 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 3,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 3);
+
     match &args[0].try_deref_or(string_cv)? {
         Object::Atom(SimpleDatum::String(s)) => {
             let i = get_len(&args[1])?;
@@ -121,13 +96,8 @@ fn string_set(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn string_fill(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 2 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 3,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 2);
+
     match &args[0].try_deref_or(string_cv)? {
         Object::Atom(SimpleDatum::String(s)) => match &args[1].try_deref_or(char_cv)? {
             Object::Atom(SimpleDatum::Character(c)) => {
@@ -142,13 +112,8 @@ fn string_fill(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn cmp(args: &[ObjectRef], ord: Ordering, strict: bool, ci: bool) -> Result<ObjectRef, EvalError> {
-    if args.len() != 2 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 2,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 2);
+
     let mut it = args.iter().map(|arg| match arg.try_deref_or(string_cv)? {
         Object::Atom(SimpleDatum::String(s)) => Ok(s.borrow()),
         _ => Err(string_cv(&args[1])),
@@ -171,13 +136,8 @@ fn cmp(args: &[ObjectRef], ord: Ordering, strict: bool, ci: bool) -> Result<Obje
 }
 
 fn substring(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 3 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 3,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 3);
+
     match &args[0].try_deref_or(string_cv)? {
         Object::Atom(SimpleDatum::String(s)) => {
             let start = get_len(&args[1])?;

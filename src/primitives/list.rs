@@ -1,31 +1,19 @@
 use std::collections::HashMap;
 
-use crate::evaler::{EvalError, EvalErrorKind};
+use crate::evaler::EvalError;
 use crate::object::{Object, ObjectRef};
 
-use super::{cv_fn, PrimitiveMap};
-
-cv_fn!(pair_cv, "pair");
+use super::utils::{ensure_arity, pair_cv, PrimitiveMap};
 
 fn cons(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 2 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 2,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 2);
+
     Ok(ObjectRef::new_pair(args[0].clone(), args[1].clone()))
 }
 
 fn select(args: &[ObjectRef], first: bool) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 1);
+
     match &args[0].try_deref_or(pair_cv)? {
         Object::Pair(p) => Ok(if first {
             p.borrow().0.clone()
@@ -37,13 +25,8 @@ fn select(args: &[ObjectRef], first: bool) -> Result<ObjectRef, EvalError> {
 }
 
 fn set_select(args: &[ObjectRef], first: bool) -> Result<ObjectRef, EvalError> {
-    if args.len() != 2 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 2,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 2);
+
     match &args[0].try_deref_or(pair_cv)? {
         Object::Pair(p) => {
             let mut b = p.borrow_mut();
@@ -157,7 +140,7 @@ pub const PRELUDE: &str = "
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::*;
+    use crate::{evaler::EvalErrorKind, test_util::*};
 
     #[test]
     fn test_cons() {
