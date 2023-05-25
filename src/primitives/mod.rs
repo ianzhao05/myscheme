@@ -13,9 +13,9 @@ mod utils;
 
 use std::collections::HashMap;
 
-use crate::expr::ExprOrDef;
+use once_cell::sync::Lazy;
+
 use crate::interner::Symbol;
-use crate::interpret::parse_str;
 use crate::object::{Object, ObjectRef};
 use crate::proc::{Primitive, PrimitiveFunc, Procedure};
 
@@ -52,20 +52,17 @@ pub fn primitives() -> HashMap<Symbol, ObjectRef> {
     .collect()
 }
 
-thread_local! {
-    pub static PRELUDE: Vec<ExprOrDef> = parse_str(
-        &vec![
-            numeric::PRELUDE,
-            eq::PRELUDE,
-            list::PRELUDE,
-            delay::PRELUDE,
-            pred::PRELUDE,
-            control::PRELUDE,
-            vector::PRELUDE,
-            io::PRELUDE,
-            string::PRELUDE,
-        ]
-        .join(""),
-    )
-    .expect("Prelude should parse without error");
-}
+pub static PRELUDE: Lazy<String> = Lazy::new(|| {
+    [
+        numeric::PRELUDE,
+        eq::PRELUDE,
+        list::PRELUDE,
+        delay::PRELUDE,
+        pred::PRELUDE,
+        control::PRELUDE,
+        vector::PRELUDE,
+        io::PRELUDE,
+        string::PRELUDE,
+    ]
+    .join("")
+});

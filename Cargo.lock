@@ -245,8 +245,8 @@ name = "myscheme"
 version = "0.1.0"
 dependencies = [
  "assert_fs",
- "lazy_static",
  "num",
+ "once_cell",
  "regex",
  "uuid",
 ]
