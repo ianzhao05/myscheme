@@ -72,6 +72,7 @@ macro_rules! cv_fn {
 }
 
 cv_fn!(num_cv, "number");
+cv_fn!(symbol_cv, "symbol");
 cv_fn!(char_cv, "char");
 cv_fn!(pair_cv, "pair");
 cv_fn!(string_cv, "string");

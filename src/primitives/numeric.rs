@@ -265,14 +265,14 @@ mod tests {
         assert_eq!(
             add(&[ObjectRef::new(atom_obj!(bool_datum!(true)))]),
             Err(EvalError::new(EvalErrorKind::ContractViolation {
-                expected: "number".into(),
+                expected: "number",
                 got: ObjectRef::new(atom_obj!(bool_datum!(true)))
             }))
         );
         assert_eq!(
             add(&[ObjectRef::EmptyList]),
             Err(EvalError::new(EvalErrorKind::ContractViolation {
-                expected: "number".into(),
+                expected: "number",
                 got: ObjectRef::EmptyList
             }))
         );

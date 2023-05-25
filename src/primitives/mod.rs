@@ -6,6 +6,7 @@ mod list;
 mod numeric;
 mod pred;
 mod string;
+mod symbol;
 mod vector;
 
 mod utils;
@@ -27,6 +28,7 @@ pub fn primitives() -> HashMap<Symbol, ObjectRef> {
         vector::primitives(),
         io::primitives(),
         string::primitives(),
+        symbol::primitives(),
     ])
     .into_iter()
     .map(|(k, v)| {

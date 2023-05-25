@@ -225,6 +225,13 @@ fn string_primitives() {
 }
 
 #[test]
+fn symbol_primitives() {
+    assert_eval_eq!("(symbol->string 'symbol)", "\"symbol\"");
+    assert_eval_eq!("(string->symbol \"string\")", "'string");
+    assert_eval_eq!("(eq? 'abc (string->symbol \"abc\"))", "#t");
+}
+
+#[test]
 fn io_primitives() {
     use assert_fs::prelude::*;
 
