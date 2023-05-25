@@ -51,5 +51,7 @@ pub const PRELUDE: &str = "
                    (if (= i al) #t
                        (and (equal? (vector-ref a i) (vector-ref b i))
                             (h (+ i 1)))))))))
+    ((string? a)
+     (and (string? b) (string=? a b)))
     (else (eqv? a b))))
 ";

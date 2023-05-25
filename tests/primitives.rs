@@ -112,10 +112,17 @@ fn equivalence() {
     assert_eval_eq!("(let ((p (lambda (x) x))) (eqv? p p))", "#t");
     assert_eval_eq!("(let ((p (cons 1 2))) (eqv? p p))", "#t");
 
+    assert_eval_eq!("(eq? 'a 'a)", "#t");
+    assert_eval_eq!("(eq? (list 'a) (list 'a))", "#f");
+    assert_eval_eq!("(eq? \"abc\" \"abc\")", "#f");
+    assert_eval_eq!("(eq? 100 100)", "#f");
+    assert_eval_eq!("(let ((p (string #\\a #\\newline))) (eq? p p))", "#t");
+
     assert_eval_eq!("(equal? '(a (b) c) '(a (b) c))", "#t");
     assert_eval_eq!("(equal? 2 2)", "#t");
     assert_eval_eq!("(equal? (make-vector 5 'a) (make-vector 5 'a))", "#t");
     assert_eval_eq!("(equal? '#((1 2) #(3 4)) '#((1 2) #(3 4)))", "#t");
+    assert_eval_eq!("(equal? \"abc\" \"abc\")", "#t");
 }
 
 #[test]

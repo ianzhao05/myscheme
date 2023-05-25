@@ -216,3 +216,25 @@ pub const PRELUDE: &str = "
 (define (string-copy s)
   (substring s 0 (string-length s)))
 ";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_util::*;
+
+    #[test]
+    fn test_make_string() {
+        assert!(ObjectRef::equal(
+            &make_string(&[ObjectRef::new(atom_obj!(int_datum!(3)))]).unwrap(),
+            &ObjectRef::new_string("\0\0\0".to_owned())
+        ));
+        assert!(ObjectRef::equal(
+            &make_string(&[
+                ObjectRef::new(atom_obj!(int_datum!(3))),
+                ObjectRef::new(atom_obj!(char_datum!('z')))
+            ])
+            .unwrap(),
+            &ObjectRef::new_string("zzz".to_owned())
+        ));
+    }
+}

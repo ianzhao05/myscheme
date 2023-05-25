@@ -73,6 +73,9 @@ impl PartialEq for ObjectRef {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (ObjectRef::Object(o1), ObjectRef::Object(o2)) => match (&**o1, &**o2) {
+                (Object::Atom(SimpleDatum::String(_)), Object::Atom(SimpleDatum::String(_))) => {
+                    Rc::ptr_eq(o1, o2)
+                }
                 (Object::Atom(a), Object::Atom(b)) => a == b,
                 (Object::Pair(_), Object::Pair(_)) => Rc::ptr_eq(o1, o2),
                 (Object::Vector(_), Object::Vector(_)) => Rc::ptr_eq(o1, o2),
