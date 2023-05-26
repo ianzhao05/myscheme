@@ -130,3 +130,136 @@ pub fn primitives() -> PrimitiveMap {
     m.insert("integer->char", int_to_char);
     m
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_util::*;
+
+    #[test]
+    fn test_char_cmp() {
+        assert_eq!(
+            char_cmp(
+                &[
+                    ObjectRef::new(atom_obj!(char_datum!('x'))),
+                    ObjectRef::new(atom_obj!(char_datum!('x'))),
+                ],
+                Ordering::Equal,
+                true,
+                false
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
+        );
+        assert_eq!(
+            char_cmp(
+                &[
+                    ObjectRef::new(atom_obj!(char_datum!('x'))),
+                    ObjectRef::new(atom_obj!(char_datum!('X'))),
+                ],
+                Ordering::Equal,
+                true,
+                false
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(false))))
+        );
+        assert_eq!(
+            char_cmp(
+                &[
+                    ObjectRef::new(atom_obj!(char_datum!('x'))),
+                    ObjectRef::new(atom_obj!(char_datum!('X'))),
+                ],
+                Ordering::Equal,
+                true,
+                true
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
+        );
+        assert_eq!(
+            char_cmp(
+                &[
+                    ObjectRef::new(atom_obj!(char_datum!('a'))),
+                    ObjectRef::new(atom_obj!(char_datum!('b'))),
+                ],
+                Ordering::Less,
+                true,
+                false
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
+        );
+        assert_eq!(
+            char_cmp(
+                &[
+                    ObjectRef::new(atom_obj!(char_datum!('a'))),
+                    ObjectRef::new(atom_obj!(char_datum!('a'))),
+                ],
+                Ordering::Less,
+                true,
+                false
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(false))))
+        );
+        assert_eq!(
+            char_cmp(
+                &[
+                    ObjectRef::new(atom_obj!(char_datum!('a'))),
+                    ObjectRef::new(atom_obj!(char_datum!('A'))),
+                ],
+                Ordering::Less,
+                false,
+                true
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
+        );
+        assert_eq!(
+            char_cmp(
+                &[
+                    ObjectRef::new(atom_obj!(char_datum!('a'))),
+                    ObjectRef::new(atom_obj!(char_datum!('a'))),
+                ],
+                Ordering::Less,
+                false,
+                false
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
+        );
+    }
+
+    #[test]
+    fn test_char_map() {
+        assert_eq!(
+            char_map(&[ObjectRef::new(atom_obj!(char_datum!('a')))], |c| {
+                SimpleDatum::Character(c.to_ascii_uppercase())
+            }),
+            Ok(ObjectRef::new(atom_obj!(char_datum!('A'))))
+        );
+        let s = ObjectRef::new_string("a".to_owned());
+        assert_eq!(
+            char_map(&[s.clone()], |c| {
+                SimpleDatum::Character(c.to_ascii_uppercase())
+            }),
+            Err(char_cv(&s))
+        );
+    }
+
+    #[test]
+    fn test_int_to_char() {
+        assert_eq!(
+            int_to_char(&[ObjectRef::new(atom_obj!(int_datum!(97)))]),
+            Ok(ObjectRef::new(atom_obj!(char_datum!('a'))))
+        );
+        assert_eq!(
+            int_to_char(&[ObjectRef::new(atom_obj!(int_datum!(0)))]),
+            Ok(ObjectRef::new(atom_obj!(char_datum!('\0'))))
+        );
+        assert_eq!(
+            int_to_char(&[ObjectRef::new(atom_obj!(int_datum!(1000000000)))]),
+            Err(charval_cv(&ObjectRef::new(atom_obj!(int_datum!(
+                1000000000
+            )))))
+        );
+        assert_eq!(
+            int_to_char(&[ObjectRef::new(atom_obj!(int_datum!(-1)))]),
+            Err(charval_cv(&ObjectRef::new(atom_obj!(int_datum!(-1)))))
+        )
+    }
+}

@@ -37,7 +37,7 @@ fn string(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn string_length(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
-    match &args[0].try_deref_or(string_cv)? {
+    match args[0].try_deref_or(string_cv)? {
         Object::Atom(SimpleDatum::String(s)) => Ok(ObjectRef::new(Object::Atom(
             SimpleDatum::Number(Number::Real(RealKind::Integer(s.borrow().len().into()))),
         ))),
@@ -48,7 +48,7 @@ fn string_length(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn string_ref(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 2);
 
-    match &args[0].try_deref_or(string_cv)? {
+    match args[0].try_deref_or(string_cv)? {
         Object::Atom(SimpleDatum::String(s)) => {
             let i = get_len(&args[1])?;
             let b = s.borrow();
@@ -72,7 +72,7 @@ fn string_ref(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn string_set(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 3);
 
-    match &args[0].try_deref_or(string_cv)? {
+    match args[0].try_deref_or(string_cv)? {
         Object::Atom(SimpleDatum::String(s)) => {
             let i = get_len(&args[1])?;
             let mut b = s.borrow_mut();
@@ -83,7 +83,7 @@ fn string_set(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
                 }));
             }
             let mut buf = [0];
-            match &args[2].try_deref_or(char_cv)? {
+            match args[2].try_deref_or(char_cv)? {
                 Object::Atom(SimpleDatum::Character(c)) => {
                     b.replace_range(i..i + 1, c.encode_utf8(&mut buf));
                     Ok(ObjectRef::Void)
@@ -98,8 +98,8 @@ fn string_set(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn string_fill(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 2);
 
-    match &args[0].try_deref_or(string_cv)? {
-        Object::Atom(SimpleDatum::String(s)) => match &args[1].try_deref_or(char_cv)? {
+    match args[0].try_deref_or(string_cv)? {
+        Object::Atom(SimpleDatum::String(s)) => match args[1].try_deref_or(char_cv)? {
             Object::Atom(SimpleDatum::Character(c)) => {
                 let mut b = s.borrow_mut();
                 *b = c.to_string().repeat(b.len());
@@ -144,7 +144,7 @@ fn string_cmp(
 fn string_copy(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
-    match &args[0].try_deref_or(string_cv)? {
+    match args[0].try_deref_or(string_cv)? {
         Object::Atom(SimpleDatum::String(s)) => Ok(ObjectRef::new_string(s.borrow().clone())),
         _ => Err(string_cv(&args[0])),
     }
@@ -153,7 +153,7 @@ fn string_copy(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn substring(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 3);
 
-    match &args[0].try_deref_or(string_cv)? {
+    match args[0].try_deref_or(string_cv)? {
         Object::Atom(SimpleDatum::String(s)) => {
             let start = get_len(&args[1])?;
             let end = get_len(&args[2])?;

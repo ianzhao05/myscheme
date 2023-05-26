@@ -30,9 +30,7 @@ pub mod test_util {
     macro_rules! int_datum {
         ($n:expr) => {
             $crate::datum::Datum::Simple($crate::datum::SimpleDatum::Number(
-                $crate::number::Number::Real($crate::number::RealKind::Integer(num::BigInt::from(
-                    $n,
-                ))),
+                $crate::number::Number::Real($crate::number::RealKind::Integer($n.into())),
             ))
         };
     }
@@ -42,7 +40,7 @@ pub mod test_util {
         ($n:expr,$d:expr) => {
             $crate::datum::Datum::Simple($crate::datum::SimpleDatum::Number(
                 $crate::number::Number::Real($crate::number::RealKind::Rational(
-                    num::BigRational::new(num::BigInt::from($n), num::BigInt::from($d)),
+                    num::BigRational::new($n.into(), $d.into()),
                 )),
             ))
         };
@@ -131,7 +129,7 @@ pub mod test_util {
         ($n:expr) => {
             $crate::expr::Expr::Literal($crate::expr::LiteralKind::SelfEvaluating(
                 $crate::expr::SelfEvaluatingKind::Number($crate::number::Number::Real(
-                    $crate::number::RealKind::Integer(num::BigInt::from($n)),
+                    $crate::number::RealKind::Integer($n.into()),
                 )),
             ))
         };

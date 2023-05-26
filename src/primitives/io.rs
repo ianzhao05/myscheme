@@ -10,7 +10,7 @@ use super::utils::{char_cv, ensure_arity, iport_cv, oport_cv, string_cv, Primiti
 fn open_file(args: &[ObjectRef], out: bool) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
-    match &args[0].try_deref_or(string_cv)? {
+    match args[0].try_deref_or(string_cv)? {
         Object::Atom(SimpleDatum::String(s)) => Ok(ObjectRef::new(Object::Port(
             (if out {
                 Port::new_output(&s.borrow())
@@ -26,7 +26,7 @@ fn open_file(args: &[ObjectRef], out: bool) -> Result<ObjectRef, EvalError> {
 fn close_input_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
-    match &args[0].try_deref_or(iport_cv)? {
+    match args[0].try_deref_or(iport_cv)? {
         Object::Port(Port::Input(op)) => {
             op.borrow_mut().take();
             Ok(ObjectRef::Void)
@@ -38,7 +38,7 @@ fn close_input_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn close_output_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
-    match &args[0].try_deref_or(oport_cv)? {
+    match args[0].try_deref_or(oport_cv)? {
         Object::Port(Port::Output(op)) => {
             op.borrow_mut().take();
             Ok(ObjectRef::Void)
@@ -62,7 +62,7 @@ fn current_output_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn write_char(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1, 2);
 
-    let c = match &args[0].try_deref_or(char_cv)? {
+    let c = match args[0].try_deref_or(char_cv)? {
         Object::Atom(SimpleDatum::Character(c)) => *c,
         _ => return Err(char_cv(&args[0])),
     };

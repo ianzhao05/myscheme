@@ -239,6 +239,36 @@ fn symbol_primitives() {
 }
 
 #[test]
+fn char_primitives() {
+    assert_eval_eq!("(char=? #\\a #\\a)", "#t");
+    assert_eval_eq!("(char<? #\\a #\\b)", "#t");
+    assert_eval_eq!("(char<? #\\A #\\B)", "#t");
+    assert_eval_eq!("(char<? #\\6 #\\9)", "#t");
+    assert_eval_eq!("(char<? #\\a #\\a)", "#f");
+    assert_eval_eq!("(char<=? #\\a #\\a)", "#t");
+    assert_eval_eq!("(char<=? #\\a #\\A)", "#f");
+    assert_eval_eq!("(char-ci<=? #\\a #\\A)", "#t");
+
+    assert_eval_eq!("(char-alphabetic? #\\a)", "#t");
+    assert_eval_eq!("(char-numeric? #\\1)", "#t");
+    assert_eval_eq!("(char-numeric? #\\a)", "#f");
+    assert_eval_eq!("(char-whitespace? #\\a)", "#f");
+    assert_eval_eq!("(char-whitespace? #\\space)", "#t");
+    assert_eval_eq!("(char-upper-case? #\\a)", "#f");
+    assert_eval_eq!("(char-upper-case? #\\A)", "#t");
+    assert_eval_eq!("(char-lower-case? #\\a)", "#t");
+    assert_eval_eq!("(char-lower-case? #\\A)", "#f");
+
+    assert_eval_eq!("(char-upcase #\\a)", "#\\A");
+    assert_eval_eq!("(char-downcase #\\A)", "#\\a");
+    assert_eval_eq!("(char-upcase #\\A)", "#\\A");
+    assert_eval_eq!("(char-downcase #\\1)", "#\\1");
+
+    assert_eval_eq!("(char->integer #\\a)", "97");
+    assert_eval_eq!("(integer->char 65)", "#\\A");
+}
+
+#[test]
 fn io_primitives() {
     use assert_fs::prelude::*;
 

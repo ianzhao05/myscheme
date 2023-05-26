@@ -6,8 +6,6 @@ use crate::evaler::{EvalError, EvalErrorKind};
 use crate::number::*;
 use crate::object::{Object, ObjectRef};
 
-use num::BigInt;
-
 use super::utils::{ensure_arity, num_cv, PrimitiveMap};
 
 fn integer(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
@@ -28,7 +26,7 @@ fn exact(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
     Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(
-        match &args[0].try_deref_or(num_cv)? {
+        match args[0].try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => n.is_exact(),
             _ => false,
         },
@@ -36,7 +34,7 @@ fn exact(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn add(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    let mut sum = Number::Real(RealKind::Integer(BigInt::from(0)));
+    let mut sum = Number::Real(RealKind::Integer(0.into()));
     for arg in args {
         match arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => sum += n.clone(),
@@ -49,7 +47,7 @@ fn add(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn sub(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1, usize::MAX);
 
-    let first = match &args[0].try_deref_or(num_cv)? {
+    let first = match args[0].try_deref_or(num_cv)? {
         Object::Atom(SimpleDatum::Number(n)) => n,
         _ => return Err(num_cv(&args[0])),
     };
@@ -69,7 +67,7 @@ fn sub(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn mul(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    let mut prod = Number::Real(RealKind::Integer(BigInt::from(1)));
+    let mut prod = Number::Real(RealKind::Integer(1.into()));
     for arg in args {
         match arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => prod *= n.clone(),
@@ -82,17 +80,17 @@ fn mul(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn div(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1, usize::MAX);
 
-    let first = match &args[0].try_deref_or(num_cv)? {
+    let first = match args[0].try_deref_or(num_cv)? {
         Object::Atom(SimpleDatum::Number(n)) => n,
         _ => return Err(num_cv(&args[0])),
     };
-    let zero = Number::Real(RealKind::Integer(BigInt::from(0)));
+    let zero = Number::Real(RealKind::Integer(0.into()));
     if args.len() == 1 {
         if Number::eq_val(first, &zero) {
             return Err(EvalError::new(EvalErrorKind::ZeroDivision));
         }
         return Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
-            Number::Real(RealKind::Integer(BigInt::from(1))) / first.clone(),
+            Number::Real(RealKind::Integer(1.into())) / first.clone(),
         ))));
     }
     let mut res = first.clone();
@@ -113,7 +111,7 @@ fn div(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn eq(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1, usize::MAX);
 
-    let first = match &args[0].try_deref_or(num_cv)? {
+    let first = match args[0].try_deref_or(num_cv)? {
         Object::Atom(SimpleDatum::Number(n)) => n,
         _ => return Err(num_cv(&args[0])),
     };
@@ -134,9 +132,9 @@ fn cmp(args: &[ObjectRef], ord: Ordering, strict: bool) -> Result<ObjectRef, Eva
     ensure_arity!(args, 1, usize::MAX);
 
     for w in args.windows(2) {
-        match &w[0].try_deref_or(num_cv)? {
+        match w[0].try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(Number::Real(n1))) => {
-                match &w[1].try_deref_or(num_cv)? {
+                match w[1].try_deref_or(num_cv)? {
                     Object::Atom(SimpleDatum::Number(Number::Real(n2))) => {
                         if strict && n1.partial_cmp(n2).unwrap() != ord
                             || !strict && n1.partial_cmp(n2).unwrap() == ord.reverse()
@@ -156,7 +154,7 @@ fn cmp(args: &[ObjectRef], ord: Ordering, strict: bool) -> Result<ObjectRef, Eva
 fn maxmin(args: &[ObjectRef], max: bool) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1, usize::MAX);
 
-    let first = match &args[0].try_deref_or(num_cv)? {
+    let first = match args[0].try_deref_or(num_cv)? {
         Object::Atom(SimpleDatum::Number(n)) => n,
         _ => return Err(num_cv(&args[0])),
     };

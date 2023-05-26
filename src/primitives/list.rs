@@ -14,7 +14,7 @@ fn cons(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn select(args: &[ObjectRef], first: bool) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
-    match &args[0].try_deref_or(pair_cv)? {
+    match args[0].try_deref_or(pair_cv)? {
         Object::Pair(p) => Ok(if first {
             p.borrow().0.clone()
         } else {
@@ -27,7 +27,7 @@ fn select(args: &[ObjectRef], first: bool) -> Result<ObjectRef, EvalError> {
 fn set_select(args: &[ObjectRef], first: bool) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 2);
 
-    match &args[0].try_deref_or(pair_cv)? {
+    match args[0].try_deref_or(pair_cv)? {
         Object::Pair(p) => {
             let mut b = p.borrow_mut();
             if first {

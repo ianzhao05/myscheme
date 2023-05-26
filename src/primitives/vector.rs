@@ -26,7 +26,7 @@ fn make_vector(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn vector_length(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
-    match &args[0].try_deref_or(vector_cv)? {
+    match args[0].try_deref_or(vector_cv)? {
         Object::Vector(v) => Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
             Number::Real(RealKind::Integer(v.borrow().len().into())),
         )))),
@@ -37,7 +37,7 @@ fn vector_length(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn vector_ref(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 2);
 
-    match &args[0].try_deref_or(vector_cv)? {
+    match args[0].try_deref_or(vector_cv)? {
         Object::Vector(v) => {
             let i = get_len(&args[1])?;
             let b = v.borrow();
@@ -56,7 +56,7 @@ fn vector_ref(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn vector_set(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 3);
 
-    match &args[0].try_deref_or(vector_cv)? {
+    match args[0].try_deref_or(vector_cv)? {
         Object::Vector(v) => {
             let i = get_len(&args[1])?;
             let mut b = v.borrow_mut();
@@ -76,7 +76,7 @@ fn vector_set(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn vector_fill(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 2);
 
-    match &args[0].try_deref_or(vector_cv)? {
+    match args[0].try_deref_or(vector_cv)? {
         Object::Vector(v) => {
             for e in v.borrow_mut().iter_mut() {
                 *e = args[1].clone();
