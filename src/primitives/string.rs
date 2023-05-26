@@ -111,7 +111,13 @@ fn string_fill(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     }
 }
 
-fn cmp(args: &[ObjectRef], ord: Ordering, strict: bool, ci: bool) -> Result<ObjectRef, EvalError> {
+fn string_cmp(
+    args: &[ObjectRef],
+    ord: Ordering,
+    strict: bool,
+    ci: bool,
+) -> Result<ObjectRef, EvalError> {
+    debug_assert!(ord != Ordering::Equal || strict);
     ensure_arity!(args, 2);
 
     let mut it = args.iter().map(|arg| match arg.try_deref_or(string_cv)? {
@@ -133,6 +139,15 @@ fn cmp(args: &[ObjectRef], ord: Ordering, strict: bool, ci: bool) -> Result<Obje
             cmp != ord.reverse()
         },
     ))))
+}
+
+fn string_copy(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
+    ensure_arity!(args, 1);
+
+    match &args[0].try_deref_or(string_cv)? {
+        Object::Atom(SimpleDatum::String(s)) => Ok(ObjectRef::new_string(s.borrow().clone())),
+        _ => Err(string_cv(&args[0])),
+    }
 }
 
 fn substring(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
@@ -180,24 +195,37 @@ pub fn primitives() -> PrimitiveMap {
     m.insert("string-ref", string_ref);
     m.insert("string-set!", string_set);
     m.insert("string-fill!", string_fill);
-    m.insert("string=?", |args| cmp(args, Ordering::Equal, true, false));
-    m.insert("string<?", |args| cmp(args, Ordering::Less, true, false));
-    m.insert("string>?", |args| cmp(args, Ordering::Greater, true, false));
-    m.insert("string<=?", |args| cmp(args, Ordering::Less, false, false));
-    m.insert("string>=?", |args| {
-        cmp(args, Ordering::Greater, false, false)
+    m.insert("string=?", |args| {
+        string_cmp(args, Ordering::Equal, true, false)
     });
-    m.insert("string-ci=?", |args| cmp(args, Ordering::Equal, true, true));
-    m.insert("string-ci<?", |args| cmp(args, Ordering::Less, true, true));
+    m.insert("string<?", |args| {
+        string_cmp(args, Ordering::Less, true, false)
+    });
+    m.insert("string>?", |args| {
+        string_cmp(args, Ordering::Greater, true, false)
+    });
+    m.insert("string<=?", |args| {
+        string_cmp(args, Ordering::Less, false, false)
+    });
+    m.insert("string>=?", |args| {
+        string_cmp(args, Ordering::Greater, false, false)
+    });
+    m.insert("string-ci=?", |args| {
+        string_cmp(args, Ordering::Equal, true, true)
+    });
+    m.insert("string-ci<?", |args| {
+        string_cmp(args, Ordering::Less, true, true)
+    });
     m.insert("string-ci>?", |args| {
-        cmp(args, Ordering::Greater, true, true)
+        string_cmp(args, Ordering::Greater, true, true)
     });
     m.insert("string-ci<=?", |args| {
-        cmp(args, Ordering::Less, false, true)
+        string_cmp(args, Ordering::Less, false, true)
     });
     m.insert("string-ci>=?", |args| {
-        cmp(args, Ordering::Greater, false, true)
+        string_cmp(args, Ordering::Greater, false, true)
     });
+    m.insert("string-copy", string_copy);
     m.insert("substring", substring);
     m.insert("string-append", string_append);
     m
@@ -235,6 +263,232 @@ mod tests {
             ])
             .unwrap(),
             &ObjectRef::new_string("zzz".to_owned())
+        ));
+    }
+
+    #[test]
+    fn test_string() {
+        assert!(ObjectRef::equal(
+            &string(&[
+                ObjectRef::new(atom_obj!(char_datum!('f'))),
+                ObjectRef::new(atom_obj!(char_datum!('o'))),
+                ObjectRef::new(atom_obj!(char_datum!('o')))
+            ])
+            .unwrap(),
+            &ObjectRef::new_string("foo".to_owned())
+        ));
+        assert_eq!(
+            string(&[
+                ObjectRef::new(atom_obj!(char_datum!('f'))),
+                ObjectRef::new(atom_obj!(int_datum!(1)))
+            ]),
+            Err(char_cv(&ObjectRef::new(atom_obj!(int_datum!(1)))))
+        );
+    }
+
+    #[test]
+    fn test_string_length() {
+        assert_eq!(
+            string_length(&[ObjectRef::new_string("foo".to_owned())]).unwrap(),
+            ObjectRef::new(atom_obj!(int_datum!(3)))
+        );
+        assert_eq!(
+            string_length(&[ObjectRef::new_string("".to_owned())]).unwrap(),
+            ObjectRef::new(atom_obj!(int_datum!(0)))
+        );
+        assert_eq!(
+            string_length(&[ObjectRef::new(atom_obj!(char_datum!('x')))]),
+            Err(string_cv(&ObjectRef::new(atom_obj!(char_datum!('x')))))
+        );
+    }
+
+    #[test]
+    fn test_string_ref() {
+        assert_eq!(
+            string_ref(&[
+                ObjectRef::new_string("01234".to_owned()),
+                ObjectRef::new(atom_obj!(int_datum!(3)))
+            ]),
+            Ok(ObjectRef::new(atom_obj!(char_datum!('3'))))
+        );
+        assert_eq!(
+            string_ref(&[
+                ObjectRef::new_string("01234".to_owned()),
+                ObjectRef::new(atom_obj!(int_datum!(5)))
+            ]),
+            Err(EvalError::new(EvalErrorKind::IndexOutOfBounds {
+                index: 5,
+                len: 5
+            }))
+        );
+    }
+
+    #[test]
+    fn test_string_set() {
+        let s = ObjectRef::new_string("abcde".to_owned());
+        assert_eq!(
+            string_set(&[
+                s.clone(),
+                ObjectRef::new(atom_obj!(int_datum!(2))),
+                ObjectRef::new(atom_obj!(char_datum!('x')))
+            ]),
+            Ok(ObjectRef::Void)
+        );
+        assert!(ObjectRef::equal(
+            &s,
+            &ObjectRef::new_string("abxde".to_owned())
+        ));
+        assert_eq!(
+            string_set(&[
+                s.clone(),
+                ObjectRef::new(atom_obj!(int_datum!(5))),
+                ObjectRef::new(atom_obj!(char_datum!('x')))
+            ]),
+            Err(EvalError::new(EvalErrorKind::IndexOutOfBounds {
+                index: 5,
+                len: 5
+            }))
+        );
+        assert_eq!(
+            string_set(&[
+                s.clone(),
+                ObjectRef::new(atom_obj!(int_datum!(0))),
+                ObjectRef::new(atom_obj!(int_datum!(1)))
+            ]),
+            Err(char_cv(&ObjectRef::new(atom_obj!(int_datum!(1)))))
+        );
+    }
+
+    #[test]
+    fn test_string_fill() {
+        let s = ObjectRef::new_string("abcde".to_owned());
+        assert_eq!(
+            string_fill(&[s.clone(), ObjectRef::new(atom_obj!(char_datum!('x')))]),
+            Ok(ObjectRef::Void)
+        );
+        assert!(ObjectRef::equal(
+            &s,
+            &ObjectRef::new_string("xxxxx".to_owned())
+        ));
+    }
+
+    #[test]
+    fn test_string_cmp() {
+        assert_eq!(
+            string_cmp(
+                &[
+                    ObjectRef::new_string("hello world".to_owned()),
+                    ObjectRef::new_string("hello world".to_owned())
+                ],
+                Ordering::Equal,
+                true,
+                false
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
+        );
+        assert_eq!(
+            string_cmp(
+                &[
+                    ObjectRef::new_string("hello world".to_owned()),
+                    ObjectRef::new_string("Hello World".to_owned())
+                ],
+                Ordering::Equal,
+                true,
+                false
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(false))))
+        );
+        assert_eq!(
+            string_cmp(
+                &[
+                    ObjectRef::new_string("hello world".to_owned()),
+                    ObjectRef::new_string("Hello World".to_owned())
+                ],
+                Ordering::Equal,
+                true,
+                true
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
+        );
+        assert_eq!(
+            string_cmp(
+                &[
+                    ObjectRef::new_string("aardvark".to_owned()),
+                    ObjectRef::new_string("zebra".to_owned())
+                ],
+                Ordering::Less,
+                true,
+                false
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
+        );
+        assert_eq!(
+            string_cmp(
+                &[
+                    ObjectRef::new_string("AAA".to_owned()),
+                    ObjectRef::new_string("aaa".to_owned())
+                ],
+                Ordering::Less,
+                true,
+                false
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
+        );
+        assert_eq!(
+            string_cmp(
+                &[
+                    ObjectRef::new_string("AAA".to_owned()),
+                    ObjectRef::new_string("aaa".to_owned())
+                ],
+                Ordering::Less,
+                true,
+                true
+            ),
+            Ok(ObjectRef::new(atom_obj!(bool_datum!(false))))
+        );
+    }
+
+    #[test]
+    fn test_string_copy() {
+        let s = ObjectRef::new_string("hello world".to_owned());
+        assert!(ObjectRef::equal(&s, &string_copy(&[s.clone()]).unwrap()));
+        assert_ne!(s, string_copy(&[s.clone()]).unwrap());
+    }
+
+    #[test]
+    fn test_substring() {
+        assert!(ObjectRef::equal(
+            &substring(&[
+                ObjectRef::new_string("hello world".to_owned()),
+                ObjectRef::new(atom_obj!(int_datum!(3))),
+                ObjectRef::new(atom_obj!(int_datum!(8)))
+            ])
+            .unwrap(),
+            &ObjectRef::new_string("lo wo".to_owned())
+        ));
+        assert_eq!(
+            substring(&[
+                ObjectRef::new_string("abc".to_owned()),
+                ObjectRef::new(atom_obj!(int_datum!(2))),
+                ObjectRef::new(atom_obj!(int_datum!(1)))
+            ]),
+            Err(EvalError::new(EvalErrorKind::IndexOutOfBounds {
+                index: 1,
+                len: 1
+            }))
+        );
+    }
+
+    #[test]
+    fn test_string_append() {
+        assert!(ObjectRef::equal(
+            &string_append(&[
+                ObjectRef::new_string("abc ".to_owned()),
+                ObjectRef::new_string("def ".to_owned()),
+                ObjectRef::new_string("ghi".to_owned())
+            ])
+            .unwrap(),
+            &ObjectRef::new_string("abc def ghi".to_owned())
         ));
     }
 }

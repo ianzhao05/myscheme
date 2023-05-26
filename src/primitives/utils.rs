@@ -80,3 +80,32 @@ cv_fn!(vector_cv, "vector");
 cv_fn!(len_cv, "valid length");
 cv_fn!(oport_cv, "output-port");
 cv_fn!(iport_cv, "input-port");
+
+#[cfg(test)]
+mod tests {
+    use super::{get_len, len_cv};
+    use crate::object::ObjectRef;
+    use crate::test_util::*;
+
+    #[test]
+    fn test_get_len() {
+        assert_eq!(get_len(&ObjectRef::new(atom_obj!(int_datum!(1)))), Ok(1));
+        assert_eq!(get_len(&ObjectRef::new(atom_obj!(int_datum!(56)))), Ok(56));
+        assert_eq!(
+            get_len(&ObjectRef::new(atom_obj!(rational_datum!(5, 1)))),
+            Ok(5)
+        );
+        assert_eq!(
+            get_len(&ObjectRef::new(atom_obj!(int_datum!(-1)))),
+            Err(len_cv(&ObjectRef::new(atom_obj!(int_datum!(-1)))))
+        );
+        assert_eq!(
+            get_len(&ObjectRef::new(atom_obj!(real_datum!(3.0)))),
+            Err(len_cv(&ObjectRef::new(atom_obj!(real_datum!(3.0)))))
+        );
+        assert_eq!(
+            get_len(&ObjectRef::new(atom_obj!(rational_datum!(8, 5)))),
+            Err(len_cv(&ObjectRef::new(atom_obj!(rational_datum!(8, 5)))))
+        );
+    }
+}

@@ -140,7 +140,7 @@ pub const PRELUDE: &str = "
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{evaler::EvalErrorKind, test_util::*};
+    use crate::test_util::*;
 
     #[test]
     fn test_cons() {
@@ -173,10 +173,7 @@ mod tests {
         );
         assert_eq!(
             select(&[ObjectRef::EmptyList], false),
-            Err(EvalError::new(EvalErrorKind::ContractViolation {
-                expected: "pair".into(),
-                got: ObjectRef::EmptyList
-            }))
+            Err(pair_cv(&ObjectRef::EmptyList))
         );
     }
 

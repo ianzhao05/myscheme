@@ -37,6 +37,8 @@ pub fn primitives() -> PrimitiveMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::evaler::EvalErrorKind;
+    use crate::test_util::*;
 
     #[test]
     fn test_symbol_to_string() {
@@ -47,6 +49,11 @@ mod tests {
             .unwrap(),
             &ObjectRef::new_string("foo".into())
         ));
+
+        assert_eq!(
+            symbol_to_string(&[ObjectRef::new(atom_obj!(int_datum!(3)))]),
+            Err(symbol_cv(&ObjectRef::new(atom_obj!(int_datum!(3)))))
+        );
     }
 
     #[test]
@@ -56,6 +63,18 @@ mod tests {
             Ok(ObjectRef::new(Object::Atom(SimpleDatum::Symbol(
                 "foo".into()
             ))))
+        );
+
+        assert_eq!(
+            string_to_symbol(&[
+                ObjectRef::new_string("foo".to_owned()),
+                ObjectRef::new_string("bar".to_owned())
+            ]),
+            Err(EvalError::new(EvalErrorKind::ArityMismatch {
+                expected: 1,
+                max_expected: 1,
+                got: 2
+            }))
         );
     }
 }
