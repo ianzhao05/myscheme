@@ -1,11 +1,12 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::collections::HashMap;
+use std::{cell::RefCell, rc::Rc};
 
-use crate::evaler::eval;
+use crate::eval_str;
 use crate::interner::Symbol;
 use crate::object::ObjectRef;
 use crate::primitives::{primitives, PRELUDE};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Env {
     parent: Option<Rc<RefCell<Env>>>,
     bindings: HashMap<Symbol, ObjectRef>,
@@ -20,19 +21,19 @@ impl Env {
     }
 
     pub fn primitives() -> Rc<RefCell<Self>> {
-        let env = Rc::new(RefCell::new(Self {
-            parent: None,
-            bindings: primitives(),
-        }));
-        PRELUDE.with(|prelude| {
-            for eod in prelude {
-                match eval(eod.clone(), env.clone()) {
-                    Ok(_) => (),
-                    Err(e) => panic!("Error evaluating prelude: {}", e),
-                }
+        thread_local! {
+            static PRIMITIVES_ENV: Rc<RefCell<Env>> = {
+                let env = Rc::new(RefCell::new(Env {
+                    parent: None,
+                    bindings: primitives(),
+                }));
+                eval_str(&PRELUDE, env.clone()).unwrap_or_else(|e| {
+                    panic!("Error while evaluating prelude: {e}");
+                });
+                env
             }
-        });
-        env
+        }
+        PRIMITIVES_ENV.with(|env| Rc::new((**env).clone()))
     }
 
     pub fn get(&self, name: Symbol) -> Option<ObjectRef> {

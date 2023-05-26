@@ -404,7 +404,7 @@ mod tests {
     fn parse_number() {
         assert_eq!(
             Number::from_str("1").unwrap(),
-            Number::Real(RealKind::Integer(BigInt::from(1)))
+            Number::Real(RealKind::Integer(1.into()))
         );
         assert_eq!(
             Number::from_str("1.0").unwrap(),
@@ -412,10 +412,7 @@ mod tests {
         );
         assert_eq!(
             Number::from_str("1/2").unwrap(),
-            Number::Real(RealKind::Rational(BigRational::new(
-                BigInt::from(1),
-                BigInt::from(2)
-            )))
+            Number::Real(RealKind::Rational(BigRational::new(1.into(), 2.into())))
         );
         assert_eq!(
             Number::from_str("-2.3").unwrap(),
@@ -423,10 +420,7 @@ mod tests {
         );
         assert_eq!(
             Number::from_str("-4/5").unwrap(),
-            Number::Real(RealKind::Rational(BigRational::new(
-                BigInt::from(-4),
-                BigInt::from(5)
-            )))
+            Number::Real(RealKind::Rational(BigRational::new((-4).into(), 5.into())))
         );
         assert_eq!(
             Number::from_str("1e2").unwrap(),
@@ -448,57 +442,38 @@ mod tests {
             Number::Real(RealKind::Real(2.0))
         );
         assert_eq!(
-            Number::Real(RealKind::Integer(BigInt::from(2))),
-            Number::Real(RealKind::Integer(BigInt::from(2))),
+            Number::Real(RealKind::Integer(2.into())),
+            Number::Real(RealKind::Integer(2.into())),
         );
         assert_eq!(
-            Number::Real(RealKind::Rational(BigRational::new(
-                BigInt::from(2),
-                BigInt::from(1)
-            ))),
-            Number::Real(RealKind::Rational(BigRational::new(
-                BigInt::from(2),
-                BigInt::from(1)
-            )))
+            Number::Real(RealKind::Rational(BigRational::new(2.into(), 1.into()))),
+            Number::Real(RealKind::Rational(BigRational::new(2.into(), 1.into())))
         );
         assert_eq!(
-            Number::Real(RealKind::Integer(BigInt::from(2))),
-            Number::Real(RealKind::Rational(BigRational::new(
-                BigInt::from(2),
-                BigInt::from(1)
-            )))
+            Number::Real(RealKind::Integer(2.into())),
+            Number::Real(RealKind::Rational(BigRational::new(2.into(), 1.into())))
         );
         assert_ne!(
             Number::Real(RealKind::Real(1.0)),
-            Number::Real(RealKind::Integer(BigInt::from(1)))
+            Number::Real(RealKind::Integer(1.into()))
         );
         assert!(Number::eq_val(
             &Number::Real(RealKind::Real(1.0)),
-            &Number::Real(RealKind::Integer(BigInt::from(1)))
+            &Number::Real(RealKind::Integer(1.into()))
         ));
         assert_ne!(
             Number::Real(RealKind::Real(0.5)),
-            Number::Real(RealKind::Rational(BigRational::new(
-                BigInt::from(1),
-                BigInt::from(2)
-            )))
+            Number::Real(RealKind::Rational(BigRational::new(1.into(), 2.into())))
         );
         assert!(Number::eq_val(
             &Number::Real(RealKind::Real(0.5)),
-            &Number::Real(RealKind::Rational(BigRational::new(
-                BigInt::from(1),
-                BigInt::from(2)
-            )))
+            &Number::Real(RealKind::Rational(BigRational::new(1.into(), 2.into())))
         ));
 
         assert!(
-            RealKind::Rational(BigRational::new(BigInt::from(1), BigInt::from(2)))
-                < RealKind::Integer(BigInt::from(1))
+            RealKind::Rational(BigRational::new(1.into(), 2.into())) < RealKind::Integer(1.into())
         );
-        assert!(RealKind::Integer(BigInt::from(1)) > RealKind::Real(0.5));
-        assert!(
-            RealKind::Real(0.25)
-                < RealKind::Rational(BigRational::new(BigInt::from(1), BigInt::from(2)))
-        );
+        assert!(RealKind::Integer(1.into()) > RealKind::Real(0.5));
+        assert!(RealKind::Real(0.25) < RealKind::Rational(BigRational::new(1.into(), 2.into())));
     }
 }

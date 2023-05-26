@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::fmt;
 
 use crate::interner::Symbol;
@@ -8,7 +9,7 @@ pub enum SimpleDatum {
     Boolean(bool),
     Number(Number),
     Character(char),
-    String(String),
+    String(RefCell<String>),
     Symbol(Symbol),
 }
 
@@ -36,9 +37,9 @@ impl fmt::Display for SimpleDatum {
             }
             SimpleDatum::String(s) => {
                 if f.alternate() {
-                    write!(f, "{s:?}")
+                    write!(f, "{:?}", s.borrow())
                 } else {
-                    s.fmt(f)
+                    s.borrow().fmt(f)
                 }
             }
             SimpleDatum::Symbol(s) => s.fmt(f),

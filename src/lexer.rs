@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::interner::Symbol;
@@ -102,28 +102,34 @@ impl<'a> Iterator for Lexer<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         const INITIAL: &str = r"a-zA-Z!$%&*:<=>?^_~/";
         const DELIMITER: &str = r#"[\s\(\)";]|$"#;
-        lazy_static! {
-            static ref ATMOSPHERE: Regex = Regex::new(r"\A(?:\s+|;.*)").unwrap();
-            static ref IDENTIFIER: Regex = Regex::new(&format!(
+
+        static ATMOSPHERE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\A(?:\s+|;.*)").unwrap());
+        static IDENTIFIER: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(&format!(
                 r"\A([{INITIAL}][{INITIAL}0-9+\-\.@]*|\+|-|\.{{3}})(?:{DELIMITER})"
             ))
-            .unwrap();
-            static ref CHARACTER: Regex = Regex::new(&format!(
+            .unwrap()
+        });
+        static CHARACTER: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(&format!(
                 r"\A#\\(space|newline|[^a-zA-Z]|[a-zA-z](?:{DELIMITER}))"
             ))
-            .unwrap();
-            static ref STRING: Regex = Regex::new(r#"\A"((?:\\.|[^\\"])*)""#).unwrap();
-            // TODO: implement complex numbers and other bases
-            static ref NUMBER: Regex = Regex::new(&format!(
+            .unwrap()
+        });
+        static STRING: Lazy<Regex> = Lazy::new(|| Regex::new(r#"\A"((?:\\.|[^\\"])*)""#).unwrap());
+        // TODO: implement complex numbers and other bases
+        static NUMBER: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(&format!(
                 r"(?x)\A
                 ([+-]?
                     (?:[0-9]+/[0-9]+|(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)
                     (?:[eE][+-]?[0-9]+)?)
                 )(?:{DELIMITER})"
             ))
-            .unwrap();
-            static ref DOT: Regex = Regex::new(&format!(r"\A\.(?:{DELIMITER})")).unwrap();
-        }
+            .unwrap()
+        });
+        static DOT: Lazy<Regex> =
+            Lazy::new(|| Regex::new(&format!(r"\A\.(?:{DELIMITER})")).unwrap());
 
         while self.pos < self.exp.len() {
             let rest = &self.exp[self.pos..];

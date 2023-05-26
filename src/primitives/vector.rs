@@ -1,44 +1,19 @@
 use std::collections::HashMap;
 
-use num::bigint::Sign;
-
 use crate::datum::SimpleDatum;
 use crate::evaler::{EvalError, EvalErrorKind};
 use crate::number::{Number, RealKind};
 use crate::object::{Object, ObjectRef};
 
-use super::{cv_fn, PrimitiveMap};
-
-cv_fn!(vector_cv, "vector");
-cv_fn!(len_cv, "valid length");
-
-fn get_len(arg: &ObjectRef) -> Result<usize, EvalError> {
-    match arg.try_deref_or(len_cv)? {
-        Object::Atom(SimpleDatum::Number(Number::Real(n))) => match n {
-            RealKind::Rational(r) if r.is_integer() && r.numer().sign() != Sign::Minus => {
-                r.to_integer().try_into().map_err(|_| len_cv(arg))
-            }
-            RealKind::Integer(i) if i.sign() != Sign::Minus => {
-                i.try_into().map_err(|_| len_cv(arg))
-            }
-            _ => return Err(len_cv(arg)),
-        },
-        _ => return Err(len_cv(arg)),
-    }
-}
+use super::utils::{ensure_arity, get_len, vector_cv, PrimitiveMap};
 
 fn vector(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     Ok(ObjectRef::new_vector(args.to_vec()))
 }
 
 fn make_vector(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 && args.len() != 2 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: true,
-        }));
-    }
+    ensure_arity!(args, 1, 2);
+
     let k = get_len(&args[0])?;
     let fill = if args.len() == 2 {
         args[1].clone()
@@ -49,14 +24,9 @@ fn make_vector(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn vector_length(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: false,
-        }));
-    }
-    match &args[0].try_deref_or(vector_cv)? {
+    ensure_arity!(args, 1);
+
+    match args[0].try_deref_or(vector_cv)? {
         Object::Vector(v) => Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
             Number::Real(RealKind::Integer(v.borrow().len().into())),
         )))),
@@ -65,14 +35,9 @@ fn vector_length(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn vector_ref(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 2 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 2,
-            got: args.len(),
-            rest: false,
-        }));
-    }
-    match &args[0].try_deref_or(vector_cv)? {
+    ensure_arity!(args, 2);
+
+    match args[0].try_deref_or(vector_cv)? {
         Object::Vector(v) => {
             let i = get_len(&args[1])?;
             let b = v.borrow();
@@ -89,14 +54,9 @@ fn vector_ref(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn vector_set(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 3 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 3,
-            got: args.len(),
-            rest: false,
-        }));
-    }
-    match &args[0].try_deref_or(vector_cv)? {
+    ensure_arity!(args, 3);
+
+    match args[0].try_deref_or(vector_cv)? {
         Object::Vector(v) => {
             let i = get_len(&args[1])?;
             let mut b = v.borrow_mut();
@@ -113,6 +73,20 @@ fn vector_set(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     }
 }
 
+fn vector_fill(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
+    ensure_arity!(args, 2);
+
+    match args[0].try_deref_or(vector_cv)? {
+        Object::Vector(v) => {
+            for e in v.borrow_mut().iter_mut() {
+                *e = args[1].clone();
+            }
+            Ok(ObjectRef::Void)
+        }
+        _ => Err(vector_cv(&args[0])),
+    }
+}
+
 pub fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("vector", vector);
@@ -120,6 +94,7 @@ pub fn primitives() -> PrimitiveMap {
     m.insert("vector-length", vector_length);
     m.insert("vector-ref", vector_ref);
     m.insert("vector-set!", vector_set);
+    m.insert("vector-fill!", vector_fill);
     m
 }
 
@@ -145,6 +120,7 @@ pub const PRELUDE: &str = "
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::primitives::utils::len_cv;
     use crate::test_util::*;
 
     #[test]
@@ -165,18 +141,12 @@ mod tests {
 
         assert_eq!(
             make_vector(&[ObjectRef::new(atom_obj!(int_datum!(-1)))]),
-            Err(EvalError::new(EvalErrorKind::ContractViolation {
-                expected: "valid length".into(),
-                got: ObjectRef::new(atom_obj!(int_datum!(-1)))
-            }))
+            Err(len_cv(&ObjectRef::new(atom_obj!(int_datum!(-1)))))
         );
 
         assert_eq!(
             make_vector(&[ObjectRef::new(atom_obj!(real_datum!(3.0)))]),
-            Err(EvalError::new(EvalErrorKind::ContractViolation {
-                expected: "valid length".into(),
-                got: ObjectRef::new(atom_obj!(real_datum!(3.0)))
-            }))
+            Err(len_cv(&ObjectRef::new(atom_obj!(real_datum!(3.0)))))
         );
     }
 
@@ -193,10 +163,7 @@ mod tests {
 
         assert_eq!(
             vector_length(&[ObjectRef::EmptyList]),
-            Err(EvalError::new(EvalErrorKind::ContractViolation {
-                expected: "vector".into(),
-                got: ObjectRef::EmptyList
-            }))
+            Err(vector_cv(&ObjectRef::EmptyList))
         );
     }
 
@@ -249,5 +216,22 @@ mod tests {
             vector_ref(&[v.clone(), ObjectRef::new(atom_obj!(int_datum!(1)))]),
             Ok(ObjectRef::new(atom_obj!(int_datum!(42))))
         );
+    }
+
+    #[test]
+    fn test_vector_fill() {
+        let v = ObjectRef::new_vector(vec![
+            ObjectRef::new(atom_obj!(int_datum!(1))),
+            ObjectRef::new(atom_obj!(int_datum!(2))),
+            ObjectRef::new(atom_obj!(int_datum!(3))),
+        ]);
+        assert_eq!(
+            vector_fill(&[v.clone(), ObjectRef::new(atom_obj!(int_datum!(42)))]),
+            Ok(ObjectRef::Void)
+        );
+        assert!(ObjectRef::equal(
+            &v,
+            &ObjectRef::new_vector(vec![ObjectRef::new(atom_obj!(int_datum!(42))); 3])
+        ));
     }
 }

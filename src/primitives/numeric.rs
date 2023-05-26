@@ -6,20 +6,11 @@ use crate::evaler::{EvalError, EvalErrorKind};
 use crate::number::*;
 use crate::object::{Object, ObjectRef};
 
-use num::BigInt;
-
-use super::{cv_fn, PrimitiveMap};
-
-cv_fn!(num_cv, "number");
+use super::utils::{ensure_arity, num_cv, PrimitiveMap};
 
 fn integer(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 1);
+
     Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(
         match &args[0] {
             ObjectRef::Object(o) => match &**o {
@@ -32,15 +23,10 @@ fn integer(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn exact(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 1);
+
     Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(
-        match &args[0].try_deref_or(num_cv)? {
+        match args[0].try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => n.is_exact(),
             _ => false,
         },
@@ -48,9 +34,9 @@ fn exact(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn add(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    let mut sum = Number::Real(RealKind::Integer(BigInt::from(0)));
+    let mut sum = Number::Real(RealKind::Integer(0.into()));
     for arg in args {
-        match &*arg.try_deref_or(num_cv)? {
+        match arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => sum += n.clone(),
             _ => return Err(num_cv(arg)),
         }
@@ -59,14 +45,9 @@ fn add(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn sub(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.is_empty() {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: true,
-        }));
-    }
-    let first = match &args[0].try_deref_or(num_cv)? {
+    ensure_arity!(args, 1, usize::MAX);
+
+    let first = match args[0].try_deref_or(num_cv)? {
         Object::Atom(SimpleDatum::Number(n)) => n,
         _ => return Err(num_cv(&args[0])),
     };
@@ -77,7 +58,7 @@ fn sub(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     }
     let mut res = first.clone();
     for arg in &args[1..] {
-        match &*arg.try_deref_or(num_cv)? {
+        match arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => res -= n.clone(),
             _ => return Err(num_cv(arg)),
         }
@@ -86,9 +67,9 @@ fn sub(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn mul(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    let mut prod = Number::Real(RealKind::Integer(BigInt::from(1)));
+    let mut prod = Number::Real(RealKind::Integer(1.into()));
     for arg in args {
-        match &*arg.try_deref_or(num_cv)? {
+        match arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => prod *= n.clone(),
             _ => return Err(num_cv(arg)),
         }
@@ -97,29 +78,24 @@ fn mul(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn div(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.is_empty() {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: true,
-        }));
-    }
-    let first = match &args[0].try_deref_or(num_cv)? {
+    ensure_arity!(args, 1, usize::MAX);
+
+    let first = match args[0].try_deref_or(num_cv)? {
         Object::Atom(SimpleDatum::Number(n)) => n,
         _ => return Err(num_cv(&args[0])),
     };
-    let zero = Number::Real(RealKind::Integer(BigInt::from(0)));
+    let zero = Number::Real(RealKind::Integer(0.into()));
     if args.len() == 1 {
         if Number::eq_val(first, &zero) {
             return Err(EvalError::new(EvalErrorKind::ZeroDivision));
         }
         return Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
-            Number::Real(RealKind::Integer(BigInt::from(1))) / first.clone(),
+            Number::Real(RealKind::Integer(1.into())) / first.clone(),
         ))));
     }
     let mut res = first.clone();
     for arg in &args[1..] {
-        match &*arg.try_deref_or(num_cv)? {
+        match arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => {
                 if Number::eq_val(n, &zero) {
                     return Err(EvalError::new(EvalErrorKind::ZeroDivision));
@@ -133,19 +109,14 @@ fn div(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn eq(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
-    if args.is_empty() {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: true,
-        }));
-    }
-    let first = match &args[0].try_deref_or(num_cv)? {
+    ensure_arity!(args, 1, usize::MAX);
+
+    let first = match args[0].try_deref_or(num_cv)? {
         Object::Atom(SimpleDatum::Number(n)) => n,
         _ => return Err(num_cv(&args[0])),
     };
     for arg in &args[1..] {
-        match &*arg.try_deref_or(num_cv)? {
+        match arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => {
                 if !Number::eq_val(first, n) {
                     return Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(false))));
@@ -158,17 +129,12 @@ fn eq(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 }
 
 fn cmp(args: &[ObjectRef], ord: Ordering, strict: bool) -> Result<ObjectRef, EvalError> {
-    if args.is_empty() {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: true,
-        }));
-    }
+    ensure_arity!(args, 1, usize::MAX);
+
     for w in args.windows(2) {
-        match &w[0].try_deref_or(num_cv)? {
+        match w[0].try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(Number::Real(n1))) => {
-                match &w[1].try_deref_or(num_cv)? {
+                match w[1].try_deref_or(num_cv)? {
                     Object::Atom(SimpleDatum::Number(Number::Real(n2))) => {
                         if strict && n1.partial_cmp(n2).unwrap() != ord
                             || !strict && n1.partial_cmp(n2).unwrap() == ord.reverse()
@@ -186,20 +152,15 @@ fn cmp(args: &[ObjectRef], ord: Ordering, strict: bool) -> Result<ObjectRef, Eva
 }
 
 fn maxmin(args: &[ObjectRef], max: bool) -> Result<ObjectRef, EvalError> {
-    if args.is_empty() {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: true,
-        }));
-    }
-    let first = match &args[0].try_deref_or(num_cv)? {
+    ensure_arity!(args, 1, usize::MAX);
+
+    let first = match args[0].try_deref_or(num_cv)? {
         Object::Atom(SimpleDatum::Number(n)) => n,
         _ => return Err(num_cv(&args[0])),
     };
     let mut res = first.clone();
     for arg in &args[1..] {
-        match &*arg.try_deref_or(num_cv)? {
+        match arg.try_deref_or(num_cv)? {
             Object::Atom(SimpleDatum::Number(n)) => {
                 res = if max {
                     res.max(n.clone())
@@ -301,25 +262,19 @@ mod tests {
         );
         assert_eq!(
             add(&[ObjectRef::new(atom_obj!(bool_datum!(true)))]),
-            Err(EvalError::new(EvalErrorKind::ContractViolation {
-                expected: "number".into(),
-                got: ObjectRef::new(atom_obj!(bool_datum!(true)))
-            }))
+            Err(num_cv(&ObjectRef::new(atom_obj!(bool_datum!(true)))))
         );
         assert_eq!(
             add(&[ObjectRef::EmptyList]),
-            Err(EvalError::new(EvalErrorKind::ContractViolation {
-                expected: "number".into(),
-                got: ObjectRef::EmptyList
-            }))
+            Err(num_cv(&ObjectRef::EmptyList))
         );
 
         assert_eq!(
             sub(&[]),
             Err(EvalError::new(EvalErrorKind::ArityMismatch {
                 expected: 1,
+                max_expected: usize::MAX,
                 got: 0,
-                rest: true
             }))
         );
         assert_eq!(
@@ -349,8 +304,8 @@ mod tests {
             div(&[]),
             Err(EvalError::new(EvalErrorKind::ArityMismatch {
                 expected: 1,
+                max_expected: usize::MAX,
                 got: 0,
-                rest: true
             }))
         );
         assert_eq!(
@@ -373,8 +328,8 @@ mod tests {
             eq(&[]),
             Err(EvalError::new(EvalErrorKind::ArityMismatch {
                 expected: 1,
+                max_expected: usize::MAX,
                 got: 0,
-                rest: true
             }))
         );
         assert_eq!(

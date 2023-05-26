@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Mutex;
 
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Symbol(usize);
@@ -49,9 +49,7 @@ impl Interner {
     }
 }
 
-lazy_static! {
-    static ref INTERNER: Mutex<Interner> = Mutex::new(Interner::new());
-}
+static INTERNER: Lazy<Mutex<Interner>> = Lazy::new(|| Mutex::new(Interner::new()));
 
 impl From<String> for Symbol {
     fn from(s: String) -> Self {

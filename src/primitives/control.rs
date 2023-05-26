@@ -20,8 +20,8 @@ fn callcc(state: State) -> Bouncer {
     if rib.len() != 1 {
         return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ArityMismatch {
             expected: 1,
+            max_expected: 1,
             got: rib.len(),
-            rest: false,
         })));
     }
     let proc = rib[0].clone();
@@ -48,8 +48,8 @@ fn apply(state: State) -> Bouncer {
     if rib.len() < 2 {
         return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ArityMismatch {
             expected: 2,
+            max_expected: usize::MAX,
             got: rib.len(),
-            rest: true,
         })));
     }
     let mut nrib: Vec<_> = rib[1..rib.len() - 1].iter().cloned().collect();
@@ -65,7 +65,7 @@ fn apply(state: State) -> Bouncer {
                 }
                 _ => {
                     return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ContractViolation {
-                        expected: "list".into(),
+                        expected: "list",
                         got: last.clone(),
                     })))
                 }
@@ -73,7 +73,7 @@ fn apply(state: State) -> Bouncer {
             ObjectRef::EmptyList => break,
             _ => {
                 return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ContractViolation {
-                    expected: "list".into(),
+                    expected: "list",
                     got: last.clone(),
                 })))
             }

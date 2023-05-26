@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use crate::datum::SimpleDatum;
-use crate::evaler::{EvalError, EvalErrorKind};
+use crate::evaler::EvalError;
 use crate::object::{Object, ObjectRef};
 use crate::port::Port;
 
-use super::PrimitiveMap;
+use super::utils::{ensure_arity, PrimitiveMap};
 
 #[derive(PartialEq)]
 enum Type {
@@ -25,13 +25,8 @@ enum Type {
 }
 
 fn pred(args: &[ObjectRef], t: Type) -> Result<ObjectRef, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(EvalErrorKind::ArityMismatch {
-            expected: 1,
-            got: args.len(),
-            rest: false,
-        }));
-    }
+    ensure_arity!(args, 1);
+
     Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(
         match &args[0] {
             ObjectRef::Object(o) => match &**o {
