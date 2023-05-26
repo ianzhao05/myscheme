@@ -1,3 +1,4 @@
+mod char;
 mod control;
 mod delay;
 mod eq;
@@ -29,6 +30,7 @@ pub fn primitives() -> HashMap<Symbol, ObjectRef> {
         io::primitives(),
         string::primitives(),
         symbol::primitives(),
+        char::primitives(),
     ])
     .into_iter()
     .map(|(k, v)| {

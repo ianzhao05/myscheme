@@ -80,6 +80,7 @@ cv_fn!(vector_cv, "vector");
 cv_fn!(len_cv, "valid length");
 cv_fn!(oport_cv, "output-port");
 cv_fn!(iport_cv, "input-port");
+cv_fn!(charval_cv, "character value");
 
 #[cfg(test)]
 mod tests {
