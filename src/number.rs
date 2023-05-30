@@ -3,13 +3,131 @@ use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::str::FromStr;
 
-use num::{BigInt, BigRational, Complex, ToPrimitive};
+use num::{BigInt, BigRational, Complex, Signed, ToPrimitive, Zero};
 
 #[derive(Debug, Clone)]
 pub enum RealKind {
     Real(f64),
     Rational(BigRational),
     Integer(BigInt),
+}
+
+impl RealKind {
+    pub fn eq_val(this: &Self, other: &Self) -> bool {
+        match (this, other) {
+            (RealKind::Real(a), _) => match other {
+                RealKind::Real(b) => a == b,
+                RealKind::Rational(b) => a == &b.to_f64().unwrap_or(0.0),
+                RealKind::Integer(b) => a == &b.to_f64().unwrap_or(0.0),
+            },
+            (_, RealKind::Real(b)) => match this {
+                RealKind::Real(a) => a == b,
+                RealKind::Rational(a) => &a.to_f64().unwrap_or(0.0) == b,
+                RealKind::Integer(a) => &a.to_f64().unwrap_or(0.0) == b,
+            },
+            _ => this == other,
+        }
+    }
+
+    pub fn is_zero(&self) -> bool {
+        match self {
+            RealKind::Real(r) => r.is_zero(),
+            RealKind::Rational(r) => r.is_zero(),
+            RealKind::Integer(i) => i.is_zero(),
+        }
+    }
+
+    pub fn is_negative(&self) -> bool {
+        match self {
+            RealKind::Real(r) => r.is_negative() && !r.is_zero(),
+            RealKind::Rational(r) => r.is_negative(),
+            RealKind::Integer(i) => i.is_negative(),
+        }
+    }
+
+    pub fn is_positive(&self) -> bool {
+        match self {
+            RealKind::Real(r) => r.is_positive() && !r.is_zero(),
+            RealKind::Rational(r) => r.is_positive(),
+            RealKind::Integer(i) => i.is_positive(),
+        }
+    }
+
+    pub fn is_exact(&self) -> bool {
+        match self {
+            RealKind::Real(_) => false,
+            RealKind::Rational(_) => true,
+            RealKind::Integer(_) => true,
+        }
+    }
+
+    pub fn is_integer(&self) -> bool {
+        match self {
+            RealKind::Real(r) => r.fract() == 0.0,
+            RealKind::Rational(r) => r.is_integer(),
+            RealKind::Integer(_) => true,
+        }
+    }
+
+    pub fn abs(&self) -> Self {
+        match self {
+            RealKind::Real(r) => RealKind::Real(r.abs()),
+            RealKind::Rational(r) => RealKind::Rational(r.abs()),
+            RealKind::Integer(i) => RealKind::Integer(i.abs()),
+        }
+    }
+
+    pub fn max(self, other: Self) -> Self {
+        match (self, other) {
+            (RealKind::Real(a), RealKind::Real(b)) => RealKind::Real(a.max(b)),
+            (RealKind::Rational(a), RealKind::Rational(b)) => RealKind::Rational(a.max(b)),
+            (RealKind::Integer(a), RealKind::Integer(b)) => RealKind::Integer(a.max(b)),
+            (RealKind::Rational(a), RealKind::Integer(b)) => {
+                RealKind::Rational(a.max(BigRational::from(b)))
+            }
+            (RealKind::Integer(a), RealKind::Rational(b)) => {
+                RealKind::Rational(BigRational::from(a).max(b))
+            }
+            (RealKind::Real(a), RealKind::Rational(b)) => {
+                RealKind::Real(a.max(b.to_f64().unwrap_or(0.0)))
+            }
+            (RealKind::Rational(a), RealKind::Real(b)) => {
+                RealKind::Real(a.to_f64().unwrap_or(0.0).max(b))
+            }
+            (RealKind::Real(a), RealKind::Integer(b)) => {
+                RealKind::Real(a.max(b.to_f64().unwrap_or(0.0)))
+            }
+            (RealKind::Integer(a), RealKind::Real(b)) => {
+                RealKind::Real(a.to_f64().unwrap_or(0.0).max(b))
+            }
+        }
+    }
+
+    pub fn min(self, other: Self) -> Self {
+        match (self, other) {
+            (RealKind::Real(a), RealKind::Real(b)) => RealKind::Real(a.min(b)),
+            (RealKind::Rational(a), RealKind::Rational(b)) => RealKind::Rational(a.min(b)),
+            (RealKind::Integer(a), RealKind::Integer(b)) => RealKind::Integer(a.min(b)),
+            (RealKind::Rational(a), RealKind::Integer(b)) => {
+                RealKind::Rational(a.min(BigRational::from(b)))
+            }
+            (RealKind::Integer(a), RealKind::Rational(b)) => {
+                RealKind::Rational(BigRational::from(a).min(b))
+            }
+            (RealKind::Real(a), RealKind::Rational(b)) => {
+                RealKind::Real(a.min(b.to_f64().unwrap_or(0.0)))
+            }
+            (RealKind::Rational(a), RealKind::Real(b)) => {
+                RealKind::Real(a.to_f64().unwrap_or(0.0).min(b))
+            }
+            (RealKind::Real(a), RealKind::Integer(b)) => {
+                RealKind::Real(a.min(b.to_f64().unwrap_or(0.0)))
+            }
+            (RealKind::Integer(a), RealKind::Real(b)) => {
+                RealKind::Real(a.to_f64().unwrap_or(0.0).min(b))
+            }
+        }
+    }
 }
 
 impl PartialEq for RealKind {
@@ -73,103 +191,55 @@ impl fmt::Display for Number {
 impl Number {
     pub fn eq_val(this: &Self, other: &Self) -> bool {
         match (this, other) {
-            (Number::Real(a), Number::Real(b)) => match (a, b) {
-                (RealKind::Real(a), _) => match b {
-                    RealKind::Real(b) => a == b,
-                    RealKind::Rational(b) => a == &b.to_f64().unwrap_or(0.0),
-                    RealKind::Integer(b) => a == &b.to_f64().unwrap_or(0.0),
-                },
-                (_, RealKind::Real(b)) => match a {
-                    RealKind::Real(a) => a == b,
-                    RealKind::Rational(a) => &a.to_f64().unwrap_or(0.0) == b,
-                    RealKind::Integer(a) => &a.to_f64().unwrap_or(0.0) == b,
-                },
-                _ => a == b,
-            },
+            (Number::Real(a), Number::Real(b)) => RealKind::eq_val(a, b),
         }
     }
 
     pub fn is_exact(&self) -> bool {
         match self {
-            Number::Real(r) => match r {
-                RealKind::Real(_) => false,
-                RealKind::Rational(_) => true,
-                RealKind::Integer(_) => true,
-            },
+            Number::Real(r) => r.is_exact(),
+        }
+    }
+
+    pub fn is_zero(&self) -> bool {
+        match self {
+            Number::Real(r) => r.is_zero(),
+        }
+    }
+
+    pub fn is_negative(&self) -> bool {
+        match self {
+            Number::Real(r) => r.is_negative(),
+        }
+    }
+
+    pub fn is_positive(&self) -> bool {
+        match self {
+            Number::Real(r) => r.is_positive(),
         }
     }
 
     pub fn is_integer(&self) -> bool {
         match self {
-            Number::Real(r) => match r {
-                RealKind::Real(r) => r.fract() == 0.0,
-                RealKind::Rational(r) => r.is_integer(),
-                RealKind::Integer(_) => true,
-            },
+            Number::Real(r) => r.is_integer(),
+        }
+    }
+
+    pub fn abs(&self) -> Self {
+        match self {
+            Number::Real(r) => Number::Real(r.abs()),
         }
     }
 
     pub fn max(self, other: Self) -> Self {
         match (self, other) {
-            (Number::Real(a), Number::Real(b)) => match (a, b) {
-                (RealKind::Real(a), RealKind::Real(b)) => Number::Real(RealKind::Real(a.max(b))),
-                (RealKind::Rational(a), RealKind::Rational(b)) => {
-                    Number::Real(RealKind::Rational(a.max(b)))
-                }
-                (RealKind::Integer(a), RealKind::Integer(b)) => {
-                    Number::Real(RealKind::Integer(a.max(b)))
-                }
-                (RealKind::Rational(a), RealKind::Integer(b)) => {
-                    Number::Real(RealKind::Rational(a.max(BigRational::from(b))))
-                }
-                (RealKind::Integer(a), RealKind::Rational(b)) => {
-                    Number::Real(RealKind::Rational(BigRational::from(a).max(b)))
-                }
-                (RealKind::Real(a), RealKind::Rational(b)) => {
-                    Number::Real(RealKind::Real(a.max(b.to_f64().unwrap_or(0.0))))
-                }
-                (RealKind::Rational(a), RealKind::Real(b)) => {
-                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0).max(b)))
-                }
-                (RealKind::Real(a), RealKind::Integer(b)) => {
-                    Number::Real(RealKind::Real(a.max(b.to_f64().unwrap_or(0.0))))
-                }
-                (RealKind::Integer(a), RealKind::Real(b)) => {
-                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0).max(b)))
-                }
-            },
+            (Number::Real(a), Number::Real(b)) => Number::Real(a.max(b)),
         }
     }
 
     pub fn min(self, other: Self) -> Self {
         match (self, other) {
-            (Number::Real(a), Number::Real(b)) => match (a, b) {
-                (RealKind::Real(a), RealKind::Real(b)) => Number::Real(RealKind::Real(a.min(b))),
-                (RealKind::Rational(a), RealKind::Rational(b)) => {
-                    Number::Real(RealKind::Rational(a.min(b)))
-                }
-                (RealKind::Integer(a), RealKind::Integer(b)) => {
-                    Number::Real(RealKind::Integer(a.min(b)))
-                }
-                (RealKind::Rational(a), RealKind::Integer(b)) => {
-                    Number::Real(RealKind::Rational(a.min(BigRational::from(b))))
-                }
-                (RealKind::Integer(a), RealKind::Rational(b)) => {
-                    Number::Real(RealKind::Rational(BigRational::from(a).min(b)))
-                }
-                (RealKind::Real(a), RealKind::Rational(b)) => {
-                    Number::Real(RealKind::Real(a.min(b.to_f64().unwrap_or(0.0))))
-                }
-                (RealKind::Rational(a), RealKind::Real(b)) => {
-                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0).min(b)))
-                }
-                (RealKind::Real(a), RealKind::Integer(b)) => {
-                    Number::Real(RealKind::Real(a.min(b.to_f64().unwrap_or(0.0))))
-                }
-                (RealKind::Integer(a), RealKind::Real(b)) => {
-                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0).min(b)))
-                }
-            },
+            (Number::Real(a), Number::Real(b)) => Number::Real(a.min(b)),
         }
     }
 }
@@ -383,7 +453,7 @@ impl FromStr for Number {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ParseNumberError {
     message: String,
 }
@@ -402,30 +472,24 @@ mod tests {
 
     #[test]
     fn parse_number() {
+        assert_eq!("1".parse(), Ok(Number::Real(RealKind::Integer(1.into()))));
+        assert_eq!("1.0".parse(), Ok(Number::Real(RealKind::Real(1.0))));
         assert_eq!(
-            Number::from_str("1").unwrap(),
-            Number::Real(RealKind::Integer(1.into()))
+            "1/2".parse(),
+            Ok(Number::Real(RealKind::Rational(BigRational::new(
+                1.into(),
+                2.into()
+            ))))
         );
+        assert_eq!("-2.3".parse(), Ok(Number::Real(RealKind::Real(-2.3))));
         assert_eq!(
-            Number::from_str("1.0").unwrap(),
-            Number::Real(RealKind::Real(1.0))
+            "-4/5".parse(),
+            Ok(Number::Real(RealKind::Rational(BigRational::new(
+                (-4).into(),
+                5.into()
+            ))))
         );
-        assert_eq!(
-            Number::from_str("1/2").unwrap(),
-            Number::Real(RealKind::Rational(BigRational::new(1.into(), 2.into())))
-        );
-        assert_eq!(
-            Number::from_str("-2.3").unwrap(),
-            Number::Real(RealKind::Real(-2.3))
-        );
-        assert_eq!(
-            Number::from_str("-4/5").unwrap(),
-            Number::Real(RealKind::Rational(BigRational::new((-4).into(), 5.into())))
-        );
-        assert_eq!(
-            Number::from_str("1e2").unwrap(),
-            Number::Real(RealKind::Real(1e2))
-        );
+        assert_eq!("1e2".parse(), Ok(Number::Real(RealKind::Real(1e2))));
     }
 
     #[test]
@@ -433,6 +497,32 @@ mod tests {
         assert!(Number::from_str("1.0.0").is_err());
         assert!(Number::from_str("1/0").is_err());
         assert!(Number::from_str("1.0/2").is_err());
+    }
+
+    #[test]
+    fn predicates() {
+        assert!(Number::Real(RealKind::Integer(1.into())).is_exact());
+        assert!(Number::Real(RealKind::Rational(BigRational::new(1.into(), 2.into()))).is_exact());
+        assert!(!Number::Real(RealKind::Real(1.0)).is_exact());
+
+        assert!(Number::Real(RealKind::Integer(0.into())).is_zero());
+        assert!(!Number::Real(RealKind::Integer(1.into())).is_zero());
+
+        assert!(Number::Real(RealKind::Integer((-1).into())).is_negative());
+        assert!(!Number::Real(RealKind::Integer(0.into())).is_negative());
+
+        assert!(Number::Real(RealKind::Integer(1.into())).is_positive());
+        assert!(!Number::Real(RealKind::Integer(0.into())).is_positive());
+
+        assert!(Number::Real(RealKind::Integer(1.into())).is_integer());
+        assert!(
+            !Number::Real(RealKind::Rational(BigRational::new(1.into(), 2.into()))).is_integer()
+        );
+        assert!(
+            Number::Real(RealKind::Rational(BigRational::new(2.into(), 1.into()))).is_integer()
+        );
+        assert!(Number::Real(RealKind::Real(1.0)).is_integer());
+        assert!(!Number::Real(RealKind::Real(1.5)).is_integer());
     }
 
     #[test]

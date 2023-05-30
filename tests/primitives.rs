@@ -95,6 +95,9 @@ fn num_primitives() {
 
     assert_eval_eq!("(min 1 2 -3 4 5)", "-3");
     assert_eval_eq!("(min 1 2 -3 4.0 5)", "-3.0");
+
+    assert_eval_eq!("(abs 32)", "32");
+    assert_eval_eq!("(abs -10)", "10");
 }
 
 #[test]

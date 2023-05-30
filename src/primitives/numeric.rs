@@ -22,15 +22,18 @@ fn integer(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ))))
 }
 
-fn exact(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
+fn num_map(
+    args: &[ObjectRef],
+    f: impl FnOnce(&Number) -> SimpleDatum,
+) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
-    Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(
+    Ok(ObjectRef::new(Object::Atom(
         match args[0].try_deref_or(num_cv)? {
-            Object::Atom(SimpleDatum::Number(n)) => n.is_exact(),
-            _ => false,
+            Object::Atom(SimpleDatum::Number(n)) => f(&n),
+            _ => Err(num_cv(&args[0]))?,
         },
-    ))))
+    )))
 }
 
 fn add(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
@@ -177,7 +180,6 @@ fn maxmin(args: &[ObjectRef], max: bool) -> Result<ObjectRef, EvalError> {
 pub fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("integer?", integer);
-    m.insert("exact?", exact);
     m.insert("+", add);
     m.insert("-", sub);
     m.insert("*", mul);
@@ -189,16 +191,28 @@ pub fn primitives() -> PrimitiveMap {
     m.insert(">=", |args| cmp(args, Ordering::Greater, false));
     m.insert("max", |args| maxmin(args, true));
     m.insert("min", |args| maxmin(args, false));
+    m.insert("exact?", |args| {
+        num_map(args, |n| SimpleDatum::Boolean(n.is_exact()))
+    });
+    m.insert("inexact?", |args| {
+        num_map(args, |n| SimpleDatum::Boolean(!n.is_exact()))
+    });
+    m.insert("zero?", |args| {
+        num_map(args, |n| SimpleDatum::Boolean(n.is_zero()))
+    });
+    m.insert("positive?", |args| {
+        num_map(args, |n| SimpleDatum::Boolean(n.is_positive()))
+    });
+    m.insert("negative?", |args| {
+        num_map(args, |n| SimpleDatum::Boolean(n.is_negative()))
+    });
+    m.insert("abs", |args| {
+        num_map(args, |n| SimpleDatum::Number(n.abs()))
+    });
     m
 }
 
-pub const PRELUDE: &str = "
-(define (inexact? x) (not (exact? x)))
-
-(define (zero? z) (= z 0))
-(define (positive? x) (> x 0))
-(define (negative? x) (< x 0))
-";
+pub const PRELUDE: &str = "";
 
 #[cfg(test)]
 mod tests {
@@ -225,19 +239,6 @@ mod tests {
         );
         assert_eq!(
             integer(&[ObjectRef::new(atom_obj!(real_datum!(0.5)))]),
-            Ok(ObjectRef::new(atom_obj!(bool_datum!(false))))
-        );
-
-        assert_eq!(
-            exact(&[ObjectRef::new(atom_obj!(int_datum!(1)))]),
-            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
-        );
-        assert_eq!(
-            exact(&[ObjectRef::new(atom_obj!(rational_datum!(1, 2)))]),
-            Ok(ObjectRef::new(atom_obj!(bool_datum!(true))))
-        );
-        assert_eq!(
-            exact(&[ObjectRef::new(atom_obj!(real_datum!(0.5)))]),
             Ok(ObjectRef::new(atom_obj!(bool_datum!(false))))
         );
     }
