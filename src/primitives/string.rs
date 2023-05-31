@@ -122,7 +122,7 @@ fn string_cmp(
 
     let mut it = args.iter().map(|arg| match arg.try_deref_or(string_cv)? {
         Object::Atom(SimpleDatum::String(s)) => Ok(s.borrow()),
-        _ => Err(string_cv(&args[1])),
+        _ => Err(string_cv(arg)),
     });
     let s1 = it.next().unwrap()?;
     let s2 = it.next().unwrap()?;

@@ -3,7 +3,7 @@ use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::str::FromStr;
 
-use num::{BigInt, BigRational, Complex, Signed, ToPrimitive, Zero};
+use num::{bigint::ToBigInt, BigInt, BigRational, Complex, Signed, ToPrimitive, Zero};
 
 #[derive(Debug, Clone)]
 pub enum RealKind {
@@ -17,13 +17,13 @@ impl RealKind {
         match (this, other) {
             (RealKind::Real(a), _) => match other {
                 RealKind::Real(b) => a == b,
-                RealKind::Rational(b) => a == &b.to_f64().unwrap_or(0.0),
-                RealKind::Integer(b) => a == &b.to_f64().unwrap_or(0.0),
+                RealKind::Rational(b) => a == &b.to_f64().unwrap_or(f64::NAN),
+                RealKind::Integer(b) => a == &b.to_f64().unwrap_or(f64::NAN),
             },
             (_, RealKind::Real(b)) => match this {
                 RealKind::Real(a) => a == b,
-                RealKind::Rational(a) => &a.to_f64().unwrap_or(0.0) == b,
-                RealKind::Integer(a) => &a.to_f64().unwrap_or(0.0) == b,
+                RealKind::Rational(a) => &a.to_f64().unwrap_or(f64::NAN) == b,
+                RealKind::Integer(a) => &a.to_f64().unwrap_or(f64::NAN) == b,
             },
             _ => this == other,
         }
@@ -89,16 +89,16 @@ impl RealKind {
                 RealKind::Rational(BigRational::from(a).max(b))
             }
             (RealKind::Real(a), RealKind::Rational(b)) => {
-                RealKind::Real(a.max(b.to_f64().unwrap_or(0.0)))
+                RealKind::Real(a.max(b.to_f64().unwrap_or(f64::NAN)))
             }
             (RealKind::Rational(a), RealKind::Real(b)) => {
-                RealKind::Real(a.to_f64().unwrap_or(0.0).max(b))
+                RealKind::Real(a.to_f64().unwrap_or(f64::NAN).max(b))
             }
             (RealKind::Real(a), RealKind::Integer(b)) => {
-                RealKind::Real(a.max(b.to_f64().unwrap_or(0.0)))
+                RealKind::Real(a.max(b.to_f64().unwrap_or(f64::NAN)))
             }
             (RealKind::Integer(a), RealKind::Real(b)) => {
-                RealKind::Real(a.to_f64().unwrap_or(0.0).max(b))
+                RealKind::Real(a.to_f64().unwrap_or(f64::NAN).max(b))
             }
         }
     }
@@ -115,17 +115,37 @@ impl RealKind {
                 RealKind::Rational(BigRational::from(a).min(b))
             }
             (RealKind::Real(a), RealKind::Rational(b)) => {
-                RealKind::Real(a.min(b.to_f64().unwrap_or(0.0)))
+                RealKind::Real(a.min(b.to_f64().unwrap_or(f64::NAN)))
             }
             (RealKind::Rational(a), RealKind::Real(b)) => {
-                RealKind::Real(a.to_f64().unwrap_or(0.0).min(b))
+                RealKind::Real(a.to_f64().unwrap_or(f64::NAN).min(b))
             }
             (RealKind::Real(a), RealKind::Integer(b)) => {
-                RealKind::Real(a.min(b.to_f64().unwrap_or(0.0)))
+                RealKind::Real(a.min(b.to_f64().unwrap_or(f64::NAN)))
             }
             (RealKind::Integer(a), RealKind::Real(b)) => {
-                RealKind::Real(a.to_f64().unwrap_or(0.0).min(b))
+                RealKind::Real(a.to_f64().unwrap_or(f64::NAN).min(b))
             }
+        }
+    }
+
+    pub fn to_integer(&self) -> Option<BigInt> {
+        match self {
+            RealKind::Real(r) => {
+                if r.fract() == 0.0 {
+                    r.to_bigint()
+                } else {
+                    None
+                }
+            }
+            RealKind::Rational(r) => {
+                if r.is_integer() {
+                    Some(r.numer().clone())
+                } else {
+                    None
+                }
+            }
+            RealKind::Integer(i) => Some(i.clone()),
         }
     }
 }
@@ -148,8 +168,8 @@ impl PartialOrd for RealKind {
         match (self, other) {
             (RealKind::Real(a), b) => match b {
                 RealKind::Real(b) => a.partial_cmp(b),
-                RealKind::Rational(b) => a.partial_cmp(&b.to_f64().unwrap_or(0.0)),
-                RealKind::Integer(b) => a.partial_cmp(&b.to_f64().unwrap_or(0.0)),
+                RealKind::Rational(b) => a.partial_cmp(&b.to_f64().unwrap_or(f64::NAN)),
+                RealKind::Integer(b) => a.partial_cmp(&b.to_f64().unwrap_or(f64::NAN)),
             },
             (RealKind::Rational(a), RealKind::Rational(b)) => a.partial_cmp(b),
             (RealKind::Integer(a), RealKind::Integer(b)) => a.partial_cmp(b),
@@ -242,6 +262,12 @@ impl Number {
             (Number::Real(a), Number::Real(b)) => Number::Real(a.min(b)),
         }
     }
+
+    pub fn to_integer(&self) -> Option<BigInt> {
+        match self {
+            Number::Real(r) => r.to_integer(),
+        }
+    }
 }
 
 impl Add for Number {
@@ -264,16 +290,16 @@ impl Add for Number {
                     Number::Real(RealKind::Rational(BigRational::from(a) + b))
                 }
                 (RealKind::Real(a), RealKind::Rational(b)) => {
-                    Number::Real(RealKind::Real(a + b.to_f64().unwrap_or(0.0)))
+                    Number::Real(RealKind::Real(a + b.to_f64().unwrap_or(f64::NAN)))
                 }
                 (RealKind::Rational(a), RealKind::Real(b)) => {
-                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0) + b))
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(f64::NAN) + b))
                 }
                 (RealKind::Real(a), RealKind::Integer(b)) => {
-                    Number::Real(RealKind::Real(a + b.to_f64().unwrap_or(0.0)))
+                    Number::Real(RealKind::Real(a + b.to_f64().unwrap_or(f64::NAN)))
                 }
                 (RealKind::Integer(a), RealKind::Real(b)) => {
-                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0) + b))
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(f64::NAN) + b))
                 }
             },
         }
@@ -306,16 +332,16 @@ impl Sub for Number {
                     Number::Real(RealKind::Rational(BigRational::from(a) - b))
                 }
                 (RealKind::Real(a), RealKind::Rational(b)) => {
-                    Number::Real(RealKind::Real(a - b.to_f64().unwrap_or(0.0)))
+                    Number::Real(RealKind::Real(a - b.to_f64().unwrap_or(f64::NAN)))
                 }
                 (RealKind::Rational(a), RealKind::Real(b)) => {
-                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0) - b))
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(f64::NAN) - b))
                 }
                 (RealKind::Real(a), RealKind::Integer(b)) => {
-                    Number::Real(RealKind::Real(a - b.to_f64().unwrap_or(0.0)))
+                    Number::Real(RealKind::Real(a - b.to_f64().unwrap_or(f64::NAN)))
                 }
                 (RealKind::Integer(a), RealKind::Real(b)) => {
-                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0) - b))
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(f64::NAN) - b))
                 }
             },
         }
@@ -362,16 +388,16 @@ impl Mul for Number {
                     Number::Real(RealKind::Rational(BigRational::from(a) * b))
                 }
                 (RealKind::Real(a), RealKind::Rational(b)) => {
-                    Number::Real(RealKind::Real(a * b.to_f64().unwrap_or(0.0)))
+                    Number::Real(RealKind::Real(a * b.to_f64().unwrap_or(f64::NAN)))
                 }
                 (RealKind::Rational(a), RealKind::Real(b)) => {
-                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0) * b))
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(f64::NAN) * b))
                 }
                 (RealKind::Real(a), RealKind::Integer(b)) => {
-                    Number::Real(RealKind::Real(a * b.to_f64().unwrap_or(0.0)))
+                    Number::Real(RealKind::Real(a * b.to_f64().unwrap_or(f64::NAN)))
                 }
                 (RealKind::Integer(a), RealKind::Real(b)) => {
-                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0) * b))
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(f64::NAN) * b))
                 }
             },
         }
@@ -407,13 +433,13 @@ impl Div for Number {
                     Number::Real(RealKind::Real(a / b.to_f64().unwrap_or(1.0)))
                 }
                 (RealKind::Rational(a), RealKind::Real(b)) => {
-                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0) / b))
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(f64::NAN) / b))
                 }
                 (RealKind::Real(a), RealKind::Integer(b)) => {
                     Number::Real(RealKind::Real(a / b.to_f64().unwrap_or(1.0)))
                 }
                 (RealKind::Integer(a), RealKind::Real(b)) => {
-                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(0.0) / b))
+                    Number::Real(RealKind::Real(a.to_f64().unwrap_or(f64::NAN) / b))
                 }
             },
         }

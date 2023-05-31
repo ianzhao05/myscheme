@@ -1,10 +1,13 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
+use num::{Integer, Signed, ToPrimitive};
+
 use crate::datum::SimpleDatum;
 use crate::evaler::{EvalError, EvalErrorKind};
 use crate::number::*;
 use crate::object::{Object, ObjectRef};
+use crate::primitives::utils::int_cv;
 
 use super::utils::{ensure_arity, num_cv, PrimitiveMap};
 
@@ -177,6 +180,63 @@ fn maxmin(args: &[ObjectRef], max: bool) -> Result<ObjectRef, EvalError> {
     Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(res))))
 }
 
+enum IntOp {
+    Quotient,
+    Remainder,
+    Modulo,
+}
+
+fn ints_op(args: &[ObjectRef], op: IntOp) -> Result<ObjectRef, EvalError> {
+    ensure_arity!(args, 2);
+
+    let mut it = args.iter().map(|arg| match arg.try_deref_or(int_cv)? {
+        Object::Atom(SimpleDatum::Number(n)) if n.is_integer() => Ok(n),
+        _ => Err(int_cv(arg)),
+    });
+    let n1 = it.next().unwrap()?;
+    let n2 = it.next().unwrap()?;
+    let inexact = !n1.is_exact() || !n2.is_exact();
+    let i1 = n1.to_integer().expect("should be integer");
+    let i2 = n2.to_integer().expect("should be integer");
+    let res = match op {
+        IntOp::Quotient => i1 / i2,
+        IntOp::Remainder => i1 % i2,
+        IntOp::Modulo => i1.mod_floor(&i2),
+    };
+    Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
+        Number::Real(if inexact {
+            RealKind::Real(res.to_f64().unwrap_or(f64::NAN))
+        } else {
+            RealKind::Integer(res)
+        }),
+    ))))
+}
+
+fn gcd_lcm(args: &[ObjectRef], lcm: bool) -> Result<ObjectRef, EvalError> {
+    ensure_arity!(args, 1, usize::MAX);
+
+    let mut it = args.iter().map(|arg| match arg.try_deref_or(int_cv)? {
+        Object::Atom(SimpleDatum::Number(n)) if n.is_integer() => Ok(n),
+        _ => Err(int_cv(arg)),
+    });
+    let first = it.next().unwrap()?;
+    let mut inexact = !first.is_exact();
+    let mut res = first.to_integer().expect("should be integer").abs();
+    for arg in it {
+        let n = arg?;
+        inexact = inexact || !n.is_exact();
+        let i = n.to_integer().expect("should be integer");
+        res = if lcm { res.lcm(&i) } else { res.gcd(&i) };
+    }
+    Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
+        Number::Real(if inexact {
+            RealKind::Real(res.to_f64().unwrap_or(f64::NAN))
+        } else {
+            RealKind::Integer(res)
+        }),
+    ))))
+}
+
 pub fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("integer?", integer);
@@ -209,10 +269,18 @@ pub fn primitives() -> PrimitiveMap {
     m.insert("abs", |args| {
         num_map(args, |n| SimpleDatum::Number(n.abs()))
     });
+    m.insert("quotient", |args| ints_op(args, IntOp::Quotient));
+    m.insert("remainder", |args| ints_op(args, IntOp::Remainder));
+    m.insert("modulo", |args| ints_op(args, IntOp::Modulo));
+    m.insert("gcd", |args| gcd_lcm(args, false));
+    m.insert("lcm", |args| gcd_lcm(args, true));
     m
 }
 
-pub const PRELUDE: &str = "";
+pub const PRELUDE: &str = "
+(define (even? n) (= (remainder n 2) 0))
+(define (odd? n) (= (remainder n 2) 1))
+";
 
 #[cfg(test)]
 mod tests {
@@ -320,6 +388,61 @@ mod tests {
                 ObjectRef::new(atom_obj!(int_datum!(3)))
             ]),
             Ok(ObjectRef::new(atom_obj!(rational_datum!(1, 6))))
+        );
+
+        assert_eq!(
+            ints_op(
+                &[
+                    ObjectRef::new(atom_obj!(int_datum!(15))),
+                    ObjectRef::new(atom_obj!(int_datum!(4)))
+                ],
+                IntOp::Quotient
+            ),
+            Ok(ObjectRef::new(atom_obj!(int_datum!(3))))
+        );
+        assert_eq!(
+            ints_op(
+                &[
+                    ObjectRef::new(atom_obj!(int_datum!(20))),
+                    ObjectRef::new(atom_obj!(real_datum!(3.0)))
+                ],
+                IntOp::Remainder
+            ),
+            Ok(ObjectRef::new(atom_obj!(real_datum!(2.0))))
+        );
+        assert_eq!(
+            ints_op(
+                &[
+                    ObjectRef::new(atom_obj!(int_datum!(20))),
+                    ObjectRef::new(atom_obj!(int_datum!(-3)))
+                ],
+                IntOp::Modulo
+            ),
+            Ok(ObjectRef::new(atom_obj!(int_datum!(-1))))
+        );
+
+        assert_eq!(
+            gcd_lcm(
+                &[
+                    ObjectRef::new(atom_obj!(int_datum!(20))),
+                    ObjectRef::new(atom_obj!(int_datum!(30))),
+                    ObjectRef::new(atom_obj!(int_datum!(40)))
+                ],
+                false
+            ),
+            Ok(ObjectRef::new(atom_obj!(int_datum!(10))))
+        );
+
+        assert_eq!(
+            gcd_lcm(
+                &[
+                    ObjectRef::new(atom_obj!(int_datum!(20))),
+                    ObjectRef::new(atom_obj!(int_datum!(30))),
+                    ObjectRef::new(atom_obj!(int_datum!(40)))
+                ],
+                true
+            ),
+            Ok(ObjectRef::new(atom_obj!(int_datum!(120))))
         );
     }
 

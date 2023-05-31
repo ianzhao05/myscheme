@@ -19,7 +19,7 @@ fn char_cmp(
 
     let mut it = args.iter().map(|arg| match arg.try_deref_or(char_cv)? {
         Object::Atom(SimpleDatum::Character(c)) => Ok(*c),
-        _ => Err(char_cv(&args[1])),
+        _ => Err(char_cv(arg)),
     });
     let c1 = it.next().unwrap()?;
     let c2 = it.next().unwrap()?;

@@ -64,6 +64,31 @@ fn arithmetic() {
     assert_eval_eq!("(/ 10 5 2)", "1");
     assert_eval_eq!("(/ 20 3 2)", "10/3");
     assert_eval_eq!("(/ 1.0 2)", "0.5");
+
+    assert_eval_eq!("(quotient 10 3)", "3");
+    assert_eval_eq!("(quotient -10 3)", "-3");
+
+    assert_eval_eq!("(modulo 13 4)", "1");
+    assert_eval_eq!("(remainder 13 4)", "1");
+
+    assert_eval_eq!("(modulo -13 4)", "3");
+    assert_eval_eq!("(remainder -13 4)", "-1");
+
+    assert_eval_eq!("(modulo 13 -4)", "-3");
+    assert_eval_eq!("(remainder 13 -4)", "1");
+
+    assert_eval_eq!("(modulo -13 -4)", "-1");
+    assert_eval_eq!("(remainder -13 -4)", "-1");
+
+    assert_eval_eq!("(remainder -13.0 4.0)", "-1.0");
+
+    assert_eval_eq!("(gcd -10)", "10");
+    assert_eval_eq!("(gcd 10 5)", "5");
+    assert_eval_eq!("(gcd 30 -50 75 100)", "5");
+
+    assert_eval_eq!("(lcm 10)", "10");
+    assert_eval_eq!("(lcm 3 7)", "21");
+    assert_eval_eq!("(lcm 9 -5 7 15)", "315");
 }
 
 #[test]
