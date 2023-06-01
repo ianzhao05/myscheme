@@ -3,6 +3,7 @@ use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::str::FromStr;
 
+use num::FromPrimitive;
 use num::{bigint::ToBigInt, BigInt, BigRational, Complex, Signed, ToPrimitive, Zero};
 
 #[derive(Debug, Clone)]
@@ -161,6 +162,32 @@ impl RealKind {
         }
     }
 
+    pub fn to_exact(&self) -> Self {
+        match self {
+            RealKind::Real(r) => match BigRational::from_f64(*r) {
+                Some(r) => RealKind::Rational(r),
+                None => RealKind::Real(*r),
+            },
+            _ => self.clone(),
+        }
+    }
+
+    pub fn to_exact_rational(&self) -> Option<BigRational> {
+        match self {
+            RealKind::Real(r) => BigRational::from_f64(*r),
+            RealKind::Rational(r) => Some(r.clone()),
+            RealKind::Integer(i) => Some(BigRational::from_integer(i.clone())),
+        }
+    }
+
+    pub fn to_inexact(&self) -> Self {
+        RealKind::Real(match self {
+            RealKind::Real(r) => *r,
+            RealKind::Rational(r) => r.to_f64().unwrap_or(f64::NAN),
+            RealKind::Integer(i) => i.to_f64().unwrap_or(f64::NAN),
+        })
+    }
+
     pub fn to_integer(&self) -> Option<BigInt> {
         match self {
             RealKind::Real(r) => {
@@ -178,6 +205,38 @@ impl RealKind {
                 }
             }
             RealKind::Integer(i) => Some(i.clone()),
+        }
+    }
+
+    pub fn numerator(&self) -> Self {
+        match self {
+            RealKind::Real(r) => RealKind::Real(
+                BigRational::from_f64(*r)
+                    .map(|r| r.numer().to_f64())
+                    .flatten()
+                    .unwrap_or(f64::NAN),
+            ),
+            RealKind::Rational(r) => RealKind::Integer(r.numer().clone()),
+            RealKind::Integer(i) => RealKind::Integer(i.clone()),
+        }
+    }
+
+    pub fn denominator(&self) -> Self {
+        if self.is_zero() {
+            return match self {
+                RealKind::Real(_) => RealKind::Real(1.0),
+                _ => RealKind::Integer(1.into()),
+            };
+        }
+        match self {
+            RealKind::Real(r) => RealKind::Real(
+                BigRational::from_f64(*r)
+                    .map(|r| r.denom().to_f64())
+                    .flatten()
+                    .unwrap_or(f64::NAN),
+            ),
+            RealKind::Rational(r) => RealKind::Integer(r.denom().clone()),
+            RealKind::Integer(_) => RealKind::Integer(BigInt::from(1)),
         }
     }
 }
@@ -319,9 +378,39 @@ impl Number {
         }
     }
 
+    pub fn to_exact(&self) -> Self {
+        match self {
+            Number::Real(r) => Number::Real(r.to_exact()),
+        }
+    }
+
+    pub fn to_exact_rational(&self) -> Option<BigRational> {
+        match self {
+            Number::Real(r) => r.to_exact_rational(),
+        }
+    }
+
+    pub fn to_inexact(&self) -> Self {
+        match self {
+            Number::Real(r) => Number::Real(r.to_inexact()),
+        }
+    }
+
     pub fn to_integer(&self) -> Option<BigInt> {
         match self {
             Number::Real(r) => r.to_integer(),
+        }
+    }
+
+    pub fn numerator(&self) -> Self {
+        match self {
+            Number::Real(r) => Number::Real(r.numerator()),
+        }
+    }
+
+    pub fn denominator(&self) -> Self {
+        match self {
+            Number::Real(r) => Number::Real(r.denominator()),
         }
     }
 }

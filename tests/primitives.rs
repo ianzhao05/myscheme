@@ -136,6 +136,22 @@ fn num_primitives() {
 
     assert_eval_eq!("(round 7/2)", "4");
     assert_eval_eq!("(round 7)", "7");
+
+    assert_eval_eq!("(numerator (/ 6 4))", "3");
+    assert_eval_eq!("(numerator 5)", "5");
+    assert_eval_eq!("(denominator (/ 6 4))", "2");
+    assert_eval_eq!("(denominator 1.5)", "2.0");
+
+    assert_eval_eq!("(rationalize 1/4 1/10)", "1/3");
+    assert_eval_eq!("(rationalize -1/4 1/10)", "-1/3");
+    assert_eval_eq!("(rationalize 1/4 1/4)", "0");
+    assert_eval_eq!("(rationalize 11/40 1/4)", "1/2");
+    assert_eval_eq!("(< (abs (- (rationalize 0.3 0.1) 1/3)) 1e-6)", "#t");
+
+    assert_eval_eq!("(inexact->exact 1)", "1");
+    assert_eval_eq!("(inexact->exact 2.0)", "2");
+    assert_eval_eq!("(exact->inexact 1/2)", "0.5");
+    assert_eval_eq!("(exact->inexact 1.0)", "1.0");
 }
 
 #[test]

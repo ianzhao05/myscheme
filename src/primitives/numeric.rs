@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use num::{Integer, Signed, ToPrimitive};
+use num::{BigInt, BigRational, Integer, One, Signed, ToPrimitive, Zero};
 
 use crate::datum::SimpleDatum;
 use crate::evaler::{EvalError, EvalErrorKind};
@@ -237,6 +237,75 @@ fn gcd_lcm(args: &[ObjectRef], lcm: bool) -> Result<ObjectRef, EvalError> {
     ))))
 }
 
+fn rationalize(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
+    ensure_arity!(args, 2);
+
+    let mut it = args.iter().map(|arg| match arg.try_deref_or(num_cv)? {
+        Object::Atom(SimpleDatum::Number(n)) => Ok(n),
+        _ => Err(num_cv(arg)),
+    });
+    let x = it.next().unwrap()?;
+    let y = it.next().unwrap()?;
+    let inexact = !x.is_exact() || !y.is_exact();
+
+    let x = match x.to_exact_rational() {
+        Some(r) => r,
+        None => return Ok(args[0].clone()),
+    };
+    let y = match y.abs().to_exact_rational() {
+        Some(r) => r,
+        None => {
+            return Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
+                Number::Real(RealKind::Real(0.0)),
+            ))))
+        }
+    };
+
+    let mut lo = &x - &y;
+    let mut hi = x + y;
+    let neg = !hi.is_positive();
+    if neg {
+        (lo, hi) = (-hi, -lo);
+    } else if lo.is_negative() {
+        return Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
+            Number::Real(if inexact {
+                RealKind::Real(0.0)
+            } else {
+                RealKind::Integer(BigInt::zero())
+            }),
+        ))));
+    }
+
+    // Continued fraction algorithm
+    // Credit: https://stackoverflow.com/a/65189151/377022
+    let (mut s, mut t, mut u, mut v) = (
+        lo.numer().clone(),
+        lo.denom().clone(),
+        hi.numer().clone(),
+        hi.denom().clone(),
+    );
+    let (mut a, mut b, mut c, mut d) =
+        (BigInt::one(), BigInt::zero(), BigInt::zero(), BigInt::one());
+    loop {
+        let q = (&s - 1) / &t;
+        (s, t, u, v) = (v.clone(), &u - &q * v, t.clone(), &s - &q * t);
+        (a, b, c, d) = (b.clone() + &q * &a, a, d.clone() + &q * &c, c);
+        if t >= s {
+            let mut res = BigRational::new(a + b, c + d);
+            if neg {
+                res = -res;
+            }
+            return Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
+                Number::Real(if inexact {
+                    RealKind::Real(res.to_f64().unwrap_or(f64::NAN))
+                } else {
+                    RealKind::Rational(res)
+                }),
+            ))));
+        }
+    }
+}
+
 pub fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("integer?", integer);
@@ -281,11 +350,24 @@ pub fn primitives() -> PrimitiveMap {
     m.insert("round", |args| {
         num_map(args, |n| SimpleDatum::Number(n.round()))
     });
+    m.insert("numerator", |args| {
+        num_map(args, |n| SimpleDatum::Number(n.numerator()))
+    });
+    m.insert("denominator", |args| {
+        num_map(args, |n| SimpleDatum::Number(n.denominator()))
+    });
+    m.insert("exact->inexact", |args| {
+        num_map(args, |n| SimpleDatum::Number(n.to_inexact()))
+    });
+    m.insert("inexact->exact", |args| {
+        num_map(args, |n| SimpleDatum::Number(n.to_exact()))
+    });
     m.insert("quotient", |args| ints_op(args, IntOp::Quotient));
     m.insert("remainder", |args| ints_op(args, IntOp::Remainder));
     m.insert("modulo", |args| ints_op(args, IntOp::Modulo));
     m.insert("gcd", |args| gcd_lcm(args, false));
     m.insert("lcm", |args| gcd_lcm(args, true));
+    m.insert("rationalize", rationalize);
     m
 }
 
@@ -605,6 +687,33 @@ mod tests {
                 true
             ),
             Ok(ObjectRef::new(atom_obj!(real_datum!(2.0))))
+        );
+    }
+
+    #[test]
+    fn test_rationalize() {
+        assert_eq!(
+            rationalize(&[
+                ObjectRef::new(atom_obj!(rational_datum!(3, 10))),
+                ObjectRef::new(atom_obj!(rational_datum!(1, 10)))
+            ]),
+            Ok(ObjectRef::new(atom_obj!(rational_datum!(1, 3))))
+        );
+
+        assert_eq!(
+            rationalize(&[
+                ObjectRef::new(atom_obj!(rational_datum!(-3, 10))),
+                ObjectRef::new(atom_obj!(rational_datum!(1, 10)))
+            ]),
+            Ok(ObjectRef::new(atom_obj!(rational_datum!(-1, 3))))
+        );
+
+        assert_eq!(
+            rationalize(&[
+                ObjectRef::new(atom_obj!(real_datum!(0.2))),
+                ObjectRef::new(atom_obj!(real_datum!(0.3)))
+            ]),
+            Ok(ObjectRef::new(atom_obj!(real_datum!(0.0))))
         );
     }
 }
