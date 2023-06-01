@@ -77,6 +77,38 @@ impl RealKind {
         }
     }
 
+    fn floor(&self) -> RealKind {
+        match self {
+            RealKind::Real(r) => RealKind::Real(r.floor()),
+            RealKind::Rational(r) => RealKind::Rational(r.floor()),
+            RealKind::Integer(i) => RealKind::Integer(i.clone()),
+        }
+    }
+
+    fn ceil(&self) -> RealKind {
+        match self {
+            RealKind::Real(r) => RealKind::Real(r.ceil()),
+            RealKind::Rational(r) => RealKind::Rational(r.ceil()),
+            RealKind::Integer(i) => RealKind::Integer(i.clone()),
+        }
+    }
+
+    fn round(&self) -> RealKind {
+        match self {
+            RealKind::Real(r) => RealKind::Real(r.round()),
+            RealKind::Rational(r) => RealKind::Rational(r.round()),
+            RealKind::Integer(i) => RealKind::Integer(i.clone()),
+        }
+    }
+
+    fn trunc(&self) -> RealKind {
+        match self {
+            RealKind::Real(r) => RealKind::Real(r.trunc()),
+            RealKind::Rational(r) => RealKind::Rational(r.trunc()),
+            RealKind::Integer(i) => RealKind::Integer(i.clone()),
+        }
+    }
+
     pub fn max(self, other: Self) -> Self {
         match (self, other) {
             (RealKind::Real(a), RealKind::Real(b)) => RealKind::Real(a.max(b)),
@@ -248,6 +280,30 @@ impl Number {
     pub fn abs(&self) -> Self {
         match self {
             Number::Real(r) => Number::Real(r.abs()),
+        }
+    }
+
+    pub fn floor(&self) -> Self {
+        match self {
+            Number::Real(r) => Number::Real(r.floor()),
+        }
+    }
+
+    pub fn ceil(&self) -> Self {
+        match self {
+            Number::Real(r) => Number::Real(r.ceil()),
+        }
+    }
+
+    pub fn round(&self) -> Self {
+        match self {
+            Number::Real(r) => Number::Real(r.round()),
+        }
+    }
+
+    pub fn trunc(&self) -> Self {
+        match self {
+            Number::Real(r) => Number::Real(r.trunc()),
         }
     }
 
@@ -591,5 +647,46 @@ mod tests {
         );
         assert!(RealKind::Integer(1.into()) > RealKind::Real(0.5));
         assert!(RealKind::Real(0.25) < RealKind::Rational(BigRational::new(1.into(), 2.into())));
+    }
+
+    #[test]
+    fn operations() {
+        assert_eq!(
+            Number::Real(RealKind::Integer(5.into())).abs(),
+            Number::Real(RealKind::Integer(5.into()))
+        );
+        assert_eq!(
+            Number::Real(RealKind::Integer((-6).into())).abs(),
+            Number::Real(RealKind::Integer(6.into()))
+        );
+        assert_eq!(
+            Number::Real(RealKind::Rational(BigRational::new((-5).into(), 2.into()))).abs(),
+            Number::Real(RealKind::Rational(BigRational::new(5.into(), 2.into())))
+        );
+        assert_eq!(
+            Number::Real(RealKind::Real(-8.0)).abs(),
+            Number::Real(RealKind::Real(8.0))
+        );
+
+        assert_eq!(
+            Number::Real(RealKind::Real(1.6)).round(),
+            Number::Real(RealKind::Real(2.0.into()))
+        );
+        assert_eq!(
+            Number::Real(RealKind::Real(1.4)).round(),
+            Number::Real(RealKind::Real(1.0.into()))
+        );
+        assert_eq!(
+            Number::Real(RealKind::Rational(BigRational::new(8.into(), 5.into()))).floor(),
+            Number::Real(RealKind::Integer(1.into()))
+        );
+        assert_eq!(
+            Number::Real(RealKind::Rational(BigRational::new((-8).into(), 3.into()))).ceil(),
+            Number::Real(RealKind::Integer((-2).into()))
+        );
+        assert_eq!(
+            Number::Real(RealKind::Real(1.1)).trunc(),
+            Number::Real(RealKind::Real(1.0.into()))
+        );
     }
 }

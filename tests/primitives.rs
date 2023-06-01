@@ -123,6 +123,19 @@ fn num_primitives() {
 
     assert_eval_eq!("(abs 32)", "32");
     assert_eval_eq!("(abs -10)", "10");
+
+    assert_eval_eq!("(floor -4.3)", "-5.0");
+    assert_eval_eq!("(ceiling -4.3)", "-4.0");
+    assert_eval_eq!("(truncate -4.3)", "-4.0");
+    assert_eval_eq!("(round -4.3)", "-4.0");
+
+    assert_eval_eq!("(floor 3.5)", "3.0");
+    assert_eval_eq!("(ceiling 3.5)", "4.0");
+    assert_eval_eq!("(truncate 3.5)", "3.0");
+    assert_eval_eq!("(round 3.5)", "4.0");
+
+    assert_eval_eq!("(round 7/2)", "4");
+    assert_eval_eq!("(round 7)", "7");
 }
 
 #[test]

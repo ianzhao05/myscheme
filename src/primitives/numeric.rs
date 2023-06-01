@@ -269,6 +269,18 @@ pub fn primitives() -> PrimitiveMap {
     m.insert("abs", |args| {
         num_map(args, |n| SimpleDatum::Number(n.abs()))
     });
+    m.insert("floor", |args| {
+        num_map(args, |n| SimpleDatum::Number(n.floor()))
+    });
+    m.insert("ceiling", |args| {
+        num_map(args, |n| SimpleDatum::Number(n.ceil()))
+    });
+    m.insert("truncate", |args| {
+        num_map(args, |n| SimpleDatum::Number(n.trunc()))
+    });
+    m.insert("round", |args| {
+        num_map(args, |n| SimpleDatum::Number(n.round()))
+    });
     m.insert("quotient", |args| ints_op(args, IntOp::Quotient));
     m.insert("remainder", |args| ints_op(args, IntOp::Remainder));
     m.insert("modulo", |args| ints_op(args, IntOp::Modulo));
