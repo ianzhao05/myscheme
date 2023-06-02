@@ -263,10 +263,10 @@ fn rationalize(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 
     let mut lo = &x - &y;
     let mut hi = x + y;
-    let neg = !hi.is_positive();
+    let neg = hi.is_negative();
     if neg {
         (lo, hi) = (-hi, -lo);
-    } else if lo.is_negative() {
+    } else if !lo.is_positive() {
         return Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
             Number::Real(if inexact {
                 RealKind::Real(0.0)
