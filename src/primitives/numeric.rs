@@ -362,6 +362,27 @@ pub fn primitives() -> PrimitiveMap {
     m.insert("inexact->exact", |args| {
         num_map(args, |n| SimpleDatum::Number(n.to_exact()))
     });
+    m.insert("exp", |args| {
+        num_map(args, |n| SimpleDatum::Number(n.map_inexact(f64::exp)))
+    });
+    m.insert("log", |args| {
+        num_map(args, |n| SimpleDatum::Number(n.map_inexact(f64::ln)))
+    });
+    m.insert("sin", |args| {
+        num_map(args, |n| SimpleDatum::Number(n.map_inexact(f64::sin)))
+    });
+    m.insert("cos", |args| {
+        num_map(args, |n| SimpleDatum::Number(n.map_inexact(f64::cos)))
+    });
+    m.insert("tan", |args| {
+        num_map(args, |n| SimpleDatum::Number(n.map_inexact(f64::tan)))
+    });
+    m.insert("asin", |args| {
+        num_map(args, |n| SimpleDatum::Number(n.map_inexact(f64::asin)))
+    });
+    m.insert("acos", |args| {
+        num_map(args, |n| SimpleDatum::Number(n.map_inexact(f64::acos)))
+    });
     m.insert("quotient", |args| ints_op(args, IntOp::Quotient));
     m.insert("remainder", |args| ints_op(args, IntOp::Remainder));
     m.insert("modulo", |args| ints_op(args, IntOp::Modulo));

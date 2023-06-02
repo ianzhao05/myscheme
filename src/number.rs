@@ -181,11 +181,19 @@ impl RealKind {
     }
 
     pub fn to_inexact(&self) -> Self {
-        RealKind::Real(match self {
+        RealKind::Real(self.to_inexact_impl())
+    }
+
+    fn to_inexact_impl(&self) -> f64 {
+        match self {
             RealKind::Real(r) => *r,
             RealKind::Rational(r) => r.to_f64().unwrap_or(f64::NAN),
             RealKind::Integer(i) => i.to_f64().unwrap_or(f64::NAN),
-        })
+        }
+    }
+
+    fn map_inexact<F: FnOnce(f64) -> f64>(&self, f: F) -> RealKind {
+        RealKind::Real(f(self.to_inexact_impl()))
     }
 
     pub fn to_integer(&self) -> Option<BigInt> {
@@ -399,6 +407,12 @@ impl Number {
     pub fn to_integer(&self) -> Option<BigInt> {
         match self {
             Number::Real(r) => r.to_integer(),
+        }
+    }
+
+    pub fn map_inexact<F: FnOnce(f64) -> f64>(&self, f: F) -> Self {
+        match self {
+            Number::Real(r) => Number::Real(r.map_inexact(f)),
         }
     }
 
