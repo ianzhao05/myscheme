@@ -2,6 +2,19 @@ mod common;
 use common::assert_eval_eq;
 
 #[test]
+fn num_literals() {
+    assert_eval_eq!("#d3e2", "300.0");
+    assert_eval_eq!("#xface", "64206");
+    assert_eval_eq!("#o105", "69");
+    assert_eval_eq!("#b1010", "10");
+    assert_eval_eq!("#e1.5", "3/2");
+    assert_eval_eq!("#i3/2", "1.5");
+    assert_eval_eq!("#e1.23e2", "123");
+    assert_eval_eq!("#e#xa/f", "10/15");
+    assert_eval_eq!("#o#e1/10", "1/8");
+}
+
+#[test]
 fn simple_defines() {
     assert_eval_eq!("(define x 1) x", "1");
     assert_eval_eq!("(define y (+ 2 3)) y", "5");

@@ -3,8 +3,8 @@ use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::str::FromStr;
 
-use num::FromPrimitive;
 use num::{bigint::ToBigInt, BigInt, BigRational, Complex, Signed, ToPrimitive, Zero};
+use num::{FromPrimitive, Num};
 
 fn is_perfect_square(n: &BigInt) -> bool {
     n.sqrt().pow(2) == *n
@@ -15,6 +15,26 @@ pub enum RealKind {
     Real(f64),
     Rational(BigRational),
     Integer(BigInt),
+}
+
+impl fmt::Display for RealKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RealKind::Real(r) => {
+                let mag = r.abs();
+                if mag != 0.0 && (mag > 1e16 || mag < 1e-16) {
+                    write!(f, "{r:e}")
+                } else if r.fract() == 0.0 {
+                    r.fmt(f)?;
+                    f.write_str(".0")
+                } else {
+                    r.fmt(f)
+                }
+            }
+            RealKind::Rational(r) => r.fmt(f),
+            RealKind::Integer(i) => i.fmt(f),
+        }
+    }
 }
 
 impl RealKind {
@@ -308,7 +328,6 @@ impl PartialOrd for RealKind {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-
 pub enum ComplexKind {
     Real(Complex<f64>),
     Rational(Complex<BigRational>),
@@ -325,16 +344,161 @@ pub enum Number {
 impl fmt::Display for Number {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Number::Real(r) => match r {
-                RealKind::Real(r) => r.fmt(f),
-                RealKind::Rational(r) => r.fmt(f),
-                RealKind::Integer(r) => r.fmt(f),
-            },
+            Number::Real(r) => r.fmt(f),
         }
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub struct ParseNumberError {
+    message: String,
+}
+
+impl ParseNumberError {
+    pub fn new(message: impl fmt::Display) -> Self {
+        Self {
+            message: message.to_string(),
+        }
+    }
+}
+
+impl Error for ParseNumberError {}
+
+impl fmt::Display for ParseNumberError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl FromStr for Number {
+    type Err = ParseNumberError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Number::from_str_default_radix(s, 10)
+    }
+}
+
 impl Number {
+    pub fn from_str_default_radix(s: &str, mut radix: u32) -> Result<Self, ParseNumberError> {
+        let chars = s.as_bytes();
+        let mut inexact = None;
+        for i in 0..2 {
+            match chars.get(i * 2) {
+                Some(b'#') => match chars.get(i * 2 + 1) {
+                    Some(b'b') => radix = 2,
+                    Some(b'o') => radix = 8,
+                    Some(b'd') => radix = 10,
+                    Some(b'x') => radix = 16,
+                    Some(b'e') => inexact = Some(false),
+                    Some(b'i') => inexact = Some(true),
+                    Some(c) => {
+                        return Err(ParseNumberError {
+                            message: format!("Invalid prefix: {c}"),
+                        })
+                    }
+                    None => {
+                        return Err(ParseNumberError {
+                            message: "Expected prefix".to_owned(),
+                        })
+                    }
+                },
+                _ => return Number::from_str_radix(&s[(i * 2)..], radix, inexact),
+            }
+        }
+        return Number::from_str_radix(&s[4..], radix, inexact);
+    }
+
+    pub fn from_str_radix(
+        s: &str,
+        radix: u32,
+        inexact: Option<bool>,
+    ) -> Result<Self, ParseNumberError> {
+        let has_slash = s.contains('/');
+        let has_decimal = s.contains('.');
+        let has_exp = s.contains(&['e', 'E', 's', 'S', 'f', 'F', 'd', 'D', 'l', 'L']);
+        let inexact = match inexact {
+            Some(i) => i,
+            None => {
+                if radix == 10 {
+                    has_decimal || has_exp
+                } else if has_decimal {
+                    return Err(ParseNumberError {
+                        message: "Decimal only allowed with radix 10".to_owned(),
+                    });
+                } else {
+                    false
+                }
+            }
+        };
+        if inexact {
+            if has_slash {
+                if has_decimal {
+                    return Err(ParseNumberError {
+                        message: "Decimal not allowed in rational".to_owned(),
+                    });
+                }
+                if radix == 10 && has_exp {
+                    return Err(ParseNumberError {
+                        message: "Exponent not allowed in rational".to_owned(),
+                    });
+                }
+                let mut split = s.splitn(2, '/');
+                let num = split.next().unwrap();
+                let den = split.next().unwrap();
+                return Ok(Number::Real(RealKind::Real(
+                    f64::from_str_radix(num, radix).map_err(ParseNumberError::new)?
+                        / f64::from_str_radix(den, radix).map_err(ParseNumberError::new)?,
+                )));
+            }
+            return Ok(Number::Real(RealKind::Real(
+                f64::from_str_radix(s, radix).map_err(|e| ParseNumberError {
+                    message: e.to_string(),
+                })?,
+            )));
+        }
+        if radix == 10 {
+            if has_exp {
+                let mut esplit = s.splitn(2, &['e', 'E', 's', 'S', 'f', 'F', 'd', 'D', 'l', 'L']);
+                let num = esplit.next().unwrap();
+                let exp = esplit
+                    .next()
+                    .unwrap()
+                    .parse::<i32>()
+                    .map_err(ParseNumberError::new)?;
+                return Number::parse_exact_dec(num, exp);
+            } else if has_decimal {
+                return Number::parse_exact_dec(s, 0);
+            }
+        }
+        if has_slash {
+            Ok(Number::Real(RealKind::Rational(
+                BigRational::from_str_radix(s, radix).map_err(ParseNumberError::new)?,
+            )))
+        } else {
+            Ok(Number::Real(RealKind::Integer(
+                BigInt::from_str_radix(s, radix).map_err(ParseNumberError::new)?,
+            )))
+        }
+    }
+
+    fn parse_exact_dec(s: &str, exp: i32) -> Result<Self, ParseNumberError> {
+        let mut split = s.splitn(2, '.');
+        let int_part = split.next().unwrap().to_owned();
+        let dec_part = split.next().unwrap_or("");
+        let exp = (dec_part.len() as i32) - exp;
+        if exp < 0 {
+            Ok(Number::Real(RealKind::Integer(
+                BigInt::from_str(&(int_part + dec_part)).map_err(ParseNumberError::new)?
+                    * BigInt::from(10).pow((-exp) as u32),
+            )))
+        } else {
+            Ok(Number::Real(RealKind::Rational(BigRational::new(
+                BigInt::from_str(&(int_part + dec_part)).map_err(ParseNumberError::new)?,
+                BigInt::from(10).pow(exp as u32),
+            ))))
+        }
+    }
+
     pub fn eq_val(this: &Self, other: &Self) -> bool {
         match (this, other) {
             (Number::Real(a), Number::Real(b)) => RealKind::eq_val(a, b),
@@ -650,46 +814,6 @@ impl DivAssign<&Number> for Number {
     }
 }
 
-impl FromStr for Number {
-    type Err = ParseNumberError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // TODO: implement complex numbers and other bases
-        if s.contains('/') {
-            Ok(Number::Real(RealKind::Rational(
-                BigRational::from_str(s).map_err(|e| ParseNumberError {
-                    message: e.to_string(),
-                })?,
-            )))
-        } else if s.contains(&['.', 'e', 'E']) {
-            Ok(Number::Real(RealKind::Real(f64::from_str(s).map_err(
-                |e| ParseNumberError {
-                    message: e.to_string(),
-                },
-            )?)))
-        } else {
-            Ok(Number::Real(RealKind::Integer(
-                BigInt::from_str(s).map_err(|e| ParseNumberError {
-                    message: e.to_string(),
-                })?,
-            )))
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct ParseNumberError {
-    message: String,
-}
-
-impl Error for ParseNumberError {}
-
-impl fmt::Display for ParseNumberError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -714,6 +838,30 @@ mod tests {
             ))))
         );
         assert_eq!("1e2".parse(), Ok(Number::Real(RealKind::Real(1e2))));
+        assert_eq!(
+            "#xDEADBEEF".parse(),
+            Ok(Number::Real(RealKind::Integer(0xdeadbeef_u32.into())))
+        );
+        assert_eq!(
+            "#o12345670".parse(),
+            Ok(Number::Real(RealKind::Integer(0o12345670_u32.into())))
+        );
+        assert_eq!(
+            "#b110010".parse(),
+            Ok(Number::Real(RealKind::Integer(0b110010_u32.into())))
+        );
+        assert_eq!(
+            "#e1e2".parse(),
+            Ok(Number::Real(RealKind::Integer(100.into())))
+        );
+        assert_eq!("#i#x8/10".parse(), Ok(Number::Real(RealKind::Real(0.5))));
+        assert_eq!(
+            "#e1.2345".parse(),
+            Ok(Number::Real(RealKind::Rational(BigRational::new(
+                12345.into(),
+                10000.into()
+            ))))
+        );
     }
 
     #[test]
@@ -721,6 +869,13 @@ mod tests {
         assert!(Number::from_str("1.0.0").is_err());
         assert!(Number::from_str("1/0").is_err());
         assert!(Number::from_str("1.0/2").is_err());
+        assert!(Number::from_str("99/1e2").is_err());
+        assert!(Number::from_str("1e2.0").is_err());
+        assert!(Number::from_str("#x123.abc").is_err());
+        assert!(Number::from_str("#q123").is_err());
+        assert!(Number::from_str("#x123e-1").is_err());
+        assert!(Number::from_str("#b2").is_err());
+        assert!(Number::from_str("#i").is_err());
     }
 
     #[test]
