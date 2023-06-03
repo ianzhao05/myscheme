@@ -152,6 +152,30 @@ fn num_primitives() {
     assert_eval_eq!("(inexact->exact 2.0)", "2");
     assert_eval_eq!("(exact->inexact 1/2)", "0.5");
     assert_eval_eq!("(exact->inexact 1.0)", "1.0");
+
+    assert_eval_eq!("(sqrt 25)", "5");
+    assert_eval_eq!("(sqrt 4/9)", "2/3");
+
+    assert_eval_eq!(
+        "(define (all_close l)
+           (cond
+             ((null? l) #t)
+             ((> (abs (- (caar l) (cadar l))) 1e-6) #f)
+             (else (all_close (cdr l)))))
+         (define pi (acos -1))
+         (define e (exp 1))
+         (all_close
+          (list
+           (list (sin pi) 0)
+           (list (cos (/ pi 4)) (/ (sqrt 2)))
+           (list (tan (* pi 3/4)) -1)
+           (list (asin 1/2) (acos (/ (sqrt 3) 2)))
+           (list (atan -1) (atan -5 5))
+           (list (exp 3) (* e e e))
+           (list (log (* e e)) 2)
+           (list (log (/ e)) -1)))",
+        "#t"
+    );
 }
 
 #[test]
