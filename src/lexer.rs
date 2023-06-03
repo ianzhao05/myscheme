@@ -117,14 +117,22 @@ impl<'a> Iterator for Lexer<'a> {
             .unwrap()
         });
         static STRING: Lazy<Regex> = Lazy::new(|| Regex::new(r#"\A"((?:\\.|[^\\"])*)""#).unwrap());
-        // TODO: implement complex numbers and other bases
+        // TODO: implement complex numbers
         static NUMBER: Lazy<Regex> = Lazy::new(|| {
             Regex::new(&format!(
-                r"(?x)\A
-                ([+-]?
-                    (?:[0-9]+/[0-9]+|(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)
-                    (?:[eE][+-]?[0-9]+)?)
-                )(?:{DELIMITER})"
+                r"(?ix)\A(
+                    (?:\#[ie]\#d|(?:\#d)?(?:\#[ie])?)
+                    [+-]?
+                    (?:[0-9]+/[0-9]+
+                      | (?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)
+                        (?:[esdfl][+-]?[0-9]+)?)
+                  | (?:\#[ie]\#b|\#b(?:\#[ie])?)
+                    [+-]?[01]+(?:/[01]+)?
+                  | (?:\#[ie]\#o|\#o(?:\#[ie])?)
+                    [+-]?[0-7]+(?:/[0-7]+)?
+                  | (?:\#[ie]\#x|\#x(?:\#[ie])?)
+                    [+-]?[0-9a-f]+(?:/[0-9a-f]+)?
+                  )(?:{DELIMITER})"
             ))
             .unwrap()
         });
@@ -173,14 +181,22 @@ impl<'a> Iterator for Lexer<'a> {
                         })))
                     } else {
                         self.pos += 2;
-                        Some(match it.next().unwrap() {
-                            't' => Ok(Token::Boolean(true)),
-                            'f' => Ok(Token::Boolean(false)),
-                            '(' => Ok(Token::Vector),
-                            _ => Err(LexerError {
-                                kind: LexerErrorKind::InvalidSequence,
-                                pos: self.pos - 2,
-                            }),
+                        Some(match it.next() {
+                            Some('t') => Ok(Token::Boolean(true)),
+                            Some('f') => Ok(Token::Boolean(false)),
+                            Some('(') => Ok(Token::Vector),
+                            _ => {
+                                if let Some(c) = NUMBER.captures(rest) {
+                                    let m = c.get(1).unwrap();
+                                    self.pos += m.end() - 2;
+                                    Ok(Token::Number(m.as_str().to_owned()))
+                                } else {
+                                    Err(LexerError {
+                                        kind: LexerErrorKind::InvalidSequence,
+                                        pos: self.pos - 2,
+                                    })
+                                }
+                            }
                         })
                     };
                 }
@@ -202,10 +218,6 @@ impl<'a> Iterator for Lexer<'a> {
                 _ => {
                     if let Some(m) = ATMOSPHERE.find(rest) {
                         self.pos += m.end();
-                    } else if let Some(c) = NUMBER.captures(rest) {
-                        let m = c.get(1).unwrap();
-                        self.pos += m.end();
-                        return Some(Ok(Token::Number(m.as_str().to_owned())));
                     } else if let Some(c) = IDENTIFIER.captures(rest) {
                         let m = c.get(1).unwrap();
                         self.pos += m.end();
@@ -213,6 +225,10 @@ impl<'a> Iterator for Lexer<'a> {
                     } else if DOT.is_match(rest) {
                         self.pos += 1;
                         return Some(Ok(Token::Dot));
+                    } else if let Some(c) = NUMBER.captures(rest) {
+                        let m = c.get(1).unwrap();
+                        self.pos += m.end();
+                        return Some(Ok(Token::Number(m.as_str().to_owned())));
                     } else {
                         return Some(Err(LexerError {
                             kind: LexerErrorKind::InvalidToken,

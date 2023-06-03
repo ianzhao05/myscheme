@@ -5,7 +5,7 @@ use crate::evaler::{EvalError, EvalErrorKind};
 use crate::number::{Number, RealKind};
 use crate::object::{Object, ObjectRef};
 
-use super::utils::{ensure_arity, get_len, vector_cv, PrimitiveMap};
+use super::utils::{ensure_arity, get_len, get_vector, PrimitiveMap};
 
 fn vector(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     Ok(ObjectRef::new_vector(args.to_vec()))
@@ -26,65 +26,51 @@ fn make_vector(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn vector_length(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
-    match args[0].try_deref_or(vector_cv)? {
-        Object::Vector(v) => Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
-            Number::Real(RealKind::Integer(v.borrow().len().into())),
-        )))),
-        _ => Err(vector_cv(&args[0])),
-    }
+    let v = get_vector(&args[0])?.borrow();
+    Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
+        Number::Real(RealKind::Integer(v.len().into())),
+    ))))
 }
 
 fn vector_ref(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 2);
 
-    match args[0].try_deref_or(vector_cv)? {
-        Object::Vector(v) => {
-            let i = get_len(&args[1])?;
-            let b = v.borrow();
-            if i >= b.len() {
-                return Err(EvalError::new(EvalErrorKind::IndexOutOfBounds {
-                    index: i,
-                    len: b.len(),
-                }));
-            }
-            Ok(b[i].clone())
-        }
-        _ => Err(vector_cv(&args[0])),
+    let v = get_vector(&args[0])?.borrow();
+    let i = get_len(&args[1])?;
+
+    if i >= v.len() {
+        return Err(EvalError::new(EvalErrorKind::IndexOutOfBounds {
+            index: i,
+            len: v.len(),
+        }));
     }
+    Ok(v[i].clone())
 }
 
 fn vector_set(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 3);
 
-    match args[0].try_deref_or(vector_cv)? {
-        Object::Vector(v) => {
-            let i = get_len(&args[1])?;
-            let mut b = v.borrow_mut();
-            if i >= b.len() {
-                return Err(EvalError::new(EvalErrorKind::IndexOutOfBounds {
-                    index: i,
-                    len: b.len(),
-                }));
-            }
-            b[i] = args[2].clone();
-            Ok(ObjectRef::Void)
-        }
-        _ => Err(vector_cv(&args[0])),
+    let mut v = get_vector(&args[0])?.borrow_mut();
+    let i = get_len(&args[1])?;
+
+    if i >= v.len() {
+        return Err(EvalError::new(EvalErrorKind::IndexOutOfBounds {
+            index: i,
+            len: v.len(),
+        }));
     }
+    v[i] = args[2].clone();
+    Ok(ObjectRef::Void)
 }
 
 fn vector_fill(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 2);
 
-    match args[0].try_deref_or(vector_cv)? {
-        Object::Vector(v) => {
-            for e in v.borrow_mut().iter_mut() {
-                *e = args[1].clone();
-            }
-            Ok(ObjectRef::Void)
-        }
-        _ => Err(vector_cv(&args[0])),
+    let mut v = get_vector(&args[0])?.borrow_mut();
+    for e in v.iter_mut() {
+        *e = args[1].clone();
     }
+    Ok(ObjectRef::Void)
 }
 
 pub fn primitives() -> PrimitiveMap {
@@ -120,7 +106,7 @@ pub const PRELUDE: &str = "
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::primitives::utils::len_cv;
+    use crate::primitives::utils::{len_cv, vector_cv};
     use crate::test_util::*;
 
     #[test]

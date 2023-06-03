@@ -6,17 +6,14 @@ use crate::evaler::{EvalError, EvalErrorKind};
 use crate::number::{Number, RealKind};
 use crate::object::{Object, ObjectRef};
 
-use super::utils::{char_cv, ensure_arity, get_len, string_cv, PrimitiveMap};
+use super::utils::{ensure_arity, get_char, get_len, get_string, PrimitiveMap};
 
 fn make_string(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1, 2);
 
     let k = get_len(&args[0])?;
     let fill = if args.len() == 2 {
-        match args[1].try_deref_or(char_cv)? {
-            Object::Atom(SimpleDatum::Character(c)) => c.to_string(),
-            _ => return Err(char_cv(&args[1])),
-        }
+        get_char(&args[1])?.to_string()
     } else {
         "\0".to_owned()
     };
@@ -25,90 +22,64 @@ fn make_string(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 
 fn string(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     Ok(ObjectRef::new_string(
-        args.iter()
-            .map(|arg| match arg.try_deref_or(char_cv)? {
-                Object::Atom(SimpleDatum::Character(c)) => Ok(*c),
-                _ => Err(char_cv(&args[1])),
-            })
-            .collect::<Result<String, _>>()?,
+        args.iter().map(get_char).collect::<Result<String, _>>()?,
     ))
 }
 
 fn string_length(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
-    match args[0].try_deref_or(string_cv)? {
-        Object::Atom(SimpleDatum::String(s)) => Ok(ObjectRef::new(Object::Atom(
-            SimpleDatum::Number(Number::Real(RealKind::Integer(s.borrow().len().into()))),
-        ))),
-        _ => Err(string_cv(&args[0])),
-    }
+    Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
+        Number::Real(RealKind::Integer(
+            get_string(&args[0])?.borrow().len().into(),
+        )),
+    ))))
 }
 
 fn string_ref(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 2);
 
-    match args[0].try_deref_or(string_cv)? {
-        Object::Atom(SimpleDatum::String(s)) => {
-            let i = get_len(&args[1])?;
-            let b = s.borrow();
-            if i >= b.len() {
-                return Err(EvalError::new(EvalErrorKind::IndexOutOfBounds {
-                    index: i,
-                    len: b.len(),
-                }));
-            }
-            Ok(ObjectRef::new(Object::Atom(SimpleDatum::Character(
-                b[i..]
-                    .chars()
-                    .next()
-                    .expect("ASCII string should not error"),
-            ))))
-        }
-        _ => Err(string_cv(&args[0])),
+    let s = get_string(&args[0])?.borrow();
+    let i = get_len(&args[1])?;
+    if i >= s.len() {
+        return Err(EvalError::new(EvalErrorKind::IndexOutOfBounds {
+            index: i,
+            len: s.len(),
+        }));
     }
+    Ok(ObjectRef::new(Object::Atom(SimpleDatum::Character(
+        s[i..]
+            .chars()
+            .next()
+            .expect("ASCII string should not error"),
+    ))))
 }
 
 fn string_set(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 3);
 
-    match args[0].try_deref_or(string_cv)? {
-        Object::Atom(SimpleDatum::String(s)) => {
-            let i = get_len(&args[1])?;
-            let mut b = s.borrow_mut();
-            if i >= b.len() {
-                return Err(EvalError::new(EvalErrorKind::IndexOutOfBounds {
-                    index: i,
-                    len: b.len(),
-                }));
-            }
-            let mut buf = [0];
-            match args[2].try_deref_or(char_cv)? {
-                Object::Atom(SimpleDatum::Character(c)) => {
-                    b.replace_range(i..i + 1, c.encode_utf8(&mut buf));
-                    Ok(ObjectRef::Void)
-                }
-                _ => Err(char_cv(&args[2])),
-            }
-        }
-        _ => Err(string_cv(&args[0])),
+    let mut s = get_string(&args[0])?.borrow_mut();
+    let i = get_len(&args[1])?;
+    let c = get_char(&args[2])?;
+
+    if i >= s.len() {
+        return Err(EvalError::new(EvalErrorKind::IndexOutOfBounds {
+            index: i,
+            len: s.len(),
+        }));
     }
+    let mut buf = [0];
+    s.replace_range(i..i + 1, c.encode_utf8(&mut buf));
+    Ok(ObjectRef::Void)
 }
 
 fn string_fill(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 2);
 
-    match args[0].try_deref_or(string_cv)? {
-        Object::Atom(SimpleDatum::String(s)) => match args[1].try_deref_or(char_cv)? {
-            Object::Atom(SimpleDatum::Character(c)) => {
-                let mut b = s.borrow_mut();
-                *b = c.to_string().repeat(b.len());
-                Ok(ObjectRef::Void)
-            }
-            _ => Err(char_cv(&args[1])),
-        },
-        _ => Err(string_cv(&args[0])),
-    }
+    let mut s = get_string(&args[0])?.borrow_mut();
+    let c = get_char(&args[1])?;
+    *s = c.to_string().repeat(s.len());
+    Ok(ObjectRef::Void)
 }
 
 fn string_cmp(
@@ -120,12 +91,8 @@ fn string_cmp(
     debug_assert!(ord != Ordering::Equal || strict);
     ensure_arity!(args, 2);
 
-    let mut it = args.iter().map(|arg| match arg.try_deref_or(string_cv)? {
-        Object::Atom(SimpleDatum::String(s)) => Ok(s.borrow()),
-        _ => Err(string_cv(&args[1])),
-    });
-    let s1 = it.next().unwrap()?;
-    let s2 = it.next().unwrap()?;
+    let s1 = get_string(&args[0])?.borrow();
+    let s2 = get_string(&args[1])?.borrow();
 
     let cmp = if ci {
         s1.to_lowercase().cmp(&s2.to_lowercase())
@@ -144,45 +111,36 @@ fn string_cmp(
 fn string_copy(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
-    match args[0].try_deref_or(string_cv)? {
-        Object::Atom(SimpleDatum::String(s)) => Ok(ObjectRef::new_string(s.borrow().clone())),
-        _ => Err(string_cv(&args[0])),
-    }
+    Ok(ObjectRef::new_string(
+        get_string(&args[0])?.borrow().clone(),
+    ))
 }
 
 fn substring(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 3);
 
-    match args[0].try_deref_or(string_cv)? {
-        Object::Atom(SimpleDatum::String(s)) => {
-            let start = get_len(&args[1])?;
-            let end = get_len(&args[2])?;
-            if start > end {
-                return Err(EvalError::new(EvalErrorKind::IndexOutOfBounds {
-                    index: start - 1,
-                    len: end,
-                }));
-            }
-            let b = s.borrow();
-            if end > b.len() {
-                return Err(EvalError::new(EvalErrorKind::IndexOutOfBounds {
-                    index: end - 1,
-                    len: b.len(),
-                }));
-            }
-            Ok(ObjectRef::new_string(b[start..end].to_owned()))
-        }
-        _ => Err(string_cv(&args[0])),
+    let s = get_string(&args[0])?.borrow();
+    let start = get_len(&args[1])?;
+    let end = get_len(&args[2])?;
+    if start > end {
+        return Err(EvalError::new(EvalErrorKind::IndexOutOfBounds {
+            index: start - 1,
+            len: end,
+        }));
     }
+    if end > s.len() {
+        return Err(EvalError::new(EvalErrorKind::IndexOutOfBounds {
+            index: end - 1,
+            len: s.len(),
+        }));
+    }
+    Ok(ObjectRef::new_string(s[start..end].to_owned()))
 }
 
 fn string_append(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     let mut acc = String::new();
     for arg in args {
-        match arg.try_deref_or(string_cv)? {
-            Object::Atom(SimpleDatum::String(s)) => acc.push_str(&s.borrow()),
-            _ => return Err(string_cv(&args[1])),
-        }
+        acc.push_str(get_string(arg)?.borrow().as_ref());
     }
     Ok(ObjectRef::new_string(acc))
 }
@@ -248,6 +206,7 @@ pub const PRELUDE: &str = "
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::primitives::utils::{char_cv, string_cv};
     use crate::test_util::*;
 
     #[test]

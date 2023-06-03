@@ -64,6 +64,31 @@ fn arithmetic() {
     assert_eval_eq!("(/ 10 5 2)", "1");
     assert_eval_eq!("(/ 20 3 2)", "10/3");
     assert_eval_eq!("(/ 1.0 2)", "0.5");
+
+    assert_eval_eq!("(quotient 10 3)", "3");
+    assert_eval_eq!("(quotient -10 3)", "-3");
+
+    assert_eval_eq!("(modulo 13 4)", "1");
+    assert_eval_eq!("(remainder 13 4)", "1");
+
+    assert_eval_eq!("(modulo -13 4)", "3");
+    assert_eval_eq!("(remainder -13 4)", "-1");
+
+    assert_eval_eq!("(modulo 13 -4)", "-3");
+    assert_eval_eq!("(remainder 13 -4)", "1");
+
+    assert_eval_eq!("(modulo -13 -4)", "-1");
+    assert_eval_eq!("(remainder -13 -4)", "-1");
+
+    assert_eval_eq!("(remainder -13.0 4.0)", "-1.0");
+
+    assert_eval_eq!("(gcd -10)", "10");
+    assert_eval_eq!("(gcd 10 5)", "5");
+    assert_eval_eq!("(gcd 30 -50 75 100)", "5");
+
+    assert_eval_eq!("(lcm 10)", "10");
+    assert_eval_eq!("(lcm 3 7)", "21");
+    assert_eval_eq!("(lcm 9 -5 7 15)", "315");
 }
 
 #[test]
@@ -95,6 +120,80 @@ fn num_primitives() {
 
     assert_eval_eq!("(min 1 2 -3 4 5)", "-3");
     assert_eval_eq!("(min 1 2 -3 4.0 5)", "-3.0");
+
+    assert_eval_eq!("(abs 32)", "32");
+    assert_eval_eq!("(abs -10)", "10");
+
+    assert_eval_eq!("(floor -4.3)", "-5.0");
+    assert_eval_eq!("(ceiling -4.3)", "-4.0");
+    assert_eval_eq!("(truncate -4.3)", "-4.0");
+    assert_eval_eq!("(round -4.3)", "-4.0");
+
+    assert_eval_eq!("(floor 3.5)", "3.0");
+    assert_eval_eq!("(ceiling 3.5)", "4.0");
+    assert_eval_eq!("(truncate 3.5)", "3.0");
+    assert_eval_eq!("(round 3.5)", "4.0");
+
+    assert_eval_eq!("(round 7/2)", "4");
+    assert_eval_eq!("(round 7)", "7");
+
+    assert_eval_eq!("(numerator (/ 6 4))", "3");
+    assert_eval_eq!("(numerator 5)", "5");
+    assert_eval_eq!("(denominator (/ 6 4))", "2");
+    assert_eval_eq!("(denominator 1.5)", "2.0");
+
+    assert_eval_eq!("(rationalize 1/4 1/10)", "1/3");
+    assert_eval_eq!("(rationalize -1/4 1/10)", "-1/3");
+    assert_eval_eq!("(rationalize 1/4 1/4)", "0");
+    assert_eval_eq!("(rationalize 11/40 1/4)", "1/2");
+    assert_eval_eq!("(< (abs (- (rationalize 0.3 0.1) 1/3)) 1e-6)", "#t");
+
+    assert_eval_eq!("(inexact->exact 1)", "1");
+    assert_eval_eq!("(inexact->exact 2.0)", "2");
+    assert_eval_eq!("(exact->inexact 1/2)", "0.5");
+    assert_eval_eq!("(exact->inexact 1.0)", "1.0");
+
+    assert_eval_eq!("(sqrt 25)", "5");
+    assert_eval_eq!("(sqrt 4/9)", "2/3");
+
+    assert_eval_eq!(
+        "(define (all_close l)
+           (cond
+             ((null? l) #t)
+             ((> (abs (- (caar l) (cadar l))) 1e-6) #f)
+             (else (all_close (cdr l)))))
+         (define pi (acos -1))
+         (define e (exp 1))
+         (all_close
+          (list
+           (list (sin pi) 0)
+           (list (cos (/ pi 4)) (/ (sqrt 2)))
+           (list (tan (* pi 3/4)) -1)
+           (list (asin 1/2) (acos (/ (sqrt 3) 2)))
+           (list (atan -1) (atan -5 5))
+           (list (exp 3) (* e e e))
+           (list (log (* e e)) 2)
+           (list (log (/ e)) -1)))",
+        "#t"
+    );
+
+    assert_eval_eq!("(string->number \"100\")", "100");
+    assert_eval_eq!("(string->number \"#x100\")", "256");
+    assert_eval_eq!("(string->number \"#b100\" 16)", "4");
+    assert_eval_eq!("(string->number \"#o888\" 10)", "#f");
+    assert_eval_eq!("(string->number \"#i#x1e10\" 2)", "7696.0");
+    assert_eval_eq!("(string->number \"123.456\")", "123.456");
+    assert_eval_eq!("(string->number \"#e6.4e1\")", "64");
+    assert_eval_eq!("(string->number \"#d1/2\")", "1/2");
+    assert_eval_eq!("(string->number \"a/b\" 16)", "10/11");
+    assert_eval_eq!("(string->number \"1.0/2\")", "#f");
+
+    assert_eval_eq!("(number->string 100)", "\"100\"");
+    assert_eval_eq!("(number->string 32 8)", "\"40\"");
+    assert_eval_eq!("(number->string 255 16)", "\"ff\"");
+    assert_eval_eq!("(number->string 5 2)", "\"101\"");
+    assert_eval_eq!("(number->string 5/2)", "\"5/2\"");
+    assert_eval_eq!("(number->string #i5/2)", "\"2.5\"");
 }
 
 #[test]

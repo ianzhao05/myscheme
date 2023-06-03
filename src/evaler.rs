@@ -34,6 +34,7 @@ pub enum EvalErrorKind {
     IOError,
     ReadError(ReadError),
     ClosedPort,
+    InexactNonDecimalFormat,
 }
 
 #[derive(Debug, PartialEq)]
@@ -80,6 +81,9 @@ impl fmt::Display for EvalError {
             EvalErrorKind::IOError => write!(f, "IO error"),
             EvalErrorKind::ReadError(e) => write!(f, "read: {e}"),
             EvalErrorKind::ClosedPort => write!(f, "Attempted read or write from closed port"),
+            EvalErrorKind::InexactNonDecimalFormat => {
+                write!(f, "Inexact numbers must be printed in decimal")
+            }
         }
     }
 }

@@ -5,46 +5,34 @@ use crate::evaler::{EvalError, EvalErrorKind};
 use crate::object::{Object, ObjectRef};
 use crate::port::{Port, ReadError, STDIN, STDOUT};
 
-use super::utils::{char_cv, ensure_arity, iport_cv, oport_cv, string_cv, PrimitiveMap};
+use super::utils::{ensure_arity, get_char, get_iport, get_oport, get_string, PrimitiveMap};
 
 fn open_file(args: &[ObjectRef], out: bool) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
-    match args[0].try_deref_or(string_cv)? {
-        Object::Atom(SimpleDatum::String(s)) => Ok(ObjectRef::new(Object::Port(
-            (if out {
-                Port::new_output(&s.borrow())
-            } else {
-                Port::new_input(&s.borrow())
-            })
-            .map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
-        ))),
-        _ => Err(string_cv(&args[0])),
-    }
+    let s = get_string(&args[0])?.borrow();
+    Ok(ObjectRef::new(Object::Port(
+        (if out {
+            Port::new_output(s.as_ref())
+        } else {
+            Port::new_input(s.as_ref())
+        })
+        .map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
+    )))
 }
 
 fn close_input_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
-    match args[0].try_deref_or(iport_cv)? {
-        Object::Port(Port::Input(op)) => {
-            op.borrow_mut().take();
-            Ok(ObjectRef::Void)
-        }
-        _ => Err(iport_cv(&args[0])),
-    }
+    get_iport(&args[0])?.borrow_mut().take();
+    Ok(ObjectRef::Void)
 }
 
 fn close_output_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
-    match args[0].try_deref_or(oport_cv)? {
-        Object::Port(Port::Output(op)) => {
-            op.borrow_mut().take();
-            Ok(ObjectRef::Void)
-        }
-        _ => Err(oport_cv(&args[0])),
-    }
+    get_oport(&args[0])?.borrow_mut().take();
+    Ok(ObjectRef::Void)
 }
 
 fn current_input_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
@@ -62,20 +50,15 @@ fn current_output_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn write_char(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1, 2);
 
-    let c = match args[0].try_deref_or(char_cv)? {
-        Object::Atom(SimpleDatum::Character(c)) => *c,
-        _ => return Err(char_cv(&args[0])),
-    };
-    let port = args
+    let c = get_char(&args[0])?;
+    let arg = args
         .get(1)
         .cloned()
         .unwrap_or_else(|| STDOUT.with(|s| s.clone()));
-    match port.try_deref_or(oport_cv)? {
-        Object::Port(Port::Output(op)) => match &mut *op.borrow_mut() {
-            Some(w) => write!(w, "{c}").map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
-            None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
-        },
-        _ => return Err(oport_cv(&port)),
+    let mut op = get_oport(&arg)?.borrow_mut();
+    match op.as_mut() {
+        Some(w) => write!(w, "{c}").map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
+        None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
     }
     Ok(ObjectRef::Void)
 }
@@ -83,21 +66,19 @@ fn write_char(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn display_write(args: &[ObjectRef], write: bool) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1, 2);
 
-    let port = args
+    let arg = args
         .get(1)
         .cloned()
         .unwrap_or_else(|| STDOUT.with(|s| s.clone()));
-    match port.try_deref_or(oport_cv)? {
-        Object::Port(Port::Output(op)) => match &mut *op.borrow_mut() {
-            Some(w) => (if write {
-                write!(w, "{:#}", args[0])
-            } else {
-                write!(w, "{}", args[0])
-            })
-            .map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
-            None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
-        },
-        _ => return Err(oport_cv(&port)),
+    let mut op = get_oport(&arg)?.borrow_mut();
+    match op.as_mut() {
+        Some(w) => (if write {
+            write!(w, "{:#}", args[0])
+        } else {
+            write!(w, "{}", args[0])
+        })
+        .map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
+        None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
     }
     Ok(ObjectRef::Void)
 }
@@ -105,18 +86,16 @@ fn display_write(args: &[ObjectRef], write: bool) -> Result<ObjectRef, EvalError
 fn read(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 0, 1);
 
-    let port = args
+    let arg = args
         .first()
         .cloned()
         .unwrap_or_else(|| STDIN.with(|s| s.clone()));
-    let datum = match port.try_deref_or(iport_cv)? {
-        Object::Port(Port::Input(ip)) => match &mut *ip.borrow_mut() {
-            Some(r) => r
-                .read()
-                .map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
-            None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
-        },
-        _ => return Err(iport_cv(&args[0])),
+    let mut ip = get_iport(&arg)?.borrow_mut();
+    let datum = match ip.as_mut() {
+        Some(r) => r
+            .read()
+            .map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
+        None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
     };
     match datum {
         Ok(d) => Ok(ObjectRef::from(d)),
@@ -128,18 +107,16 @@ fn read(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn read_peek_char(args: &[ObjectRef], peek: bool) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 0, 1);
 
-    let port = args
+    let arg = args
         .first()
         .cloned()
         .unwrap_or_else(|| STDIN.with(|s| s.clone()));
-    let c = match port.try_deref_or(iport_cv)? {
-        Object::Port(Port::Input(ip)) => match &mut *ip.borrow_mut() {
-            Some(r) => r
-                .read_char(peek)
-                .map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
-            None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
-        },
-        _ => return Err(iport_cv(&args[0])),
+    let mut ip = get_iport(&arg)?.borrow_mut();
+    let c = match ip.as_mut() {
+        Some(r) => r
+            .read_char(peek)
+            .map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
+        None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
     };
     match c {
         Some(c) => Ok(ObjectRef::new(Object::Atom(SimpleDatum::Character(c)))),
@@ -150,16 +127,14 @@ fn read_peek_char(args: &[ObjectRef], peek: bool) -> Result<ObjectRef, EvalError
 fn char_ready(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 0, 1);
 
-    let port = args
+    let arg = args
         .first()
         .cloned()
         .unwrap_or_else(|| STDIN.with(|s| s.clone()));
-    let res = match port.try_deref_or(iport_cv)? {
-        Object::Port(Port::Input(ip)) => match &mut *ip.borrow_mut() {
-            Some(r) => r.char_ready(),
-            None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
-        },
-        _ => return Err(iport_cv(&args[0])),
+    let mut ip = get_iport(&arg)?.borrow_mut();
+    let res = match ip.as_mut() {
+        Some(r) => r.char_ready(),
+        None => return Err(EvalError::new(EvalErrorKind::ClosedPort)),
     };
     Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(res))))
 }
