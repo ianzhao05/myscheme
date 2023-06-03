@@ -6,6 +6,10 @@ use std::str::FromStr;
 use num::FromPrimitive;
 use num::{bigint::ToBigInt, BigInt, BigRational, Complex, Signed, ToPrimitive, Zero};
 
+fn is_perfect_square(n: &BigInt) -> bool {
+    n.sqrt().pow(2) == *n
+}
+
 #[derive(Debug, Clone)]
 pub enum RealKind {
     Real(f64),
@@ -181,10 +185,10 @@ impl RealKind {
     }
 
     pub fn to_inexact(&self) -> Self {
-        RealKind::Real(self.to_inexact_impl())
+        RealKind::Real(self.to_inexact_raw())
     }
 
-    fn to_inexact_impl(&self) -> f64 {
+    pub fn to_inexact_raw(&self) -> f64 {
         match self {
             RealKind::Real(r) => *r,
             RealKind::Rational(r) => r.to_f64().unwrap_or(f64::NAN),
@@ -193,7 +197,7 @@ impl RealKind {
     }
 
     fn map_inexact<F: FnOnce(f64) -> f64>(&self, f: F) -> RealKind {
-        RealKind::Real(f(self.to_inexact_impl()))
+        RealKind::Real(f(self.to_inexact_raw()))
     }
 
     pub fn to_integer(&self) -> Option<BigInt> {
@@ -245,6 +249,29 @@ impl RealKind {
             ),
             RealKind::Rational(r) => RealKind::Integer(r.denom().clone()),
             RealKind::Integer(_) => RealKind::Integer(BigInt::from(1)),
+        }
+    }
+
+    fn sqrt(&self) -> RealKind {
+        if self.is_negative() {
+            return RealKind::Real(f64::NAN);
+        }
+        match self {
+            RealKind::Real(r) => RealKind::Real(r.sqrt()),
+            RealKind::Rational(r) => {
+                if is_perfect_square(r.numer()) && is_perfect_square(r.denom()) {
+                    RealKind::Rational(BigRational::new(r.numer().sqrt(), r.denom().sqrt()))
+                } else {
+                    RealKind::Real(r.to_f64().unwrap_or(f64::NAN).sqrt())
+                }
+            }
+            RealKind::Integer(i) => {
+                if is_perfect_square(i) {
+                    RealKind::Integer(i.sqrt())
+                } else {
+                    RealKind::Real(i.to_f64().unwrap_or(f64::NAN).sqrt())
+                }
+            }
         }
     }
 }
@@ -404,6 +431,12 @@ impl Number {
         }
     }
 
+    pub fn to_inexact_raw(&self) -> f64 {
+        match self {
+            Number::Real(r) => r.to_inexact_raw(),
+        }
+    }
+
     pub fn to_integer(&self) -> Option<BigInt> {
         match self {
             Number::Real(r) => r.to_integer(),
@@ -425,6 +458,12 @@ impl Number {
     pub fn denominator(&self) -> Self {
         match self {
             Number::Real(r) => Number::Real(r.denominator()),
+        }
+    }
+
+    pub fn sqrt(&self) -> Number {
+        match self {
+            Number::Real(r) => Number::Real(r.sqrt()),
         }
     }
 }

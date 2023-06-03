@@ -129,6 +129,21 @@ fn maxmin(args: &[ObjectRef], max: bool) -> Result<ObjectRef, EvalError> {
     Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(res))))
 }
 
+fn atan(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
+    ensure_arity!(args, 1, 2);
+    Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
+        match args.len() {
+            1 => get_num(&args[0])?.map_inexact(f64::atan),
+            2 => {
+                let n1 = get_num(&args[0])?.to_inexact_raw();
+                let n2 = get_num(&args[1])?.to_inexact_raw();
+                Number::Real(RealKind::Real(n1.atan2(n2)))
+            }
+            _ => unreachable!(),
+        },
+    ))))
+}
+
 enum IntOp {
     Quotient,
     Remainder,
@@ -299,6 +314,9 @@ pub fn primitives() -> PrimitiveMap {
     m.insert("inexact->exact", |args| {
         num_map(args, |n| SimpleDatum::Number(n.to_exact()))
     });
+    m.insert("sqrt", |args| {
+        num_map(args, |n| SimpleDatum::Number(n.sqrt()))
+    });
     m.insert("exp", |args| {
         num_map(args, |n| SimpleDatum::Number(n.map_inexact(f64::exp)))
     });
@@ -320,6 +338,7 @@ pub fn primitives() -> PrimitiveMap {
     m.insert("acos", |args| {
         num_map(args, |n| SimpleDatum::Number(n.map_inexact(f64::acos)))
     });
+    m.insert("atan", atan);
     m.insert("quotient", |args| ints_op(args, IntOp::Quotient));
     m.insert("remainder", |args| ints_op(args, IntOp::Remainder));
     m.insert("modulo", |args| ints_op(args, IntOp::Modulo));
