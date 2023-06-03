@@ -429,10 +429,10 @@ impl Number {
     }
 }
 
-impl Add for Number {
-    type Output = Self;
+impl Add<&Number> for &Number {
+    type Output = Number;
 
-    fn add(self, rhs: Self) -> Self::Output {
+    fn add(self, rhs: &Number) -> Self::Output {
         match (self, rhs) {
             (Number::Real(a), Number::Real(b)) => match (a, b) {
                 (RealKind::Real(a), RealKind::Real(b)) => Number::Real(RealKind::Real(a + b)),
@@ -443,10 +443,10 @@ impl Add for Number {
                     Number::Real(RealKind::Integer(a + b))
                 }
                 (RealKind::Rational(a), RealKind::Integer(b)) => {
-                    Number::Real(RealKind::Rational(a + BigRational::from(b)))
+                    Number::Real(RealKind::Rational(a + BigRational::from_integer(b.clone())))
                 }
                 (RealKind::Integer(a), RealKind::Rational(b)) => {
-                    Number::Real(RealKind::Rational(BigRational::from(a) + b))
+                    Number::Real(RealKind::Rational(BigRational::from_integer(a.clone()) + b))
                 }
                 (RealKind::Real(a), RealKind::Rational(b)) => {
                     Number::Real(RealKind::Real(a + b.to_f64().unwrap_or(f64::NAN)))
@@ -465,16 +465,16 @@ impl Add for Number {
     }
 }
 
-impl AddAssign for Number {
-    fn add_assign(&mut self, rhs: Self) {
-        *self = self.clone() + rhs;
+impl AddAssign<&Number> for Number {
+    fn add_assign(&mut self, rhs: &Number) {
+        *self = &*self + rhs;
     }
 }
 
-impl Sub for Number {
-    type Output = Self;
+impl Sub<&Number> for &Number {
+    type Output = Number;
 
-    fn sub(self, rhs: Self) -> Self::Output {
+    fn sub(self, rhs: &Number) -> Self::Output {
         match (self, rhs) {
             (Number::Real(a), Number::Real(b)) => match (a, b) {
                 (RealKind::Real(a), RealKind::Real(b)) => Number::Real(RealKind::Real(a - b)),
@@ -485,10 +485,10 @@ impl Sub for Number {
                     Number::Real(RealKind::Integer(a - b))
                 }
                 (RealKind::Rational(a), RealKind::Integer(b)) => {
-                    Number::Real(RealKind::Rational(a - BigRational::from(b)))
+                    Number::Real(RealKind::Rational(a - BigRational::from_integer(b.clone())))
                 }
                 (RealKind::Integer(a), RealKind::Rational(b)) => {
-                    Number::Real(RealKind::Rational(BigRational::from(a) - b))
+                    Number::Real(RealKind::Rational(BigRational::from_integer(a.clone()) - b))
                 }
                 (RealKind::Real(a), RealKind::Rational(b)) => {
                     Number::Real(RealKind::Real(a - b.to_f64().unwrap_or(f64::NAN)))
@@ -507,9 +507,9 @@ impl Sub for Number {
     }
 }
 
-impl SubAssign for Number {
-    fn sub_assign(&mut self, rhs: Self) {
-        *self = self.clone() - rhs;
+impl SubAssign<&Number> for Number {
+    fn sub_assign(&mut self, rhs: &Number) {
+        *self = &*self - rhs;
     }
 }
 
@@ -527,10 +527,10 @@ impl Neg for Number {
     }
 }
 
-impl Mul for Number {
-    type Output = Self;
+impl Mul<&Number> for &Number {
+    type Output = Number;
 
-    fn mul(self, rhs: Self) -> Self::Output {
+    fn mul(self, rhs: &Number) -> Self::Output {
         match (self, rhs) {
             (Number::Real(a), Number::Real(b)) => match (a, b) {
                 (RealKind::Real(a), RealKind::Real(b)) => Number::Real(RealKind::Real(a * b)),
@@ -541,10 +541,10 @@ impl Mul for Number {
                     Number::Real(RealKind::Integer(a * b))
                 }
                 (RealKind::Rational(a), RealKind::Integer(b)) => {
-                    Number::Real(RealKind::Rational(a * BigRational::from(b)))
+                    Number::Real(RealKind::Rational(a * BigRational::from_integer(b.clone())))
                 }
                 (RealKind::Integer(a), RealKind::Rational(b)) => {
-                    Number::Real(RealKind::Rational(BigRational::from(a) * b))
+                    Number::Real(RealKind::Rational(BigRational::from_integer(a.clone()) * b))
                 }
                 (RealKind::Real(a), RealKind::Rational(b)) => {
                     Number::Real(RealKind::Real(a * b.to_f64().unwrap_or(f64::NAN)))
@@ -563,16 +563,16 @@ impl Mul for Number {
     }
 }
 
-impl MulAssign for Number {
-    fn mul_assign(&mut self, rhs: Self) {
-        *self = self.clone() * rhs;
+impl MulAssign<&Number> for Number {
+    fn mul_assign(&mut self, rhs: &Number) {
+        *self = &*self * rhs;
     }
 }
 
-impl Div for Number {
-    type Output = Self;
+impl Div<&Number> for &Number {
+    type Output = Number;
 
-    fn div(self, rhs: Self) -> Self::Output {
+    fn div(self, rhs: &Number) -> Self::Output {
         match (self, rhs) {
             (Number::Real(a), Number::Real(b)) => match (a, b) {
                 (RealKind::Real(a), RealKind::Real(b)) => Number::Real(RealKind::Real(a / b)),
@@ -580,13 +580,13 @@ impl Div for Number {
                     Number::Real(RealKind::Rational(a / b))
                 }
                 (RealKind::Integer(a), RealKind::Integer(b)) => {
-                    Number::Real(RealKind::Rational(BigRational::new(a, b)))
+                    Number::Real(RealKind::Rational(BigRational::new(a.clone(), b.clone())))
                 }
                 (RealKind::Rational(a), RealKind::Integer(b)) => {
-                    Number::Real(RealKind::Rational(a / BigRational::from(b)))
+                    Number::Real(RealKind::Rational(a / BigRational::from_integer(b.clone())))
                 }
                 (RealKind::Integer(a), RealKind::Rational(b)) => {
-                    Number::Real(RealKind::Rational(BigRational::from(a) / b))
+                    Number::Real(RealKind::Rational(BigRational::from_integer(a.clone()) / b))
                 }
                 (RealKind::Real(a), RealKind::Rational(b)) => {
                     Number::Real(RealKind::Real(a / b.to_f64().unwrap_or(1.0)))
@@ -605,9 +605,9 @@ impl Div for Number {
     }
 }
 
-impl DivAssign for Number {
-    fn div_assign(&mut self, rhs: Self) {
-        *self = self.clone() / rhs;
+impl DivAssign<&Number> for Number {
+    fn div_assign(&mut self, rhs: &Number) {
+        *self = &*self / rhs;
     }
 }
 

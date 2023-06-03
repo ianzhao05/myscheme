@@ -6,7 +6,7 @@ use crate::evaler::EvalError;
 use crate::number::{Number, RealKind};
 use crate::object::{Object, ObjectRef};
 
-use super::utils::{char_cv, charval_cv, ensure_arity, PrimitiveMap};
+use super::utils::{charval_cv, ensure_arity, get_char, PrimitiveMap};
 
 fn char_cmp(
     args: &[ObjectRef],
@@ -17,12 +17,8 @@ fn char_cmp(
     debug_assert!(ord != Ordering::Equal || strict);
     ensure_arity!(args, 2);
 
-    let mut it = args.iter().map(|arg| match arg.try_deref_or(char_cv)? {
-        Object::Atom(SimpleDatum::Character(c)) => Ok(*c),
-        _ => Err(char_cv(arg)),
-    });
-    let c1 = it.next().unwrap()?;
-    let c2 = it.next().unwrap()?;
+    let c1 = get_char(&args[0])?;
+    let c2 = get_char(&args[1])?;
 
     let cmp = if ci {
         c1.to_lowercase().cmp(c2.to_lowercase())
@@ -44,10 +40,7 @@ fn char_map(
 ) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
-    match args[0].try_deref_or(char_cv)? {
-        Object::Atom(SimpleDatum::Character(c)) => Ok(ObjectRef::new(Object::Atom(f(*c)))),
-        _ => Err(char_cv(&args[0])),
-    }
+    Ok(ObjectRef::new(Object::Atom(f(get_char(&args[0])?))))
 }
 
 fn int_to_char(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
@@ -134,6 +127,7 @@ pub fn primitives() -> PrimitiveMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::primitives::utils::char_cv;
     use crate::test_util::*;
 
     #[test]

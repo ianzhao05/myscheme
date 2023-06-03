@@ -1,11 +1,14 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use num::bigint::Sign;
 
 use crate::datum::SimpleDatum;
 use crate::evaler::EvalError;
+use crate::interner::Symbol;
 use crate::number::{Number, RealKind};
 use crate::object::{Object, ObjectRef};
+use crate::port::{IPort, Port};
 
 pub type PrimitiveMap = HashMap<&'static str, fn(&[ObjectRef]) -> Result<ObjectRef, EvalError>>;
 
@@ -15,6 +18,20 @@ pub fn merge(maps: &[PrimitiveMap]) -> PrimitiveMap {
         m.extend(n);
     }
     m
+}
+
+pub fn get_num(arg: &ObjectRef) -> Result<&Number, EvalError> {
+    match arg.try_deref_or(num_cv)? {
+        Object::Atom(SimpleDatum::Number(n)) => Ok(n),
+        _ => Err(num_cv(arg)),
+    }
+}
+
+pub fn get_int(arg: &ObjectRef) -> Result<&Number, EvalError> {
+    match arg.try_deref_or(int_cv)? {
+        Object::Atom(SimpleDatum::Number(n)) if n.is_integer() => Ok(n),
+        _ => Err(int_cv(arg)),
+    }
 }
 
 pub fn get_len(arg: &ObjectRef) -> Result<usize, EvalError> {
@@ -29,6 +46,55 @@ pub fn get_len(arg: &ObjectRef) -> Result<usize, EvalError> {
             _ => return Err(len_cv(arg)),
         },
         _ => return Err(len_cv(arg)),
+    }
+}
+
+pub fn get_string(arg: &ObjectRef) -> Result<&RefCell<String>, EvalError> {
+    match arg.try_deref_or(string_cv)? {
+        Object::Atom(SimpleDatum::String(s)) => Ok(s),
+        _ => Err(string_cv(arg)),
+    }
+}
+
+pub fn get_char(arg: &ObjectRef) -> Result<char, EvalError> {
+    match arg.try_deref_or(char_cv)? {
+        Object::Atom(SimpleDatum::Character(c)) => Ok(*c),
+        _ => Err(char_cv(arg)),
+    }
+}
+
+pub fn get_symbol(arg: &ObjectRef) -> Result<Symbol, EvalError> {
+    match arg.try_deref_or(symbol_cv)? {
+        Object::Atom(SimpleDatum::Symbol(s)) => Ok(*s),
+        _ => Err(symbol_cv(arg)),
+    }
+}
+
+pub fn get_pair(arg: &ObjectRef) -> Result<&RefCell<(ObjectRef, ObjectRef)>, EvalError> {
+    match arg.try_deref_or(pair_cv)? {
+        Object::Pair(p) => Ok(p),
+        _ => Err(pair_cv(arg)),
+    }
+}
+
+pub fn get_vector(arg: &ObjectRef) -> Result<&RefCell<Vec<ObjectRef>>, EvalError> {
+    match arg.try_deref_or(vector_cv)? {
+        Object::Vector(v) => Ok(v),
+        _ => Err(vector_cv(arg)),
+    }
+}
+
+pub fn get_iport(arg: &ObjectRef) -> Result<&RefCell<Option<IPort>>, EvalError> {
+    match arg.try_deref_or(iport_cv)? {
+        Object::Port(Port::Input(ip)) => Ok(ip),
+        _ => Err(iport_cv(arg)),
+    }
+}
+
+pub fn get_oport(arg: &ObjectRef) -> Result<&RefCell<Option<Box<dyn std::io::Write>>>, EvalError> {
+    match arg.try_deref_or(oport_cv)? {
+        Object::Port(Port::Output(op)) => Ok(op),
+        _ => Err(oport_cv(arg)),
     }
 }
 

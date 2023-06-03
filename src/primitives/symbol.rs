@@ -5,26 +5,20 @@ use crate::evaler::EvalError;
 use crate::interner::Symbol;
 use crate::object::{Object, ObjectRef};
 
-use super::utils::{ensure_arity, string_cv, symbol_cv, PrimitiveMap};
+use super::utils::{ensure_arity, get_string, get_symbol, PrimitiveMap};
 
 fn symbol_to_string(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
-    match args[0].try_deref_or(symbol_cv)? {
-        Object::Atom(SimpleDatum::Symbol(s)) => Ok(ObjectRef::new_string(s.to_string())),
-        _ => Err(symbol_cv(&args[0])),
-    }
+    Ok(ObjectRef::new_string(get_symbol(&args[0])?.to_string()))
 }
 
 fn string_to_symbol(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
 
-    match args[0].try_deref_or(string_cv)? {
-        Object::Atom(SimpleDatum::String(s)) => Ok(ObjectRef::new(Object::Atom(
-            SimpleDatum::Symbol(Symbol::from(s.borrow().as_ref())),
-        ))),
-        _ => Err(string_cv(&args[0])),
-    }
+    Ok(ObjectRef::new(Object::Atom(SimpleDatum::Symbol(
+        Symbol::from(get_string(&args[0])?.borrow().as_ref()),
+    ))))
 }
 
 pub fn primitives() -> PrimitiveMap {
@@ -38,6 +32,7 @@ pub fn primitives() -> PrimitiveMap {
 mod tests {
     use super::*;
     use crate::evaler::EvalErrorKind;
+    use crate::primitives::utils::symbol_cv;
     use crate::test_util::*;
 
     #[test]
