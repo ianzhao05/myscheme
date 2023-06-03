@@ -8,7 +8,7 @@ use crate::evaler::{EvalError, EvalErrorKind};
 use crate::number::*;
 use crate::object::{Object, ObjectRef};
 
-use super::utils::{ensure_arity, get_int, get_num, PrimitiveMap};
+use super::utils::{ensure_arity, get_int, get_num, get_radix, get_string, PrimitiveMap};
 
 fn integer(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
@@ -258,6 +258,34 @@ fn rationalize(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     }
 }
 
+fn number_to_string(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
+    ensure_arity!(args, 1, 2);
+
+    let n = get_num(&args[0])?;
+    let radix = args.get(1).map(get_radix).transpose()?.unwrap_or(10);
+    if radix != 10 && !n.is_exact() {
+        return Err(EvalError::new(EvalErrorKind::InexactNonDecimalFormat));
+    }
+    Ok(ObjectRef::new_string(match radix {
+        2 => format!("{n:b}"),
+        8 => format!("{n:o}"),
+        10 => format!("{n}"),
+        16 => format!("{n:x}"),
+        _ => unreachable!(),
+    }))
+}
+
+fn string_to_number(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
+    ensure_arity!(args, 1, 2);
+
+    let s = get_string(&args[0])?.borrow();
+    let radix = args.get(1).map(get_radix).transpose()?.unwrap_or(10);
+    match Number::from_str_default_radix(s.as_ref(), radix) {
+        Ok(n) => Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(n)))),
+        Err(_) => Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(false)))),
+    }
+}
+
 pub fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("integer?", integer);
@@ -345,6 +373,8 @@ pub fn primitives() -> PrimitiveMap {
     m.insert("gcd", |args| gcd_lcm(args, false));
     m.insert("lcm", |args| gcd_lcm(args, true));
     m.insert("rationalize", rationalize);
+    m.insert("number->string", number_to_string);
+    m.insert("string->number", string_to_number);
     m
 }
 

@@ -176,6 +176,24 @@ fn num_primitives() {
            (list (log (/ e)) -1)))",
         "#t"
     );
+
+    assert_eval_eq!("(string->number \"100\")", "100");
+    assert_eval_eq!("(string->number \"#x100\")", "256");
+    assert_eval_eq!("(string->number \"#b100\" 16)", "4");
+    assert_eval_eq!("(string->number \"#o888\" 10)", "#f");
+    assert_eval_eq!("(string->number \"#i#x1e10\" 2)", "7696.0");
+    assert_eval_eq!("(string->number \"123.456\")", "123.456");
+    assert_eval_eq!("(string->number \"#e6.4e1\")", "64");
+    assert_eval_eq!("(string->number \"#d1/2\")", "1/2");
+    assert_eval_eq!("(string->number \"a/b\" 16)", "10/11");
+    assert_eval_eq!("(string->number \"1.0/2\")", "#f");
+
+    assert_eval_eq!("(number->string 100)", "\"100\"");
+    assert_eval_eq!("(number->string 32 8)", "\"40\"");
+    assert_eval_eq!("(number->string 255 16)", "\"ff\"");
+    assert_eval_eq!("(number->string 5 2)", "\"101\"");
+    assert_eval_eq!("(number->string 5/2)", "\"5/2\"");
+    assert_eval_eq!("(number->string #i5/2)", "\"2.5\"");
 }
 
 #[test]

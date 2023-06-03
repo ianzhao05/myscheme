@@ -37,6 +37,46 @@ impl fmt::Display for RealKind {
     }
 }
 
+impl fmt::Binary for RealKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RealKind::Real(_) => panic!("Inexact numbers must be printed in decimal"),
+            RealKind::Rational(r) => r.fmt(f),
+            RealKind::Integer(i) => i.fmt(f),
+        }
+    }
+}
+
+impl fmt::Octal for RealKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RealKind::Real(_) => panic!("Inexact numbers must be printed in decimal"),
+            RealKind::Rational(r) => r.fmt(f),
+            RealKind::Integer(i) => i.fmt(f),
+        }
+    }
+}
+
+impl fmt::LowerHex for RealKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RealKind::Real(_) => panic!("Inexact numbers must be printed in decimal"),
+            RealKind::Rational(r) => r.fmt(f),
+            RealKind::Integer(i) => i.fmt(f),
+        }
+    }
+}
+
+impl fmt::UpperHex for RealKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RealKind::Real(_) => panic!("Inexact numbers must be printed in decimal"),
+            RealKind::Rational(r) => r.fmt(f),
+            RealKind::Integer(i) => i.fmt(f),
+        }
+    }
+}
+
 impl RealKind {
     pub fn eq_val(this: &Self, other: &Self) -> bool {
         match (this, other) {
@@ -342,6 +382,38 @@ pub enum Number {
 }
 
 impl fmt::Display for Number {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Number::Real(r) => r.fmt(f),
+        }
+    }
+}
+
+impl fmt::Binary for Number {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Number::Real(r) => r.fmt(f),
+        }
+    }
+}
+
+impl fmt::Octal for Number {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Number::Real(r) => r.fmt(f),
+        }
+    }
+}
+
+impl fmt::LowerHex for Number {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Number::Real(r) => r.fmt(f),
+        }
+    }
+}
+
+impl fmt::UpperHex for Number {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Number::Real(r) => r.fmt(f),

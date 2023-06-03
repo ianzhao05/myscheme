@@ -49,6 +49,25 @@ pub fn get_len(arg: &ObjectRef) -> Result<usize, EvalError> {
     }
 }
 
+pub fn get_radix(arg: &ObjectRef) -> Result<u32, EvalError> {
+    let radix: u32 = match arg.try_deref_or(radix_cv)? {
+        Object::Atom(SimpleDatum::Number(Number::Real(n))) => match n {
+            RealKind::Rational(r) if r.is_integer() && r.numer().sign() != Sign::Minus => {
+                r.to_integer().try_into().map_err(|_| radix_cv(arg))?
+            }
+            RealKind::Integer(i) if i.sign() != Sign::Minus => {
+                i.try_into().map_err(|_| radix_cv(arg))?
+            }
+            _ => return Err(radix_cv(arg)),
+        },
+        _ => return Err(radix_cv(arg)),
+    };
+    match radix {
+        2 | 8 | 10 | 16 => Ok(radix),
+        _ => Err(radix_cv(arg)),
+    }
+}
+
 pub fn get_string(arg: &ObjectRef) -> Result<&RefCell<String>, EvalError> {
     match arg.try_deref_or(string_cv)? {
         Object::Atom(SimpleDatum::String(s)) => Ok(s),
@@ -139,6 +158,7 @@ macro_rules! cv_fn {
 
 cv_fn!(num_cv, "number");
 cv_fn!(int_cv, "integer");
+cv_fn!(radix_cv, "radix");
 cv_fn!(symbol_cv, "symbol");
 cv_fn!(char_cv, "char");
 cv_fn!(pair_cv, "pair");
