@@ -269,15 +269,10 @@ impl SexpReader {
             has_tokens = true;
             match token {
                 Ok(token) => {
-                    if let Token::Quote
-                    | Token::Quasiquote
-                    | Token::Unquote
-                    | Token::UnquoteSplicing = &token
-                    {
-                        self.prev_quote = true;
-                    } else {
-                        self.prev_quote = false;
-                    }
+                    self.prev_quote = matches!(
+                        token,
+                        Token::Quote | Token::Quasiquote | Token::Unquote | Token::UnquoteSplicing
+                    );
                     match token {
                         Token::LParen | Token::Vector => self.open_count += 1,
                         Token::RParen => {

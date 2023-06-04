@@ -57,29 +57,6 @@ impl fmt::Display for ParserError {
 }
 
 fn is_keyword(symb: Symbol) -> bool {
-    // matches!(
-    //     symb,
-    //     "quote"
-    //         | "lambda"
-    //         | "if"
-    //         | "set!"
-    //         | "begin"
-    //         | "cond"
-    //         | "and"
-    //         | "or"
-    //         | "case"
-    //         | "let"
-    //         | "let*"
-    //         | "letrec"
-    //         | "do"
-    //         | "delay"
-    //         | "quasiquote"
-    //         | "else"
-    //         | "=>"
-    //         | "define"
-    //         | "unquote"
-    //         | "unquote-splicing"
-    // )
     [
         "quote",
         "lambda",
@@ -386,16 +363,15 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             Ok(binding_data
                 .into_iter()
                 .map(|binding| {
-                    if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = binding {
-                        if parts.len() != 2 {
-                            return Err(bs_err());
-                        }
-                        let mut pi = parts.into_iter();
-                        if let Datum::Simple(SimpleDatum::Symbol(name)) = pi.next().unwrap() {
-                            Ok((name, parse_expr(pi.next().unwrap())?))
-                        } else {
-                            Err(bs_err())
-                        }
+                    let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = binding else {
+                        return Err(bs_err())
+                    };
+                    if parts.len() != 2 {
+                        return Err(bs_err());
+                    }
+                    let mut pi = parts.into_iter();
+                    if let Datum::Simple(SimpleDatum::Symbol(name)) = pi.next().unwrap() {
+                        Ok((name, parse_expr(pi.next().unwrap())?))
                     } else {
                         Err(bs_err())
                     }
@@ -509,11 +485,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 Ok(ExprOrDef::new_expr(Expr::Conditional {
                     test: parse_expr(test)?,
                     consequent: parse_expr(consequent)?,
-                    alternate: if let Some(a) = alternate {
-                        Some(parse_expr(a)?)
-                    } else {
-                        None
-                    },
+                    alternate: alternate.map(parse_expr).transpose()?,
                 }))
             } else {
                 Err(bs_err())
@@ -522,88 +494,87 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
         _ if kw == "cond".into() => {
             let mut acc: Option<Rc<Expr>> = None;
             for clause in operands.rev() {
-                if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = clause {
-                    let mut pi = parts.into_iter();
-                    let first = pi.next().ok_or(ParserError {
-                        kind: ParserErrorKind::IllegalEmptyList,
-                    })?;
-                    match first {
-                        Datum::Simple(SimpleDatum::Symbol(s)) if s == "else".into() => {
-                            if let Some(_) = acc {
-                                return Err(bs_err());
-                            }
-                            let seq = pi.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
-                            if seq.is_empty() {
-                                return Err(bs_err());
-                            }
-                            acc = Some(if seq.len() == 1 {
-                                seq.into_iter().next().unwrap()
-                            } else {
-                                Rc::new(Expr::Begin(seq.into()))
-                            });
+                let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = clause else {
+                    return Err(bs_err());
+                };
+                let mut pi = parts.into_iter();
+                let first = pi.next().ok_or(ParserError {
+                    kind: ParserErrorKind::IllegalEmptyList,
+                })?;
+                match first {
+                    Datum::Simple(SimpleDatum::Symbol(s)) if s == "else".into() => {
+                        if acc.is_some() {
+                            return Err(bs_err());
                         }
-                        _ => {
-                            let test = parse_expr(first)?;
-                            let second = pi.next();
-                            if second.is_none() {
-                                match acc {
-                                    Some(a) => {
-                                        acc = Some(Rc::new(Expr::Conditional {
-                                            test,
-                                            consequent: a,
-                                            alternate: None,
-                                        }))
-                                    }
-                                    None => {
-                                        acc = Some(test);
-                                    }
-                                }
-                                continue;
-                            }
-                            match second.unwrap() {
-                                Datum::Simple(SimpleDatum::Symbol(s)) if s == "=>".into() => {
-                                    let third = pi.next().ok_or_else(bs_err)?;
-                                    if pi.next().is_some() {
-                                        return Err(bs_err());
-                                    }
-                                    let recipient = parse_expr(third)?;
-                                    let temp = gen_temp_name();
-                                    acc = Some(Rc::new(Expr::SimpleLet {
-                                        arg: temp,
-                                        value: test,
-                                        body: Rc::new(Expr::Conditional {
-                                            test: Rc::new(Expr::Variable(temp)),
-                                            consequent: Rc::new(Expr::ProcCall {
-                                                operator: recipient,
-                                                operands: vec![Rc::new(Expr::Variable(temp))],
-                                            }),
-                                            alternate: acc,
-                                        }),
-                                    }))
-                                }
-                                second => {
-                                    let seq = std::iter::once(second)
-                                        .chain(pi)
-                                        .map(parse_expr)
-                                        .collect::<Result<Vec<_>, _>>()?;
-                                    if seq.is_empty() {
-                                        return Err(bs_err());
-                                    }
+                        let seq = pi.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
+                        if seq.is_empty() {
+                            return Err(bs_err());
+                        }
+                        acc = Some(if seq.len() == 1 {
+                            seq.into_iter().next().unwrap()
+                        } else {
+                            Rc::new(Expr::Begin(seq.into()))
+                        });
+                    }
+                    _ => {
+                        let test = parse_expr(first)?;
+                        let second = pi.next();
+                        if second.is_none() {
+                            match acc {
+                                Some(a) => {
                                     acc = Some(Rc::new(Expr::Conditional {
                                         test,
-                                        consequent: if seq.len() == 1 {
-                                            seq.into_iter().next().unwrap()
-                                        } else {
-                                            Rc::new(Expr::Begin(seq.into()))
-                                        },
-                                        alternate: acc,
+                                        consequent: a,
+                                        alternate: None,
                                     }))
                                 }
+                                None => {
+                                    acc = Some(test);
+                                }
+                            }
+                            continue;
+                        }
+                        match second.unwrap() {
+                            Datum::Simple(SimpleDatum::Symbol(s)) if s == "=>".into() => {
+                                let third = pi.next().ok_or_else(bs_err)?;
+                                if pi.next().is_some() {
+                                    return Err(bs_err());
+                                }
+                                let recipient = parse_expr(third)?;
+                                let temp = gen_temp_name();
+                                acc = Some(Rc::new(Expr::SimpleLet {
+                                    arg: temp,
+                                    value: test,
+                                    body: Rc::new(Expr::Conditional {
+                                        test: Rc::new(Expr::Variable(temp)),
+                                        consequent: Rc::new(Expr::ProcCall {
+                                            operator: recipient,
+                                            operands: vec![Rc::new(Expr::Variable(temp))],
+                                        }),
+                                        alternate: acc,
+                                    }),
+                                }))
+                            }
+                            second => {
+                                let seq = std::iter::once(second)
+                                    .chain(pi)
+                                    .map(parse_expr)
+                                    .collect::<Result<Vec<_>, _>>()?;
+                                if seq.is_empty() {
+                                    return Err(bs_err());
+                                }
+                                acc = Some(Rc::new(Expr::Conditional {
+                                    test,
+                                    consequent: if seq.len() == 1 {
+                                        seq.into_iter().next().unwrap()
+                                    } else {
+                                        Rc::new(Expr::Begin(seq.into()))
+                                    },
+                                    alternate: acc,
+                                }))
                             }
                         }
                     }
-                } else {
-                    return Err(bs_err());
                 }
             }
             match acc {
@@ -670,57 +641,55 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             let temp = gen_temp_name();
             let mut acc: Option<Rc<Expr>> = None;
             for clause in operands.rev() {
-                if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = clause {
-                    let mut pi = parts.into_iter();
-                    let first = pi.next().ok_or(ParserError {
-                        kind: ParserErrorKind::IllegalEmptyList,
-                    })?;
-                    let seq = pi.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
-                    if seq.is_empty() {
-                        return Err(bs_err());
+                let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = clause else {
+                    return Err(bs_err());
+                };
+                let mut pi = parts.into_iter();
+                let first = pi.next().ok_or(ParserError {
+                    kind: ParserErrorKind::IllegalEmptyList,
+                })?;
+                let seq = pi.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
+                if seq.is_empty() {
+                    return Err(bs_err());
+                }
+                match first {
+                    Datum::Simple(SimpleDatum::Symbol(s)) if s == "else".into() => {
+                        if acc.is_some() {
+                            return Err(bs_err());
+                        }
+                        acc = Some(if seq.len() == 1 {
+                            seq.into_iter().next().unwrap()
+                        } else {
+                            Rc::new(Expr::Begin(seq.into()))
+                        });
                     }
-                    match first {
-                        Datum::Simple(SimpleDatum::Symbol(s)) if s == "else".into() => {
-                            if let Some(_) = acc {
-                                return Err(bs_err());
-                            }
-                            acc = Some(if seq.len() == 1 {
+                    Datum::Compound(CompoundDatum::List(ListKind::Proper(_))) => {
+                        acc = Some(Rc::new(Expr::Conditional {
+                            test: Rc::new(Expr::ProcCall {
+                                operator: Rc::new(Expr::Variable("memv".into())),
+                                operands: vec![
+                                    Rc::new(Expr::Variable(temp)),
+                                    Rc::new(Expr::Literal(LiteralKind::Quotation(first))),
+                                ],
+                            }),
+                            consequent: if seq.len() == 1 {
                                 seq.into_iter().next().unwrap()
                             } else {
                                 Rc::new(Expr::Begin(seq.into()))
-                            });
-                        }
-                        Datum::Compound(CompoundDatum::List(ListKind::Proper(_))) => {
-                            acc = Some(Rc::new(Expr::Conditional {
-                                test: Rc::new(Expr::ProcCall {
-                                    operator: Rc::new(Expr::Variable("memv".into())),
-                                    operands: vec![
-                                        Rc::new(Expr::Variable(temp)),
-                                        Rc::new(Expr::Literal(LiteralKind::Quotation(first))),
-                                    ],
-                                }),
-                                consequent: if seq.len() == 1 {
-                                    seq.into_iter().next().unwrap()
-                                } else {
-                                    Rc::new(Expr::Begin(seq.into()))
-                                },
-                                alternate: acc,
-                            }));
-                        }
-                        _ => {
-                            return Err(bs_err());
-                        }
+                            },
+                            alternate: acc,
+                        }));
+                    }
+                    _ => {
+                        return Err(bs_err());
                     }
                 }
             }
-            match acc {
-                Some(a) => Ok(ExprOrDef::new_expr(Expr::SimpleLet {
-                    arg: temp,
-                    value: key,
-                    body: a,
-                })),
-                None => Err(bs_err()),
-            }
+            Ok(ExprOrDef::new_expr(Expr::SimpleLet {
+                arg: temp,
+                value: key,
+                body: acc.ok_or_else(bs_err)?,
+            }))
         }
         _ if kw == "let".into() => {
             let mut first = operands.next().ok_or_else(bs_err)?;
@@ -861,81 +830,74 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
         }
         _ if kw == "do".into() => {
             let first = operands.next().ok_or_else(bs_err)?;
-            match first {
-                Datum::Compound(CompoundDatum::List(ListKind::Proper(_))) | Datum::EmptyList => {
-                    let mut vars = vec![];
-                    let mut inits = vec![];
-                    let mut steps = vec![];
-                    if let Datum::Compound(CompoundDatum::List(ListKind::Proper(spec_data))) = first
-                    {
-                        for spec in spec_data {
-                            if let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) =
-                                spec
-                            {
-                                if parts.len() != 2 && parts.len() != 3 {
-                                    return Err(bs_err());
-                                }
-                                let mut pi = parts.into_iter();
-                                if let Datum::Simple(SimpleDatum::Symbol(name)) = pi.next().unwrap()
-                                {
-                                    inits.push(parse_expr(pi.next().unwrap())?);
-                                    let step = pi
-                                        .next()
-                                        .map(parse_expr)
-                                        .transpose()?
-                                        .unwrap_or_else(|| Rc::new(Expr::Variable(name)));
-                                    vars.push(name);
-                                    steps.push(step);
-                                } else {
-                                    return Err(bs_err());
-                                }
-                            } else {
-                                return Err(bs_err());
-                            }
-                        }
-                    }
-                    let second = operands.next().ok_or_else(bs_err)?;
-                    if let Datum::Compound(CompoundDatum::List(ListKind::Proper(term))) = second {
-                        let mut ei = term.into_iter().map(parse_expr);
-                        let test = ei.next().ok_or_else(bs_err)??;
-                        let seq = ei.collect::<Result<Vec<_>, _>>()?;
-                        let mut body = operands.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
-                        let temp = gen_temp_name();
-                        body.push(Rc::new(Expr::ProcCall {
-                            operator: Rc::new(Expr::Variable(temp)),
-                            operands: steps,
-                        }));
-                        Ok(ExprOrDef::new_expr(Expr::ProcCall {
-                            operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                                args: vec![temp],
-                                rest: None,
-                                body: vec![
-                                    ExprOrDef::new_expr(Expr::Assignment {
-                                        variable: temp,
-                                        value: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                                            args: vars,
-                                            rest: None,
-                                            body: vec![ExprOrDef::new_expr(Expr::Conditional {
-                                                test,
-                                                consequent: Rc::new(Expr::Begin(seq.into())),
-                                                alternate: Some(Rc::new(Expr::Begin(body.into()))),
-                                            })],
-                                        }))),
-                                    }),
-                                    ExprOrDef::new_expr(Expr::ProcCall {
-                                        operator: Rc::new(Expr::Variable(temp)),
-                                        operands: inits,
-                                    }),
-                                ],
-                            }))),
-                            operands: vec![Rc::new(Expr::Undefined)],
-                        }))
-                    } else {
-                        Err(bs_err())
-                    }
-                }
-                _ => Err(bs_err()),
+            if !matches!(
+                first,
+                Datum::Compound(CompoundDatum::List(ListKind::Proper(_))) | Datum::EmptyList
+            ) {
+                return Err(bs_err());
             }
+            let mut vars = vec![];
+            let mut inits = vec![];
+            let mut steps = vec![];
+            if let Datum::Compound(CompoundDatum::List(ListKind::Proper(spec_data))) = first {
+                for spec in spec_data {
+                    let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = spec else {
+                        return Err(bs_err());
+                    };
+                    if parts.len() != 2 && parts.len() != 3 {
+                        return Err(bs_err());
+                    }
+                    let mut pi = parts.into_iter();
+                    let Datum::Simple(SimpleDatum::Symbol(name)) = pi.next().unwrap() else {
+                        return Err(bs_err());
+                    };
+                    inits.push(parse_expr(pi.next().unwrap())?);
+                    let step = pi
+                        .next()
+                        .map(parse_expr)
+                        .transpose()?
+                        .unwrap_or_else(|| Rc::new(Expr::Variable(name)));
+                    vars.push(name);
+                    steps.push(step);
+                }
+            }
+            let Some(Datum::Compound(CompoundDatum::List(ListKind::Proper(term)))) = operands.next() else {
+                return Err(bs_err());
+            };
+            let mut ei = term.into_iter().map(parse_expr);
+            let test = ei.next().ok_or_else(bs_err)??;
+            let seq = ei.collect::<Result<Vec<_>, _>>()?;
+            let mut body = operands.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
+            let temp = gen_temp_name();
+            body.push(Rc::new(Expr::ProcCall {
+                operator: Rc::new(Expr::Variable(temp)),
+                operands: steps,
+            }));
+            Ok(ExprOrDef::new_expr(Expr::ProcCall {
+                operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
+                    args: vec![temp],
+                    rest: None,
+                    body: vec![
+                        ExprOrDef::new_expr(Expr::Assignment {
+                            variable: temp,
+                            value: Rc::new(Expr::Lambda(Rc::new(ProcData {
+                                args: vars,
+                                rest: None,
+                                body: vec![ExprOrDef::new_expr(Expr::Conditional {
+                                    test,
+                                    consequent: Rc::new(Expr::Begin(seq.into())),
+                                    alternate: Some(Rc::new(Expr::Begin(body.into()))),
+                                })],
+                            }))),
+                        }),
+                        ExprOrDef::new_expr(Expr::ProcCall {
+                            operator: Rc::new(Expr::Variable(temp)),
+                            operands: inits,
+                        }),
+                    ],
+                }))),
+                operands: vec![Rc::new(Expr::Undefined)],
+            }))
         }
         _ if kw == "delay".into() => {
             let expr = parse_expr(operands.next().ok_or_else(bs_err)?)?;
