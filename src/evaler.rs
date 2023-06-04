@@ -428,7 +428,11 @@ pub fn eval(eod: ExprOrDef, env: Rc<RefCell<Env>>) -> Result<ObjectRef, EvalErro
             None,
         )))?),
         ExprOrDef::Definition(def) => eval_def(def, env),
-        ExprOrDef::MixedBegin(_) => todo!(),
+        ExprOrDef::MixedBegin(eods) => Ok(trampoline(Bouncer::Bounce(State::new(
+            Acc::Obj(Ok(ObjectRef::Undefined)),
+            env,
+            Some(Cont::from_body(&eods, None)),
+        )))?),
     }
 }
 

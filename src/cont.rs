@@ -127,7 +127,9 @@ impl Cont {
                         bcont = Self::from_defs(defs, Some(bcont));
                     }
                 },
-                _ => todo!(),
+                ExprOrDef::MixedBegin(eods) => {
+                    bcont = Self::from_body(&eods, Some(bcont));
+                }
             }
         }
         bcont

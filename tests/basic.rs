@@ -45,6 +45,7 @@ fn sequencing() {
     assert_eval_eq!("(begin 1 2 3)", "3");
     assert_eval_eq!("(let ((x 1)) (begin (set! x 2) x))", "2");
     assert_eval_eq!("(begin)", "");
+    assert_eval_eq!("(begin (define x 5) (define (f g) (g x)) (f -))", "-5");
 }
 
 #[test]
@@ -52,6 +53,7 @@ fn ands_ors() {
     assert_eval_eq!("(and 1)", "1");
     assert_eval_eq!("(and 1 2)", "2");
     assert_eval_eq!("(and 1 2 #f 4 5)", "#f");
+    assert_eval_eq!("(and 1 2 #f undef)", "#f");
 
     assert_eval_eq!("(or 1)", "1");
     assert_eval_eq!("(or 1 2)", "1");
