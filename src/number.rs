@@ -523,9 +523,11 @@ impl Number {
                 )));
             }
             return Ok(Number::Real(RealKind::Real(
-                f64::from_str_radix(s, radix).map_err(|e| ParseNumberError {
-                    message: e.to_string(),
-                })?,
+                f64::from_str_radix(
+                    &s.replace(&['s', 'S', 'f', 'F', 'd', 'D', 'l', 'L'], "e"),
+                    radix,
+                )
+                .map_err(ParseNumberError::new)?,
             )));
         }
         if radix == 10 {
@@ -934,6 +936,11 @@ mod tests {
                 10000.into()
             ))))
         );
+        assert_eq!(
+            "#e1.2L3".parse(),
+            Ok(Number::Real(RealKind::Integer(1200.into())))
+        );
+        assert_eq!("6f0".parse(), Ok(Number::Real(RealKind::Real(6.0))));
     }
 
     #[test]

@@ -10,6 +10,7 @@ fn num_literals() {
     assert_eval_eq!("#e1.5", "3/2");
     assert_eval_eq!("#i3/2", "1.5");
     assert_eval_eq!("#e1.23e2", "123");
+    assert_eval_eq!("5s2", "500.0");
     assert_eval_eq!("#e#xa/f", "10/15");
     assert_eval_eq!("#o#e1/10", "1/8");
 }

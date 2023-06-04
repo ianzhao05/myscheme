@@ -185,6 +185,7 @@ fn num_primitives() {
     assert_eval_eq!("(string->number \"123.456\")", "123.456");
     assert_eval_eq!("(string->number \"#e6.4e1\")", "64");
     assert_eval_eq!("(string->number \"#d1/2\")", "1/2");
+    assert_eval_eq!("(string->number \"#e5d-2\")", "1/20");
     assert_eval_eq!("(string->number \"a/b\" 16)", "10/11");
     assert_eval_eq!("(string->number \"1.0/2\")", "#f");
 

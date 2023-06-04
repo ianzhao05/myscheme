@@ -51,7 +51,6 @@ impl IPort {
                         }
                         let mut it = tokens.into_iter();
                         let datum = read(&mut it).map_err(ReadError::Reader);
-                        debug_assert!(it.next().is_none(), "Unconsumed tokens");
                         return Ok(datum);
                     }
                 }
