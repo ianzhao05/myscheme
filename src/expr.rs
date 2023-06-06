@@ -57,7 +57,6 @@ pub enum QQTemplateOrSplice {
 pub enum ListQQTemplate {
     Proper(Vec<QQTemplateOrSplice>),
     Improper(Vec<QQTemplateOrSplice>, QQTemplate),
-    Quote(QQTemplate),
     QQ(QQTemplate),
 }
 

@@ -157,7 +157,6 @@ fn process_proc<I: DoubleEndedIterator<Item = Datum>>(
                 },
             ))
         }
-        _ => Err(bs_err()),
     }
 }
 
@@ -237,13 +236,6 @@ fn process_qq_template_or_splice(
         })
     } else {
         match datum {
-            Datum::Compound(CompoundDatum::List(ListKind::Abbreviation(
-                AbbreviationPrefix::UnquoteSplicing,
-                arg,
-            ))) => Ok(QQTemplateOrSplice::Splice(process_qq_template(
-                *arg,
-                qq_level - 1,
-            )?)),
             Datum::Compound(CompoundDatum::List(ListKind::Proper(list))) => {
                 return match list.first() {
                     Some(Datum::Simple(SimpleDatum::Symbol(s)))
@@ -278,7 +270,7 @@ fn process_qq_template(datum: Datum, qq_level: usize) -> Result<QQTemplate, Pars
     Ok(QQTemplate::LevelD(
         qq_level,
         match datum {
-            Datum::Simple(_) | Datum::EmptyList => Box::new(QQTemplateData::Datum(datum.clone())),
+            Datum::Simple(_) | Datum::EmptyList => Box::new(QQTemplateData::Datum(datum)),
             Datum::Compound(CompoundDatum::List(list)) => match list {
                 ListKind::Proper(list) => {
                     let mut li = list.into_iter();
@@ -308,6 +300,11 @@ fn process_qq_template(datum: Datum, qq_level: usize) -> Result<QQTemplate, Pars
                                 )))
                             }
                         }
+                        Datum::Simple(SimpleDatum::Symbol(s)) if s == "unquote-splicing".into() => {
+                            return Err(ParserError {
+                                kind: ParserErrorKind::IllegalUnquoteSplicing,
+                            });
+                        }
                         _ => Box::new(QQTemplateData::List(ListQQTemplate::Proper(
                             std::iter::once(first)
                                 .chain(li)
@@ -324,22 +321,6 @@ fn process_qq_template(datum: Datum, qq_level: usize) -> Result<QQTemplate, Pars
                         process_qq_template(*last, qq_level)?,
                     )))
                 }
-                ListKind::Abbreviation(abbr, arg) => match abbr {
-                    AbbreviationPrefix::Unquote => Box::new(QQTemplateData::Unquotation(
-                        process_qq_template(*arg, qq_level - 1)?,
-                    )),
-                    AbbreviationPrefix::Quote => Box::new(QQTemplateData::List(
-                        ListQQTemplate::Quote(process_qq_template(*arg, qq_level)?),
-                    )),
-                    AbbreviationPrefix::Quasiquote => Box::new(QQTemplateData::List(
-                        ListQQTemplate::QQ(process_qq_template(*arg, qq_level + 1)?),
-                    )),
-                    AbbreviationPrefix::UnquoteSplicing => {
-                        return Err(ParserError {
-                            kind: ParserErrorKind::IllegalUnquoteSplicing,
-                        });
-                    }
-                },
             },
             Datum::Compound(CompoundDatum::Vector(vector)) => Box::new(QQTemplateData::Vector(
                 vector
@@ -992,10 +973,6 @@ pub fn parse(datum: Datum) -> Result<ExprOrDef, ParserError> {
                 ListKind::Improper(_, _) => Err(ParserError {
                     kind: ParserErrorKind::IllegalDot,
                 }),
-                ListKind::Abbreviation(abbr, arg) => {
-                    let operands = std::iter::once(*arg);
-                    process_keyword(abbr.to_keyword(), operands)
-                }
             },
             CompoundDatum::Vector(_) => Err(ParserError {
                 kind: ParserErrorKind::IllegalVector,
@@ -1355,16 +1332,6 @@ mod tests {
             Err(ParserError {
                 kind: ParserErrorKind::BadSyntax("quote".into())
             })
-        );
-
-        assert_eq!(
-            parse(abbr_list_datum!(
-                AbbreviationPrefix::Quote,
-                proper_list_datum![symbol_datum!("a"), symbol_datum!("b")]
-            )),
-            Ok(ExprOrDef::new_expr(Expr::Literal(LiteralKind::Quotation(
-                proper_list_datum![symbol_datum!("a"), symbol_datum!("b")],
-            ))))
         );
     }
 
@@ -2049,62 +2016,38 @@ mod tests {
             ]))
         };
         assert_eq!(
-            parse(abbr_list_datum!(
-                AbbreviationPrefix::Quasiquote,
+            parse(proper_list_datum![
+                symbol_datum!("quasiquote"),
                 proper_list_datum![symbol_datum!("+"), int_datum!(1), int_datum!(2)],
-            )),
+            ]),
             Ok(ExprOrDef::new_expr(Expr::Quasiquotation(
                 QQTemplate::LevelD(1, Box::new(quoted_p12()),)
             ))),
         );
 
-        let with_abbrs = parse(abbr_list_datum!(
-            AbbreviationPrefix::Quasiquote,
-            proper_list_datum![
-                symbol_datum!("a"),
-                abbr_list_datum!(
-                    AbbreviationPrefix::Unquote,
-                    proper_list_datum![symbol_datum!("+"), int_datum!(1), int_datum!(2)]
-                ),
-                abbr_list_datum!(
-                    AbbreviationPrefix::UnquoteSplicing,
-                    proper_list_datum![
-                        symbol_datum!("map"),
-                        symbol_datum!("abs"),
-                        abbr_list_datum!(
-                            AbbreviationPrefix::Quote,
-                            proper_list_datum![int_datum!(4), int_datum!(-5), int_datum!(6)]
-                        ),
-                    ]
-                ),
-                symbol_datum!("b"),
-            ],
-        ));
-        let with_kws = parse(proper_list_datum![
-            symbol_datum!("quasiquote"),
-            proper_list_datum![
-                symbol_datum!("a"),
-                proper_list_datum![
-                    symbol_datum!("unquote"),
-                    proper_list_datum![symbol_datum!("+"), int_datum!(1), int_datum!(2)]
-                ],
-                proper_list_datum![
-                    symbol_datum!("unquote-splicing"),
-                    proper_list_datum![
-                        symbol_datum!("map"),
-                        symbol_datum!("abs"),
-                        proper_list_datum![
-                            symbol_datum!("quote"),
-                            proper_list_datum![int_datum!(4), int_datum!(-5), int_datum!(6)]
-                        ],
-                    ]
-                ],
-                symbol_datum!("b"),
-            ],
-        ]);
-        assert_eq!(with_abbrs, with_kws);
         assert_eq!(
-            with_abbrs,
+            parse(proper_list_datum![
+                symbol_datum!("quasiquote"),
+                proper_list_datum![
+                    symbol_datum!("a"),
+                    proper_list_datum![
+                        symbol_datum!("unquote"),
+                        proper_list_datum![symbol_datum!("+"), int_datum!(1), int_datum!(2)]
+                    ],
+                    proper_list_datum![
+                        symbol_datum!("unquote-splicing"),
+                        proper_list_datum![
+                            symbol_datum!("map"),
+                            symbol_datum!("abs"),
+                            proper_list_datum![
+                                symbol_datum!("quote"),
+                                proper_list_datum![int_datum!(4), int_datum!(-5), int_datum!(6)]
+                            ],
+                        ]
+                    ],
+                    symbol_datum!("b"),
+                ],
+            ]),
             Ok(ExprOrDef::new_expr(Expr::Quasiquotation(
                 QQTemplate::LevelD(
                     1,
@@ -2143,18 +2086,18 @@ mod tests {
         );
 
         assert_eq!(
-            parse(abbr_list_datum!(
-                AbbreviationPrefix::Quasiquote,
+            parse(proper_list_datum![
+                symbol_datum!("quasiquote"),
                 vector_datum![
                     int_datum!(1),
-                    abbr_list_datum!(
-                        AbbreviationPrefix::Unquote,
+                    proper_list_datum![
+                        symbol_datum!("unquote"),
                         proper_list_datum![symbol_datum!("sqrt"), int_datum!(4)]
-                    ),
+                    ],
                     int_datum!(3),
                     int_datum!(4)
                 ],
-            )),
+            ]),
             Ok(ExprOrDef::new_expr(Expr::Quasiquotation(
                 QQTemplate::LevelD(
                     1,
@@ -2186,43 +2129,43 @@ mod tests {
         );
 
         assert_eq!(
-            parse(abbr_list_datum!(
-                AbbreviationPrefix::Quasiquote,
+            parse(proper_list_datum![
+                symbol_datum!("quasiquote"),
                 proper_list_datum![
                     symbol_datum!("a"),
-                    abbr_list_datum!(
-                        AbbreviationPrefix::Quasiquote,
+                    proper_list_datum![
+                        symbol_datum!("quasiquote"),
                         proper_list_datum![
                             symbol_datum!("b"),
-                            abbr_list_datum!(
-                                AbbreviationPrefix::Unquote,
+                            proper_list_datum![
+                                symbol_datum!("unquote"),
                                 proper_list_datum![
                                     symbol_datum!("+"),
                                     int_datum!(1),
                                     int_datum!(2)
                                 ]
-                            ),
-                            abbr_list_datum!(
-                                AbbreviationPrefix::Unquote,
+                            ],
+                            proper_list_datum![
+                                symbol_datum!("unquote"),
                                 proper_list_datum![
                                     symbol_datum!("foo"),
-                                    abbr_list_datum!(
-                                        AbbreviationPrefix::Unquote,
+                                    proper_list_datum![
+                                        symbol_datum!("unquote"),
                                         proper_list_datum![
                                             symbol_datum!("+"),
                                             int_datum!(1),
                                             int_datum!(3)
                                         ]
-                                    ),
+                                    ],
                                     symbol_datum!("d")
                                 ]
-                            ),
+                            ],
                             symbol_datum!("e")
                         ]
-                    ),
+                    ],
                     symbol_datum!("f")
                 ]
-            )),
+            ]),
             Ok(ExprOrDef::new_expr(Expr::Quasiquotation(
                 QQTemplate::LevelD(
                     1,
@@ -2311,10 +2254,10 @@ mod tests {
         );
 
         assert_eq!(
-            parse(abbr_list_datum!(
-                AbbreviationPrefix::Quasiquote,
+            parse(proper_list_datum![
+                symbol_datum!("quasiquote"),
                 improper_list_datum![int_datum!(1), int_datum!(2); int_datum!(3)]
-            )),
+            ]),
             Ok(ExprOrDef::new_expr(Expr::Quasiquotation(
                 QQTemplate::LevelD(
                     1,
@@ -2364,23 +2307,6 @@ mod tests {
                 symbol_datum!("unquote-splicing"),
                 int_datum!(1),
             ]),
-            Err(ParserError {
-                kind: ParserErrorKind::IllegalUnquoteSplicing
-            })
-        );
-
-        assert_eq!(
-            parse(abbr_list_datum!(AbbreviationPrefix::Unquote, int_datum!(1),)),
-            Err(ParserError {
-                kind: ParserErrorKind::IllegalUnquote
-            })
-        );
-
-        assert_eq!(
-            parse(abbr_list_datum!(
-                AbbreviationPrefix::UnquoteSplicing,
-                int_datum!(1),
-            )),
             Err(ParserError {
                 kind: ParserErrorKind::IllegalUnquoteSplicing
             })

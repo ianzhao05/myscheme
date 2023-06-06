@@ -48,30 +48,9 @@ impl fmt::Display for SimpleDatum {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum AbbreviationPrefix {
-    Quote,
-    Quasiquote,
-    Unquote,
-    UnquoteSplicing,
-}
-
-impl AbbreviationPrefix {
-    pub fn to_keyword(&self) -> Symbol {
-        (match self {
-            AbbreviationPrefix::Quote => "quote",
-            AbbreviationPrefix::Quasiquote => "quasiquote",
-            AbbreviationPrefix::Unquote => "unquote",
-            AbbreviationPrefix::UnquoteSplicing => "unquote-splicing",
-        })
-        .into()
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
 pub enum ListKind {
     Proper(Vec<Datum>),
     Improper(Vec<Datum>, Box<Datum>),
-    Abbreviation(AbbreviationPrefix, Box<Datum>),
 }
 
 #[derive(Debug, PartialEq, Clone)]

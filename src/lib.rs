@@ -107,15 +107,6 @@ pub mod test_util {
     }
     pub(crate) use improper_list_datum;
 
-    macro_rules! abbr_list_datum {
-        ($k:expr, $d:expr $(,)?) => {
-            $crate::datum::Datum::Compound($crate::datum::CompoundDatum::List(
-                $crate::datum::ListKind::Abbreviation($k, Box::new($d)),
-            ))
-        };
-    }
-    pub(crate) use abbr_list_datum;
-
     macro_rules! vector_datum {
         ($($d:expr),* $(,)?) => {
             $crate::datum::Datum::Compound($crate::datum::CompoundDatum::Vector(

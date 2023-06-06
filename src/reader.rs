@@ -107,27 +107,33 @@ fn read_impl<I: Iterator<Item = Token>>(tip: &mut Peekable<I>) -> Result<Datum, 
         }
         Token::Quote => {
             let datum = read_impl(tip)?;
-            Ok(Datum::Compound(CompoundDatum::List(
-                ListKind::Abbreviation(AbbreviationPrefix::Quote, Box::new(datum)),
-            )))
+            Ok(Datum::Compound(CompoundDatum::List(ListKind::Proper(
+                vec![Datum::Simple(SimpleDatum::Symbol("quote".into())), datum],
+            ))))
         }
         Token::Quasiquote => {
             let datum = read_impl(tip)?;
-            Ok(Datum::Compound(CompoundDatum::List(
-                ListKind::Abbreviation(AbbreviationPrefix::Quasiquote, Box::new(datum)),
-            )))
+            Ok(Datum::Compound(CompoundDatum::List(ListKind::Proper(
+                vec![
+                    Datum::Simple(SimpleDatum::Symbol("quasiquote".into())),
+                    datum,
+                ],
+            ))))
         }
         Token::Unquote => {
             let datum = read_impl(tip)?;
-            Ok(Datum::Compound(CompoundDatum::List(
-                ListKind::Abbreviation(AbbreviationPrefix::Unquote, Box::new(datum)),
-            )))
+            Ok(Datum::Compound(CompoundDatum::List(ListKind::Proper(
+                vec![Datum::Simple(SimpleDatum::Symbol("unquote".into())), datum],
+            ))))
         }
         Token::UnquoteSplicing => {
             let datum = read_impl(tip)?;
-            Ok(Datum::Compound(CompoundDatum::List(
-                ListKind::Abbreviation(AbbreviationPrefix::UnquoteSplicing, Box::new(datum)),
-            )))
+            Ok(Datum::Compound(CompoundDatum::List(ListKind::Proper(
+                vec![
+                    Datum::Simple(SimpleDatum::Symbol("unquote-splicing".into())),
+                    datum,
+                ],
+            ))))
         }
         Token::RParen => Err(ReaderError {
             kind: ReaderErrorKind::UnexpectedToken(Token::RParen),
@@ -265,10 +271,10 @@ mod tests {
                 ]
                 .into_iter(),
             ),
-            Ok(abbr_list_datum!(
-                AbbreviationPrefix::Quote,
+            Ok(proper_list_datum![
+                symbol_datum!("quote"),
                 proper_list_datum![int_datum!(123)],
-            ))
+            ])
         );
 
         assert_eq!(
@@ -281,18 +287,18 @@ mod tests {
                 ]
                 .into_iter(),
             ),
-            Ok(abbr_list_datum!(
-                AbbreviationPrefix::Quasiquote,
+            Ok(proper_list_datum![
+                symbol_datum!("quasiquote"),
                 proper_list_datum![int_datum!(123)],
-            ))
+            ])
         );
 
         assert_eq!(
             read(vec![Token::Unquote, Token::Number("123".to_owned())].into_iter()),
-            Ok(abbr_list_datum!(
-                AbbreviationPrefix::Unquote,
+            Ok(proper_list_datum![
+                symbol_datum!("unquote"),
                 int_datum!(123),
-            ))
+            ])
         );
 
         assert_eq!(
@@ -305,10 +311,10 @@ mod tests {
                 ]
                 .into_iter(),
             ),
-            Ok(abbr_list_datum!(
-                AbbreviationPrefix::UnquoteSplicing,
+            Ok(proper_list_datum![
+                symbol_datum!("unquote-splicing"),
                 proper_list_datum![int_datum!(123)],
-            ))
+            ])
         );
 
         assert_eq!(
@@ -411,21 +417,21 @@ mod tests {
                 ]
                 .into_iter(),
             ),
-            Ok(abbr_list_datum!(
-                AbbreviationPrefix::Quasiquote,
+            Ok(proper_list_datum![
+                symbol_datum!("quasiquote"),
                 proper_list_datum![
                     symbol_datum!("a"),
-                    abbr_list_datum!(
-                        AbbreviationPrefix::Unquote,
+                    proper_list_datum![
+                        symbol_datum!("unquote"),
                         proper_list_datum![bool_datum!(true), char_datum!('c')],
-                    ),
+                    ],
                     vector_datum![int_datum!(123), int_datum!(456), int_datum!(789)],
-                    abbr_list_datum!(
-                        AbbreviationPrefix::UnquoteSplicing,
+                    proper_list_datum![
+                        symbol_datum!("unquote-splicing"),
                         proper_list_datum![symbol_datum!("b"), str_datum!("str")],
-                    ),
+                    ],
                 ]
-            ))
+            ])
         );
     }
 
