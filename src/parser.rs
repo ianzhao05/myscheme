@@ -240,7 +240,7 @@ fn process_qq_list(
                     l.first(),
                     Some(Datum::Simple(SimpleDatum::Symbol(s)))
                         if *s == "unquote-splicing".into()
-                ) =>
+                ) && qq_level == 0 =>
             {
                 if !curr.is_empty() {
                     parts.push(Rc::new(Expr::ProcCall {
@@ -258,22 +258,7 @@ fn process_qq_list(
                         kind: ParserErrorKind::BadSyntax("unquote-splicing".into()),
                     });
                 }
-                parts.push(if qq_level == 0 {
-                    parse_expr(arg)?
-                } else {
-                    Rc::new(Expr::ProcCall {
-                        operator: Rc::new(Expr::Variable("cons".into())),
-                        operands: vec![
-                            Rc::new(Expr::Literal(LiteralKind::Quotation(Datum::Simple(
-                                SimpleDatum::Symbol("unquote-splicing".into()),
-                            )))),
-                            process_qq(
-                                Datum::Compound(CompoundDatum::List(ListKind::Proper(vec![arg]))),
-                                qq_level - 1,
-                            )?,
-                        ],
-                    })
-                });
+                parts.push(parse_expr(arg)?);
             }
             _ => {
                 curr.push(process_qq(el, qq_level)?);
