@@ -231,7 +231,6 @@ pub fn eval_expr(state: State) -> Bouncer {
                 rib,
                 stack,
             }),
-            Expr::Quasiquotation(_) => todo!(),
             Expr::Undefined => Bouncer::Bounce(State {
                 acc: Acc::Obj(Ok(ObjectRef::Undefined)),
                 cont,

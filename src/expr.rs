@@ -33,33 +33,6 @@ pub enum Definition {
     Begin(Vec<Rc<Definition>>),
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum QQTemplateData {
-    Datum(Datum),
-    Unquotation(QQTemplate),
-    List(ListQQTemplate),
-    Vector(Vec<QQTemplateOrSplice>),
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum QQTemplate {
-    Level0(Box<Expr>),
-    LevelD(usize, Box<QQTemplateData>),
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum QQTemplateOrSplice {
-    Template(QQTemplate),
-    Splice(QQTemplate),
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum ListQQTemplate {
-    Proper(Vec<QQTemplateOrSplice>),
-    Improper(Vec<QQTemplateOrSplice>, QQTemplate),
-    QQ(QQTemplate),
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Variable(Symbol),
@@ -84,7 +57,6 @@ pub enum Expr {
         value: Rc<Expr>,
         body: Rc<Expr>,
     },
-    Quasiquotation(QQTemplate),
     Undefined,
 }
 
