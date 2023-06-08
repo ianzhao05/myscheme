@@ -231,7 +231,6 @@ pub fn eval_expr(state: State) -> Bouncer {
                 rib,
                 stack,
             }),
-            Expr::Quasiquotation(_) => todo!(),
             Expr::Undefined => Bouncer::Bounce(State {
                 acc: Acc::Obj(Ok(ObjectRef::Undefined)),
                 cont,
@@ -439,7 +438,6 @@ pub fn eval(eod: ExprOrDef, env: Rc<RefCell<Env>>) -> Result<ObjectRef, EvalErro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datum::AbbreviationPrefix;
     use crate::test_util::*;
 
     #[test]
@@ -484,7 +482,6 @@ mod tests {
                 symbol_datum!("d");
                 symbol_datum!("e")
             ],
-            abbr_list_datum!(AbbreviationPrefix::Quote, symbol_datum!("f")),
             vector_datum![symbol_datum!("g"), symbol_datum!("h")]
         ];
         assert_eq!(

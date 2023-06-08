@@ -107,10 +107,6 @@ impl From<Datum> for ObjectRef {
                         .rev()
                         .map(ObjectRef::from)
                         .fold(ObjectRef::from(*b), |a, b| ObjectRef::new_pair(b, a)),
-                    ListKind::Abbreviation(p, b) => ObjectRef::new_pair(
-                        ObjectRef::new(Object::Atom(SimpleDatum::Symbol(p.to_keyword().into()))),
-                        ObjectRef::new_pair(ObjectRef::from(*b), ObjectRef::EmptyList),
-                    ),
                 },
                 CompoundDatum::Vector(v) => ObjectRef::new(Object::Vector(RefCell::new(
                     v.into_iter().map(ObjectRef::from).collect(),
@@ -257,10 +253,10 @@ mod tests {
         );
 
         assert_eq!(
-            *ObjectRef::from(abbr_list_datum!(
-                AbbreviationPrefix::Quote,
+            *ObjectRef::from(proper_list_datum![
+                symbol_datum!("quote"),
                 symbol_datum!("a")
-            )),
+            ]),
             *ObjectRef::new_pair(
                 ObjectRef::new(atom_obj!(symbol_datum!("quote"))),
                 ObjectRef::new_pair(
@@ -281,7 +277,7 @@ mod tests {
                     symbol_datum!("d");
                     symbol_datum!("e")
                 ],
-                abbr_list_datum!(AbbreviationPrefix::Quote, symbol_datum!("f")),
+                proper_list_datum![symbol_datum!("quote"), symbol_datum!("f")],
                 vector_datum![symbol_datum!("g"), symbol_datum!("h")]
             ]),
             *ObjectRef::new_pair(

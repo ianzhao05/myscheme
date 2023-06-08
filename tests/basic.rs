@@ -154,3 +154,30 @@ fn dos() {
 
     assert_eval_eq!("(do () (#t))", "");
 }
+
+#[test]
+fn quasiquotes() {
+    assert_eval_eq!("`(1 2 3)", "'(1 2 3)");
+    assert_eval_eq!("`(list ,(+ 1 2) 4)", "'(list 3 4)");
+    assert_eval_eq!("`(a ,(+ 1 2) ,@(map abs '(4 -5 6)) b)", "'(a 3 4 5 6 b)");
+    assert_eval_eq!(
+        "`((foo ,(- 10 3)) ,@(cdr '(c)) . ,(car '(cons)))",
+        "'((foo 7) . cons)"
+    );
+    assert_eval_eq!(
+        "`#(10 5 ,(sqrt 4) ,@(map sqrt '(16 9)) 8)",
+        "'#(10 5 2 4 3 8)"
+    );
+    assert_eval_eq!(
+        "`(a `(b ,(+ 1 2) ,(foo ,(+ 1 3) ,@(list 5 6) d) e) f)",
+        "'(a `(b ,(+ 1 2) ,(foo 4 5 6 d) e) f)"
+    );
+    assert_eval_eq!(
+        "(let ((name1 'x) (name2 'y)) `(a `(b ,,name1 ,',name2 d) e))",
+        "'(a `(b ,x ,'y d) e)"
+    );
+    assert_eval_eq!(
+        "(define abc '(a b c)) ``(,,@abc) ``#(,@,@abc)",
+        "'`((unquote a b c)) '`#((unquote-splicing a b c))"
+    );
+}

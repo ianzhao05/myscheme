@@ -86,11 +86,7 @@ pub fn primitives() -> PrimitiveMap {
 
 pub const PRELUDE: &str = "
 (define (list->vector lst)
-  (let* ((len (length lst)) (vec (make-vector len)))
-    (do ((i 0 (+ i 1))
-         (t lst (cdr t)))
-        ((= i len) vec)
-      (vector-set! vec i (car t)))))
+  (apply vector lst))
 
 (define (vector->list vec)
   (let h ((i (vector-length vec)) (acc '()))
