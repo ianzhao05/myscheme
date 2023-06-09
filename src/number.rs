@@ -3,11 +3,18 @@ use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::str::FromStr;
 
-use num::{bigint::ToBigInt, BigInt, BigRational, Complex, Signed, ToPrimitive, Zero};
-use num::{FromPrimitive, Num};
+use num::{
+    bigint::ToBigInt, BigInt, BigRational, Complex, FromPrimitive, Integer, Num, Signed,
+    ToPrimitive, Zero,
+};
 
-fn is_perfect_square(n: &BigInt) -> bool {
-    n.sqrt().pow(2) == *n
+fn perfect_root(n: &BigInt, exp: u32) -> Option<BigInt> {
+    let t = n.nth_root(exp);
+    if t.pow(exp) == *n {
+        Some(t)
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -319,17 +326,95 @@ impl RealKind {
         match self {
             RealKind::Real(r) => RealKind::Real(r.sqrt()),
             RealKind::Rational(r) => {
-                if is_perfect_square(r.numer()) && is_perfect_square(r.denom()) {
-                    RealKind::Rational(BigRational::new(r.numer().sqrt(), r.denom().sqrt()))
+                if let (Some(n), Some(d)) = (perfect_root(r.numer(), 2), perfect_root(r.denom(), 2))
+                {
+                    RealKind::Rational(BigRational::new(n, d))
                 } else {
                     RealKind::Real(r.to_f64().unwrap_or(f64::NAN).sqrt())
                 }
             }
             RealKind::Integer(i) => {
-                if is_perfect_square(i) {
-                    RealKind::Integer(i.sqrt())
+                if let Some(s) = perfect_root(i, 2) {
+                    RealKind::Integer(s)
                 } else {
                     RealKind::Real(i.to_f64().unwrap_or(f64::NAN).sqrt())
+                }
+            }
+        }
+    }
+
+    pub fn pow(&self, exp: &Self) -> RealKind {
+        match exp {
+            RealKind::Real(r) => RealKind::Real(self.to_inexact_raw().powf(*r)),
+            RealKind::Rational(r) => {
+                let (Some(numer), Some(denom)) = (r.numer().to_i32(), r.denom().to_u32()) else {
+                    return RealKind::Real(f64::NAN);
+                };
+                if denom.is_even() && self.is_negative() {
+                    return RealKind::Real(f64::NAN);
+                }
+                match self {
+                    RealKind::Rational(b) => {
+                        if let (Some(n), Some(d)) = (
+                            perfect_root(b.numer(), denom),
+                            perfect_root(b.denom(), denom),
+                        ) {
+                            if numer.is_negative() && n.is_zero() {
+                                RealKind::Real(f64::INFINITY)
+                            } else {
+                                RealKind::Rational(BigRational::new(n, d).pow(numer))
+                            }
+                        } else {
+                            RealKind::Real(
+                                b.to_f64()
+                                    .unwrap_or(f64::NAN)
+                                    .powf(r.to_f64().unwrap_or(f64::NAN)),
+                            )
+                        }
+                    }
+                    RealKind::Integer(b) => {
+                        if let Some(s) = perfect_root(b, denom) {
+                            if numer.is_negative() {
+                                if s.is_zero() {
+                                    RealKind::Real(f64::INFINITY)
+                                } else {
+                                    RealKind::Rational(BigRational::from_integer(s).pow(numer))
+                                }
+                            } else {
+                                RealKind::Integer(s.pow(numer as u32))
+                            }
+                        } else {
+                            RealKind::Real(
+                                b.to_f64()
+                                    .unwrap_or(f64::NAN)
+                                    .powf(r.to_f64().unwrap_or(f64::NAN)),
+                            )
+                        }
+                    }
+                    RealKind::Real(b) => RealKind::Real(b.powf(r.to_f64().unwrap_or(f64::NAN))),
+                }
+            }
+            RealKind::Integer(i) => {
+                let Some(exp) = i.to_i32() else {
+                    return RealKind::Real(f64::NAN);
+                };
+                if exp.is_negative() {
+                    if self.is_zero() {
+                        return RealKind::Real(f64::INFINITY);
+                    }
+                    match self {
+                        RealKind::Rational(b) => RealKind::Rational(b.pow(exp)),
+                        RealKind::Integer(b) => {
+                            RealKind::Rational(BigRational::new(1.into(), b.pow(-exp as u32)))
+                        }
+                        RealKind::Real(b) => RealKind::Real(b.powi(exp)),
+                    }
+                } else {
+                    match self {
+                        RealKind::Rational(b) => RealKind::Rational(b.pow(exp)),
+                        RealKind::Integer(b) => RealKind::Integer(b.pow(exp as u32)),
+                        RealKind::Real(b) => RealKind::Real(b.powi(exp)),
+                    }
                 }
             }
         }
@@ -699,9 +784,15 @@ impl Number {
         }
     }
 
-    pub fn sqrt(&self) -> Number {
+    pub fn sqrt(&self) -> Self {
         match self {
             Number::Real(r) => Number::Real(r.sqrt()),
+        }
+    }
+
+    pub fn pow(&self, exp: &Self) -> Self {
+        match (self, exp) {
+            (Number::Real(a), Number::Real(b)) => Number::Real(a.pow(b)),
         }
     }
 }
@@ -1063,6 +1154,68 @@ mod tests {
         assert_eq!(
             Number::Real(RealKind::Real(1.1)).trunc(),
             Number::Real(RealKind::Real(1.0.into()))
+        );
+
+        assert_eq!(
+            Number::Real(RealKind::Integer(4.into())).sqrt(),
+            Number::Real(RealKind::Integer(2.into()))
+        );
+        assert_eq!(
+            Number::Real(RealKind::Real(4.0)).sqrt(),
+            Number::Real(RealKind::Real(2.0.into()))
+        );
+        assert_eq!(
+            Number::Real(RealKind::Rational(BigRational::new(4.into(), 9.into()))).sqrt(),
+            Number::Real(RealKind::Rational(BigRational::new(2.into(), 3.into())))
+        );
+        assert!(!Number::Real(RealKind::Integer(5.into())).sqrt().is_exact());
+        assert!(
+            !Number::Real(RealKind::Rational(BigRational::new(1.into(), 3.into())))
+                .sqrt()
+                .is_exact()
+        );
+
+        assert_eq!(
+            Number::Real(RealKind::Integer(2.into()))
+                .pow(&Number::Real(RealKind::Integer(3.into()))),
+            Number::Real(RealKind::Integer(8.into()))
+        );
+        assert_eq!(
+            Number::Real(RealKind::Integer(2.into()))
+                .pow(&Number::Real(RealKind::Integer(0.into()))),
+            Number::Real(RealKind::Integer(1.into()))
+        );
+        assert_eq!(
+            Number::Real(RealKind::Integer(2.into()))
+                .pow(&Number::Real(RealKind::Integer((-2).into()))),
+            Number::Real(RealKind::Rational(BigRational::new(1.into(), 4.into())))
+        );
+
+        assert_eq!(
+            Number::Real(RealKind::Integer(2.into())).pow(&Number::Real(RealKind::Real(3.0))),
+            Number::Real(RealKind::Real(8.0.into()))
+        );
+        assert_eq!(
+            Number::Real(RealKind::Real(2.0)).pow(&Number::Real(RealKind::Integer(3.into()))),
+            Number::Real(RealKind::Real(8.0.into()))
+        );
+
+        assert_eq!(
+            Number::Real(RealKind::Integer(8.into())).pow(&Number::Real(RealKind::Rational(
+                BigRational::new(2.into(), 3.into())
+            ))),
+            Number::Real(RealKind::Integer(4.into()))
+        );
+        assert_eq!(
+            Number::Real(RealKind::Rational(BigRational::new(
+                (-32).into(),
+                243.into()
+            )))
+            .pow(&Number::Real(RealKind::Rational(BigRational::new(
+                (-3).into(),
+                5.into()
+            )))),
+            Number::Real(RealKind::Rational(BigRational::new((-27).into(), 8.into())))
         );
     }
 }

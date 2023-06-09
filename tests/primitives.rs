@@ -156,6 +156,14 @@ fn num_primitives() {
     assert_eval_eq!("(sqrt 25)", "5");
     assert_eval_eq!("(sqrt 4/9)", "2/3");
 
+    assert_eval_eq!("(expt 5 2)", "25");
+    assert_eval_eq!("(expt 5 0)", "1");
+    assert_eval_eq!("(expt 5.0 2) (expt 5 2.0)", "25.0 25.0");
+    assert_eval_eq!("(expt -8 1/3)", "-2");
+    assert_eval_eq!("(expt 8 -2/3)", "1/4");
+    assert_eval_eq!("(expt 4096/15625 -5/6)", "(expt 5/4 5)");
+    assert_eval_eq!("(expt 0 0) (expt 0.0 0.0)", "1 1.0");
+
     assert_eval_eq!(
         "(define (all_close l)
            (cond

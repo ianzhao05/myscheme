@@ -144,6 +144,13 @@ fn atan(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ))))
 }
 
+fn expt(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
+    ensure_arity!(args, 2);
+    Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
+        get_num(&args[0])?.pow(get_num(&args[1])?),
+    ))))
+}
+
 enum IntOp {
     Quotient,
     Remainder,
@@ -367,6 +374,7 @@ pub fn primitives() -> PrimitiveMap {
         num_map(args, |n| SimpleDatum::Number(n.map_inexact(f64::acos)))
     });
     m.insert("atan", atan);
+    m.insert("expt", expt);
     m.insert("quotient", |args| ints_op(args, IntOp::Quotient));
     m.insert("remainder", |args| ints_op(args, IntOp::Remainder));
     m.insert("modulo", |args| ints_op(args, IntOp::Modulo));
