@@ -7,9 +7,16 @@ use crate::datum::*;
 use crate::port::Port;
 use crate::proc::Procedure;
 
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum EnvSpec {
+    SchemeReport,
+    Null,
+}
+
 #[derive(Debug, Clone)]
 pub enum ObjectRef {
     Object(Rc<Object>),
+    EnvSpec(EnvSpec),
     Undefined,
     EmptyList,
     Void,
@@ -39,6 +46,7 @@ impl ObjectRef {
             (ObjectRef::EmptyList, ObjectRef::EmptyList) => true,
             (ObjectRef::Void, ObjectRef::Void) => true,
             (ObjectRef::Eof, ObjectRef::Eof) => true,
+            (ObjectRef::EnvSpec(a), ObjectRef::EnvSpec(b)) => a == b,
             _ => false,
         }
     }
@@ -86,6 +94,7 @@ impl PartialEq for ObjectRef {
             (ObjectRef::EmptyList, ObjectRef::EmptyList) => true,
             (ObjectRef::Void, ObjectRef::Void) => true,
             (ObjectRef::Eof, ObjectRef::Eof) => true,
+            (ObjectRef::EnvSpec(a), ObjectRef::EnvSpec(b)) => a == b,
             _ => false,
         }
     }
@@ -172,6 +181,7 @@ impl fmt::Display for ObjectRef {
             ObjectRef::Undefined => panic!("Undefined value should not be encountered"),
             ObjectRef::Void => f.write_str("#<void>"),
             ObjectRef::Eof => f.write_str("#<eof>"),
+            ObjectRef::EnvSpec(_) => f.write_str("#<environment>"),
         }
     }
 }

@@ -31,6 +31,7 @@ pub fn primitives() -> HashMap<Symbol, ObjectRef> {
         string::primitives(),
         symbol::primitives(),
         char::primitives(),
+        eval::primitives(),
     ]
     .into_iter()
     .flat_map(|m| {
