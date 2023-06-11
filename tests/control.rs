@@ -64,6 +64,19 @@ fn callcc() {
 }
 
 #[test]
+fn eval() {
+    assert_eval_eq!(
+        "(let ((a 3) (b 7)) (eval `(* ,a ,b) (scheme-report-environment 5)))",
+        "21"
+    );
+    assert_eval_eq!(
+        "(let ((f (eval '(lambda (f x) (f x x)) (null-environment 5))))
+           (f + 10))",
+        "20"
+    );
+}
+
+#[test]
 fn delays() {
     assert_eval_eq!("(force (delay (+ 1 2)))", "3");
 

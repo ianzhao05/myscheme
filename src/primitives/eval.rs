@@ -72,3 +72,43 @@ pub fn primitives() -> PrimitiveMap {
     m.insert("null-environment", |args| return_env(args, EnvSpec::Null));
     m
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::object::ObjectRef;
+    use crate::primitives::utils::five_cv;
+    use crate::test_util::*;
+
+    #[test]
+    fn env_spec() {
+        assert_eq!(
+            return_env(
+                &[ObjectRef::new(atom_obj!(int_datum!(5)))],
+                EnvSpec::SchemeReport
+            ),
+            Ok(ObjectRef::EnvSpec(EnvSpec::SchemeReport))
+        );
+        assert_eq!(
+            return_env(
+                &[ObjectRef::new(atom_obj!(rational_datum!(5, 1)))],
+                EnvSpec::Null
+            ),
+            Ok(ObjectRef::EnvSpec(EnvSpec::Null))
+        );
+        assert_eq!(
+            return_env(
+                &[ObjectRef::new(atom_obj!(int_datum!(6)))],
+                EnvSpec::SchemeReport
+            ),
+            Err(five_cv(&ObjectRef::new(atom_obj!(int_datum!(6)))))
+        );
+        assert_eq!(
+            return_env(
+                &[ObjectRef::new(atom_obj!(real_datum!(5.0)))],
+                EnvSpec::Null
+            ),
+            Err(five_cv(&ObjectRef::new(atom_obj!(real_datum!(5.0)))))
+        );
+    }
+}
