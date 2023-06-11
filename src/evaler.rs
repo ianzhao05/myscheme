@@ -8,6 +8,7 @@ use crate::env::Env;
 use crate::expr::*;
 use crate::interner::Symbol;
 use crate::object::{Object, ObjectRef};
+use crate::parser::ParserError;
 use crate::port::ReadError;
 use crate::proc::{Call, Procedure, UserDefined};
 use crate::trampoline::{trampoline, Bouncer};
@@ -31,8 +32,9 @@ pub enum EvalErrorKind {
         index: usize,
         len: usize,
     },
-    IOError,
     ReadError(ReadError),
+    ParserError(ParserError),
+    IOError,
     ClosedPort,
     InexactNonDecimalFormat,
 }
@@ -78,8 +80,9 @@ impl fmt::Display for EvalError {
             EvalErrorKind::IndexOutOfBounds { index, len } => {
                 write!(f, "Index out of bounds: {index} >= {len}")
             }
-            EvalErrorKind::IOError => write!(f, "IO error"),
             EvalErrorKind::ReadError(e) => write!(f, "read: {e}"),
+            EvalErrorKind::ParserError(e) => write!(f, "parse: {e}"),
+            EvalErrorKind::IOError => write!(f, "IO error"),
             EvalErrorKind::ClosedPort => write!(f, "Attempted read or write from closed port"),
             EvalErrorKind::InexactNonDecimalFormat => {
                 write!(f, "Inexact numbers must be printed in decimal")

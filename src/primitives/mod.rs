@@ -1,7 +1,7 @@
 mod char;
 mod control;
-mod delay;
 mod eq;
+mod eval;
 mod io;
 mod list;
 mod numeric;
@@ -21,7 +21,7 @@ use crate::object::{Object, ObjectRef};
 use crate::proc::{Primitive, PrimitiveFunc, Procedure};
 
 pub fn primitives() -> HashMap<Symbol, ObjectRef> {
-    utils::merge(&[
+    [
         numeric::primitives(),
         eq::primitives(),
         list::primitives(),
@@ -31,26 +31,34 @@ pub fn primitives() -> HashMap<Symbol, ObjectRef> {
         string::primitives(),
         symbol::primitives(),
         char::primitives(),
-    ])
+    ]
     .into_iter()
-    .map(|(k, v)| {
-        (
-            k.into(),
-            ObjectRef::new(Object::Procedure(Procedure::Primitive(Primitive::new(
-                k,
-                PrimitiveFunc::Args(v),
-            )))),
-        )
+    .flat_map(|m| {
+        m.into_iter().map(|(k, v)| {
+            (
+                k.into(),
+                ObjectRef::new(Object::Procedure(Procedure::Primitive(Primitive::new(
+                    k,
+                    PrimitiveFunc::Args(v),
+                )))),
+            )
+        })
     })
-    .chain(control::primitives().into_iter().map(|(k, v)| {
-        (
-            k.into(),
-            ObjectRef::new(Object::Procedure(Procedure::Primitive(Primitive::new(
-                k,
-                PrimitiveFunc::State(v),
-            )))),
-        )
-    }))
+    .chain(
+        [control::cprimitives(), eval::cprimitives()]
+            .into_iter()
+            .flat_map(|m| {
+                m.into_iter().map(|(k, v)| {
+                    (
+                        k.into(),
+                        ObjectRef::new(Object::Procedure(Procedure::Primitive(Primitive::new(
+                            k,
+                            PrimitiveFunc::State(v),
+                        )))),
+                    )
+                })
+            }),
+    )
     .collect()
 }
 
@@ -59,7 +67,6 @@ pub static PRELUDE: Lazy<String> = Lazy::new(|| {
         numeric::PRELUDE,
         eq::PRELUDE,
         list::PRELUDE,
-        delay::PRELUDE,
         pred::PRELUDE,
         control::PRELUDE,
         vector::PRELUDE,

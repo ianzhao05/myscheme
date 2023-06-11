@@ -3,22 +3,17 @@ use std::collections::HashMap;
 
 use num::bigint::Sign;
 
+use crate::cont::State;
 use crate::datum::SimpleDatum;
 use crate::evaler::EvalError;
 use crate::interner::Symbol;
 use crate::number::{Number, RealKind};
 use crate::object::{Object, ObjectRef};
 use crate::port::{IPort, Port};
+use crate::trampoline::Bouncer;
 
 pub type PrimitiveMap = HashMap<&'static str, fn(&[ObjectRef]) -> Result<ObjectRef, EvalError>>;
-
-pub fn merge(maps: &[PrimitiveMap]) -> PrimitiveMap {
-    let mut m: PrimitiveMap = HashMap::new();
-    for n in maps {
-        m.extend(n);
-    }
-    m
-}
+pub type ControlMap = HashMap<&'static str, fn(State) -> Bouncer>;
 
 pub fn get_num(arg: &ObjectRef) -> Result<&Number, EvalError> {
     match arg.try_deref_or(num_cv)? {
@@ -168,6 +163,7 @@ cv_fn!(len_cv, "valid length");
 cv_fn!(oport_cv, "output-port");
 cv_fn!(iport_cv, "input-port");
 cv_fn!(charval_cv, "character value");
+cv_fn!(expr_cv, "expr");
 
 #[cfg(test)]
 mod tests {
