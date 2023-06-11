@@ -3,22 +3,17 @@ use std::collections::HashMap;
 
 use num::bigint::Sign;
 
+use crate::cont::State;
 use crate::datum::SimpleDatum;
 use crate::evaler::EvalError;
 use crate::interner::Symbol;
 use crate::number::{Number, RealKind};
-use crate::object::{Object, ObjectRef};
+use crate::object::{EnvSpec, Object, ObjectRef};
 use crate::port::{IPort, Port};
+use crate::trampoline::Bouncer;
 
 pub type PrimitiveMap = HashMap<&'static str, fn(&[ObjectRef]) -> Result<ObjectRef, EvalError>>;
-
-pub fn merge(maps: &[PrimitiveMap]) -> PrimitiveMap {
-    let mut m: PrimitiveMap = HashMap::new();
-    for n in maps {
-        m.extend(n);
-    }
-    m
-}
+pub type ControlMap = HashMap<&'static str, fn(State) -> Bouncer>;
 
 pub fn get_num(arg: &ObjectRef) -> Result<&Number, EvalError> {
     match arg.try_deref_or(num_cv)? {
@@ -117,6 +112,24 @@ pub fn get_oport(arg: &ObjectRef) -> Result<&RefCell<Option<Box<dyn std::io::Wri
     }
 }
 
+pub fn get_version(arg: &ObjectRef) -> Result<(), EvalError> {
+    match arg.try_deref_or(five_cv)? {
+        Object::Atom(SimpleDatum::Number(Number::Real(n)))
+            if n.is_exact() && n == &RealKind::Integer(5.into()) =>
+        {
+            Ok(())
+        }
+        _ => Err(five_cv(arg)),
+    }
+}
+
+pub fn get_env(arg: &ObjectRef) -> Result<EnvSpec, EvalError> {
+    match arg {
+        ObjectRef::EnvSpec(env) => Ok(*env),
+        _ => Err(env_cv(arg)),
+    }
+}
+
 macro_rules! ensure_arity {
     ($args:expr, $n:expr) => {
         if $args.len() != $n {
@@ -168,6 +181,9 @@ cv_fn!(len_cv, "valid length");
 cv_fn!(oport_cv, "output-port");
 cv_fn!(iport_cv, "input-port");
 cv_fn!(charval_cv, "character value");
+cv_fn!(expr_cv, "expr");
+cv_fn!(five_cv, "5");
+cv_fn!(env_cv, "environment");
 
 #[cfg(test)]
 mod tests {

@@ -7,7 +7,7 @@ use crate::object::{Object, ObjectRef};
 use crate::proc::{Continuation, Procedure};
 use crate::trampoline::Bouncer;
 
-type ControlMap = HashMap<&'static str, fn(State) -> Bouncer>;
+use super::utils::ControlMap;
 
 fn callcc(state: State) -> Bouncer {
     let State {
@@ -88,7 +88,7 @@ fn apply(state: State) -> Bouncer {
     })
 }
 
-pub fn primitives() -> ControlMap {
+pub fn cprimitives() -> ControlMap {
     let mut m: ControlMap = HashMap::new();
     m.insert("apply", apply);
     m.insert("call-with-current-continuation", callcc);
@@ -96,6 +96,22 @@ pub fn primitives() -> ControlMap {
 }
 
 pub const PRELUDE: &str = "
+(define (make-promise proc)
+  (let ((result-ready? #f)
+        (result #f))
+    (lambda ()
+      (if result-ready?
+          result
+          (let ((x (proc)))
+            (if result-ready?
+                result
+                (begin
+                  (set! result-ready? #t)
+                  (set! result x)
+                  result)))))))
+
+(define (force promise) (promise))
+
 (define (map1 proc l)
   (if (null? l) '() (cons (proc (car l)) (map1 proc (cdr l)))))
 

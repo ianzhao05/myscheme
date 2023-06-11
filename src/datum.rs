@@ -3,6 +3,7 @@ use std::fmt;
 
 use crate::interner::Symbol;
 use crate::number::Number;
+use crate::object::{Object, ObjectRef};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum SimpleDatum {
@@ -64,4 +65,51 @@ pub enum Datum {
     Simple(SimpleDatum),
     Compound(CompoundDatum),
     EmptyList,
+}
+
+impl TryFrom<ObjectRef> for Datum {
+    type Error = ();
+
+    fn try_from(obj: ObjectRef) -> Result<Self, Self::Error> {
+        match obj {
+            ObjectRef::Object(o) => match &*o {
+                Object::Atom(a) => Ok(Datum::Simple(a.clone())),
+                Object::Pair(p) => Ok(Datum::Compound(CompoundDatum::List({
+                    let mut acc = vec![];
+                    let mut cur = p.clone();
+                    loop {
+                        cur = {
+                            let b = cur.borrow();
+                            acc.push(b.0.clone().try_into()?);
+                            match &b.1 {
+                                ObjectRef::Object(o) => match &**o {
+                                    Object::Pair(p) => p.clone(),
+                                    _ => {
+                                        break ListKind::Improper(
+                                            acc,
+                                            Box::new(b.1.clone().try_into()?),
+                                        );
+                                    }
+                                },
+                                ObjectRef::EmptyList => {
+                                    break ListKind::Proper(acc);
+                                }
+                                _ => return Err(()),
+                            }
+                        }
+                    }
+                }))),
+                Object::Vector(v) => Ok(Datum::Compound(CompoundDatum::Vector(
+                    v.borrow()
+                        .iter()
+                        .cloned()
+                        .map(Datum::try_from)
+                        .collect::<Result<_, _>>()?,
+                ))),
+                _ => Err(()),
+            },
+            ObjectRef::EmptyList => Ok(Datum::EmptyList),
+            _ => Err(()),
+        }
+    }
 }
