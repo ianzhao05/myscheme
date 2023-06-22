@@ -542,17 +542,19 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                         let test = parse_expr(first)?;
                         let second = pi.next();
                         if second.is_none() {
-                            match acc {
-                                Some(a) => {
-                                    acc = Some(Rc::new(Expr::Conditional {
-                                        test,
-                                        consequent: a,
-                                        alternate: None,
-                                    }))
-                                }
-                                None => {
-                                    acc = Some(test);
-                                }
+                            if acc.is_some() {
+                                let temp = gen_temp_name();
+                                acc = Some(Rc::new(Expr::SimpleLet {
+                                    arg: temp,
+                                    value: test,
+                                    body: Rc::new(Expr::Conditional {
+                                        test: Rc::new(Expr::Variable(temp)),
+                                        consequent: Rc::new(Expr::Variable(temp)),
+                                        alternate: acc,
+                                    }),
+                                }));
+                            } else {
+                                acc = Some(test);
                             }
                             continue;
                         }
