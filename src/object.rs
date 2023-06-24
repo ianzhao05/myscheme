@@ -108,14 +108,12 @@ impl From<Datum> for ObjectRef {
                 CompoundDatum::List(l) => match l {
                     ListKind::Proper(v) => v
                         .into_iter()
-                        .rev()
                         .map(ObjectRef::from)
-                        .fold(ObjectRef::EmptyList, |a, b| ObjectRef::new_pair(b, a)),
+                        .rfold(ObjectRef::EmptyList, |a, b| ObjectRef::new_pair(b, a)),
                     ListKind::Improper(v, b) => v
                         .into_iter()
-                        .rev()
                         .map(ObjectRef::from)
-                        .fold(ObjectRef::from(*b), |a, b| ObjectRef::new_pair(b, a)),
+                        .rfold(ObjectRef::from(*b), |a, b| ObjectRef::new_pair(b, a)),
                 },
                 CompoundDatum::Vector(v) => ObjectRef::new(Object::Vector(RefCell::new(
                     v.into_iter().map(ObjectRef::from).collect(),

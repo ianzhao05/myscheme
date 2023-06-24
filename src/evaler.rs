@@ -258,17 +258,14 @@ pub fn eval_expr(state: State) -> Bouncer {
                     None => Bouncer::Land(Ok(obj)),
                 },
                 Cont::Apply => match obj.try_deref() {
-                    Some(o) => match o {
-                        Object::Procedure(p) => p.call(State {
-                            acc: Acc::Obj(Ok(ObjectRef::Undefined)),
-                            cont,
-                            env,
-                            rib,
-                            stack,
-                        }),
-                        _ => Bouncer::Land(Err(EvalError::new(EvalErrorKind::NotAProcedure(obj)))),
-                    },
-                    None => Bouncer::Land(Err(EvalError::new(EvalErrorKind::NotAProcedure(obj)))),
+                    Some(Object::Procedure(p)) => p.call(State {
+                        acc: Acc::Obj(Ok(ObjectRef::Undefined)),
+                        cont,
+                        env,
+                        rib,
+                        stack,
+                    }),
+                    _ => Bouncer::Land(Err(EvalError::new(EvalErrorKind::NotAProcedure(obj)))),
                 },
                 Cont::Proc { operator } => {
                     rib.push(obj);
@@ -305,13 +302,10 @@ pub fn eval_expr(state: State) -> Bouncer {
                     alternate,
                     cont,
                 } => {
-                    let test = match obj.try_deref() {
-                        Some(o) => match o {
-                            Object::Atom(SimpleDatum::Boolean(false)) => false,
-                            _ => true,
-                        },
-                        None => true,
-                    };
+                    let test = !matches!(
+                        obj.try_deref(),
+                        Some(Object::Atom(SimpleDatum::Boolean(false))),
+                    );
                     if test {
                         Bouncer::Bounce(State {
                             acc: Acc::Expr(consequent.clone()),

@@ -137,9 +137,6 @@ impl Cont {
     }
 
     pub fn is_tail(&self) -> bool {
-        match self {
-            Cont::Return => true,
-            _ => false,
-        }
+        matches!(self, Cont::Return)
     }
 }

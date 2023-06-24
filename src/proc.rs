@@ -166,9 +166,7 @@ impl Call for UserDefined {
         if let Some(rest) = &self.data.rest {
             benv.insert(
                 *rest,
-                args_iter
-                    .rev()
-                    .fold(ObjectRef::EmptyList, |a, b| ObjectRef::new_pair(b, a)),
+                args_iter.rfold(ObjectRef::EmptyList, |a, b| ObjectRef::new_pair(b, a)),
             );
         }
         drop(benv);
