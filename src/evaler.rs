@@ -135,16 +135,16 @@ pub fn eval_expr(state: State) -> Bouncer {
             }),
             Expr::ProcCall { operator, operands } => {
                 let tail = cont.is_tail();
-                let (acc, ncont) = match operands.first() {
-                    Some(first) => {
-                        let mut bcont = Rc::new(Cont::Proc {
-                            operator: operator.clone(),
-                        });
-                        for next in operands.iter().skip(1).rev().cloned() {
-                            bcont = Rc::new(Cont::Argument { next, cont: bcont });
-                        }
-                        (Acc::Expr(first.clone()), bcont)
-                    }
+                let (acc, ncont) = match operands.split_first() {
+                    Some((first, rest)) => (
+                        Acc::Expr(first.clone()),
+                        rest.iter().cloned().rfold(
+                            Rc::new(Cont::Proc {
+                                operator: operator.clone(),
+                            }),
+                            |cont, next| Rc::new(Cont::Argument { next, cont }),
+                        ),
+                    ),
                     None => (Acc::Expr(operator.clone()), Rc::new(Cont::Apply)),
                 };
                 Bouncer::Bounce(State {
@@ -201,20 +201,17 @@ pub fn eval_expr(state: State) -> Bouncer {
                 rib,
                 stack,
             }),
-            Expr::Begin(seq) => match seq.first() {
-                Some(first) => {
-                    let mut bcont = cont;
-                    for next in seq.iter().skip(1).rev().cloned() {
-                        bcont = Rc::new(Cont::Begin { next, cont: bcont });
-                    }
-                    Bouncer::Bounce(State {
-                        acc: Acc::Expr(first.clone()),
-                        cont: bcont,
-                        env,
-                        rib,
-                        stack,
-                    })
-                }
+            Expr::Begin(seq) => match seq.split_first() {
+                Some((first, rest)) => Bouncer::Bounce(State {
+                    acc: Acc::Expr(first.clone()),
+                    cont: rest
+                        .iter()
+                        .cloned()
+                        .rfold(cont, |cont, next| Rc::new(Cont::Begin { next, cont })),
+                    env,
+                    rib,
+                    stack,
+                }),
                 None => Bouncer::Bounce(State {
                     acc: Acc::Obj(Ok(ObjectRef::Void)),
                     cont,

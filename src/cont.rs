@@ -97,73 +97,43 @@ pub enum Cont {
 
 impl Cont {
     pub fn from_body(body: &[ExprOrDef], cont: Option<Rc<Cont>>) -> Rc<Cont> {
-        let mut bcont = match cont {
-            Some(cont) => cont,
-            None => Rc::new(Cont::Return),
-        };
-        for eod in body.iter().rev().cloned() {
-            match eod {
-                ExprOrDef::Expr(next) => {
-                    bcont = Rc::new(Cont::Begin { next, cont: bcont });
-                }
+        body.iter().cloned().rfold(
+            cont.unwrap_or_else(|| Rc::new(Cont::Return)),
+            |cont, eod| match eod {
+                ExprOrDef::Expr(next) => Rc::new(Cont::Begin { next, cont }),
                 ExprOrDef::Definition(def) => match &*def {
-                    Definition::Variable { name, value } => {
-                        bcont = Rc::new(Cont::Begin {
-                            next: value.clone(),
-                            cont: Rc::new(Cont::Define {
-                                name: *name,
-                                cont: bcont,
-                            }),
-                        });
-                    }
-                    Definition::Procedure { name, data } => {
-                        bcont = Rc::new(Cont::DefineProc {
-                            name: *name,
-                            data: data.clone(),
-                            cont: bcont,
-                        })
-                    }
-                    Definition::Begin(defs) => {
-                        bcont = Self::from_defs(defs, Some(bcont));
-                    }
+                    Definition::Variable { name, value } => Rc::new(Cont::Begin {
+                        next: value.clone(),
+                        cont: Rc::new(Cont::Define { name: *name, cont }),
+                    }),
+                    Definition::Procedure { name, data } => Rc::new(Cont::DefineProc {
+                        name: *name,
+                        data: data.clone(),
+                        cont,
+                    }),
+                    Definition::Begin(defs) => Self::from_defs(defs, Some(cont)),
                 },
-                ExprOrDef::MixedBegin(eods) => {
-                    bcont = Self::from_body(&eods, Some(bcont));
-                }
-            }
-        }
-        bcont
+                ExprOrDef::MixedBegin(eods) => Self::from_body(&eods, Some(cont)),
+            },
+        )
     }
 
     pub fn from_defs(defs: &[Rc<Definition>], cont: Option<Rc<Cont>>) -> Rc<Cont> {
-        let mut bcont = match cont {
-            Some(cont) => cont,
-            None => Rc::new(Cont::Return),
-        };
-        for def in defs.iter().rev().cloned() {
-            match &*def {
-                Definition::Variable { name, value } => {
-                    bcont = Rc::new(Cont::Begin {
-                        next: value.clone(),
-                        cont: Rc::new(Cont::Define {
-                            name: *name,
-                            cont: bcont,
-                        }),
-                    });
-                }
-                Definition::Procedure { name, data } => {
-                    bcont = Rc::new(Cont::DefineProc {
-                        name: *name,
-                        data: data.clone(),
-                        cont: bcont,
-                    })
-                }
-                Definition::Begin(defs) => {
-                    bcont = Self::from_defs(defs, Some(bcont));
-                }
-            }
-        }
-        bcont
+        defs.iter().cloned().rfold(
+            cont.unwrap_or_else(|| Rc::new(Cont::Return)),
+            |cont, def| match &*def {
+                Definition::Variable { name, value } => Rc::new(Cont::Begin {
+                    next: value.clone(),
+                    cont: Rc::new(Cont::Define { name: *name, cont }),
+                }),
+                Definition::Procedure { name, data } => Rc::new(Cont::DefineProc {
+                    name: *name,
+                    data: data.clone(),
+                    cont,
+                }),
+                Definition::Begin(defs) => Self::from_defs(defs, Some(cont)),
+            },
+        )
     }
 
     pub fn is_tail(&self) -> bool {
