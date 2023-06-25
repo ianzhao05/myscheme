@@ -124,32 +124,26 @@ fn dynamic_wind(state: State) -> Bouncer {
         stack: Some(Rc::new(Frame {
             cont: Rc::new(Cont::WindsOp {
                 op: WindsOp::Push(in_thunk, out_thunk.clone()),
-                acc: Some(body_thunk),
-                cont: Rc::new(Cont::Apply),
+                cont: Rc::new(Cont::ApplyThunk {
+                    thunk: body_thunk,
+                    cont: Rc::new(Cont::Define {
+                        name: sym,
+                        cont: Rc::new(Cont::WindsOp {
+                            op: WindsOp::Pop,
+                            cont: Rc::new(Cont::ApplyThunk {
+                                thunk: out_thunk,
+                                cont: Rc::new(Cont::Begin {
+                                    next: Rc::new(Expr::Variable(sym)),
+                                    cont: Rc::new(Cont::Return),
+                                }),
+                            }),
+                        }),
+                    }),
+                }),
             }),
             env: env.clone(),
             rib: Vec::new(),
-            next: Some(Rc::new(Frame {
-                cont: Rc::new(Cont::Define {
-                    name: sym,
-                    cont: Rc::new(Cont::WindsOp {
-                        op: WindsOp::Pop,
-                        acc: Some(out_thunk),
-                        cont: Rc::new(Cont::Apply),
-                    }),
-                }),
-                env: env.clone(),
-                rib: Vec::new(),
-                next: Some(Rc::new(Frame {
-                    cont: Rc::new(Cont::Begin {
-                        next: Rc::new(Expr::Variable(sym)),
-                        cont: Rc::new(Cont::Return),
-                    }),
-                    env,
-                    rib: Vec::new(),
-                    next: stack,
-                })),
-            })),
+            next: stack,
         })),
         winds,
     })

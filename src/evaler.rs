@@ -417,8 +417,8 @@ pub fn eval_expr(state: State) -> Bouncer {
                         winds,
                     }),
                 },
-                Cont::WindsOp { op, acc, cont } => Bouncer::Bounce(State {
-                    acc: Acc::Obj(Ok(acc.clone().unwrap_or(obj))),
+                Cont::WindsOp { op, cont } => Bouncer::Bounce(State {
+                    acc: Acc::Obj(Ok(obj)),
                     cont: cont.clone(),
                     env,
                     rib,
@@ -436,6 +436,26 @@ pub fn eval_expr(state: State) -> Bouncer {
                         },
                     },
                 }),
+                Cont::ApplyThunk { thunk, cont } => {
+                    let tail = cont.is_tail();
+                    Bouncer::Bounce(State {
+                        acc: Acc::Obj(Ok(thunk.clone())),
+                        cont: Rc::new(Cont::Apply),
+                        env: env.clone(),
+                        rib: Vec::new(),
+                        stack: if tail {
+                            stack
+                        } else {
+                            Some(Rc::new(Frame {
+                                cont: cont.clone(),
+                                env,
+                                rib,
+                                next: stack,
+                            }))
+                        },
+                        winds,
+                    })
+                }
             },
             Err(e) => Bouncer::Land(Err(e)),
         },
