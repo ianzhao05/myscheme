@@ -116,6 +116,7 @@ pub enum Cont {
     },
     WindsOp {
         op: WindsOp,
+        acc: Option<ObjectRef>,
         cont: Rc<Cont>,
     },
 }

@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::cont::{Acc, Cont, State};
+use crate::cont::{Acc, Cont, Frame, State, WindsOp};
 use crate::evaler::{EvalError, EvalErrorKind};
+use crate::expr::Expr;
+use crate::interner::Symbol;
 use crate::object::{Object, ObjectRef};
 use crate::proc::{Continuation, Procedure};
 use crate::trampoline::Bouncer;
@@ -90,10 +92,74 @@ fn apply(state: State) -> Bouncer {
     })
 }
 
+fn dynamic_wind(state: State) -> Bouncer {
+    let State {
+        env,
+        rib,
+        stack,
+        winds,
+        ..
+    } = state;
+    if rib.len() != 3 {
+        return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ArityMismatch {
+            expected: 3,
+            max_expected: 3,
+            got: rib.len(),
+        })));
+    }
+    let (in_thunk, body_thunk, out_thunk) = {
+        let mut rib = rib.into_iter();
+        (
+            rib.next().unwrap(),
+            rib.next().unwrap(),
+            rib.next().unwrap(),
+        )
+    };
+    let sym = Symbol::from("res");
+    Bouncer::Bounce(State {
+        acc: Acc::Obj(Ok(in_thunk.clone())),
+        cont: Rc::new(Cont::Apply),
+        env: env.clone(),
+        rib: Vec::new(),
+        stack: Some(Rc::new(Frame {
+            cont: Rc::new(Cont::WindsOp {
+                op: WindsOp::Push(in_thunk, out_thunk.clone()),
+                acc: Some(body_thunk),
+                cont: Rc::new(Cont::Apply),
+            }),
+            env: env.clone(),
+            rib: Vec::new(),
+            next: Some(Rc::new(Frame {
+                cont: Rc::new(Cont::Define {
+                    name: sym,
+                    cont: Rc::new(Cont::WindsOp {
+                        op: WindsOp::Pop,
+                        acc: Some(out_thunk),
+                        cont: Rc::new(Cont::Apply),
+                    }),
+                }),
+                env: env.clone(),
+                rib: Vec::new(),
+                next: Some(Rc::new(Frame {
+                    cont: Rc::new(Cont::Begin {
+                        next: Rc::new(Expr::Variable(sym)),
+                        cont: Rc::new(Cont::Return),
+                    }),
+                    env,
+                    rib: Vec::new(),
+                    next: stack,
+                })),
+            })),
+        })),
+        winds,
+    })
+}
+
 pub fn cprimitives() -> ControlMap {
     let mut m: ControlMap = HashMap::new();
     m.insert("apply", apply);
     m.insert("call-with-current-continuation", callcc);
+    m.insert("dynamic-wind", dynamic_wind);
     m
 }
 

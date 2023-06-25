@@ -417,8 +417,8 @@ pub fn eval_expr(state: State) -> Bouncer {
                         winds,
                     }),
                 },
-                Cont::WindsOp { op, cont } => Bouncer::Bounce(State {
-                    acc: Acc::Obj(Ok(obj)),
+                Cont::WindsOp { op, acc, cont } => Bouncer::Bounce(State {
+                    acc: Acc::Obj(Ok(acc.clone().unwrap_or(obj))),
                     cont: cont.clone(),
                     env,
                     rib,
