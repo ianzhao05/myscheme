@@ -11,11 +11,11 @@ use super::utils::ControlMap;
 
 fn callcc(state: State) -> Bouncer {
     let State {
-        acc: _,
-        cont: _,
         env,
         rib,
         stack,
+        winds,
+        ..
     } = state;
     if rib.len() != 1 {
         return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ArityMismatch {
@@ -25,7 +25,7 @@ fn callcc(state: State) -> Bouncer {
         })));
     }
     let proc = rib[0].clone();
-    let cont_obj = Continuation::new(stack.clone());
+    let cont_obj = Continuation::new(stack.clone(), winds.clone());
     Bouncer::Bounce(State {
         acc: Acc::Obj(Ok(proc)),
         cont: Rc::new(Cont::Apply),
@@ -34,16 +34,17 @@ fn callcc(state: State) -> Bouncer {
             cont_obj,
         )))],
         stack,
+        winds,
     })
 }
 
 fn apply(state: State) -> Bouncer {
     let State {
-        acc: _,
-        cont: _,
         env,
         rib,
         stack,
+        winds,
+        ..
     } = state;
     if rib.len() < 2 {
         return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ArityMismatch {
@@ -85,6 +86,7 @@ fn apply(state: State) -> Bouncer {
         env,
         rib: nrib,
         stack,
+        winds,
     })
 }
 

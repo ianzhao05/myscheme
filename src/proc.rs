@@ -2,7 +2,7 @@ use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{cell::RefCell, rc::Rc};
 
-use crate::cont::{Acc, Cont, Frame, State};
+use crate::cont::{Acc, Cont, Frame, State, Wind};
 use crate::env::Env;
 use crate::evaler::{EvalError, EvalErrorKind};
 use crate::expr::ProcData;
@@ -89,6 +89,7 @@ impl Call for Primitive {
                 env: state.env,
                 rib: Vec::new(),
                 stack: state.stack,
+                winds: state.winds,
             }),
             PrimitiveFunc::State(f) => f(state),
         }
@@ -176,6 +177,7 @@ impl Call for UserDefined {
             env,
             rib: Vec::new(),
             stack: state.stack,
+            winds: state.winds,
         })
     }
 }
@@ -184,6 +186,7 @@ impl Call for UserDefined {
 pub struct Continuation {
     id: usize,
     stack: Option<Rc<Frame>>,
+    winds: Option<Rc<Wind>>,
 }
 
 impl fmt::Debug for Continuation {
@@ -201,10 +204,11 @@ impl fmt::Display for Continuation {
 }
 
 impl Continuation {
-    pub fn new(stack: Option<Rc<Frame>>) -> Self {
+    pub fn new(stack: Option<Rc<Frame>>, winds: Option<Rc<Wind>>) -> Self {
         Self {
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             stack,
+            winds,
         }
     }
 }
@@ -217,20 +221,28 @@ impl PartialEq for Continuation {
 
 impl Call for Continuation {
     fn call(&self, state: State) -> Bouncer {
-        if state.rib.len() != 1 {
+        let State {
+            env, rib, winds, ..
+        } = state;
+        if rib.len() != 1 {
             return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ArityMismatch {
                 expected: 1,
                 max_expected: 1,
-                got: state.rib.len(),
+                got: rib.len(),
             })));
         }
-        let arg = state.rib[0].clone();
+        let arg = rib[0].clone();
         Bouncer::Bounce(State {
             acc: Acc::Obj(Ok(arg)),
-            cont: Rc::new(Cont::Return),
-            env: state.env,
+            cont: Rc::new(Cont::DoWinds {
+                from: winds.clone(),
+                to: self.winds.clone(),
+                cont: Rc::new(Cont::Return),
+            }),
+            env,
             rib: Vec::new(),
             stack: self.stack.clone(),
+            winds,
         })
     }
 }

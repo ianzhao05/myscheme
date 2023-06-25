@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fmt;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::cont::{Acc, Cont, Frame, State};
+use crate::cont::{Acc, Cont, Frame, State, Wind, WindsOp};
 use crate::datum::SimpleDatum;
 use crate::env::Env;
 use crate::expr::*;
@@ -99,152 +99,163 @@ pub fn eval_expr(state: State) -> Bouncer {
             env,
             rib,
             stack,
-        } => match &*expr {
-            Expr::Variable(v) => {
-                let res = match env.borrow().get(*v) {
-                    Some(obj) => match obj {
-                        ObjectRef::Undefined => {
-                            Err(EvalError::new(EvalErrorKind::UndefinedVariable(*v)))
-                        }
-                        _ => Ok(obj),
-                    },
-                    None => Err(EvalError::new(EvalErrorKind::UndefinedVariable(*v))),
-                };
-                Bouncer::Bounce(State {
-                    acc: Acc::Obj(res),
-                    cont,
-                    env,
-                    rib,
-                    stack,
-                })
-            }
-            Expr::Literal(l) => Bouncer::Bounce(State {
-                acc: Acc::Obj(Ok(match l {
-                    LiteralKind::Quotation(d) => ObjectRef::from(d.clone()),
-                    LiteralKind::SelfEvaluating(s) => ObjectRef::new(Object::Atom(match s {
-                        SelfEvaluatingKind::Boolean(b) => SimpleDatum::Boolean(*b),
-                        SelfEvaluatingKind::Character(c) => SimpleDatum::Character(*c),
-                        SelfEvaluatingKind::Number(n) => SimpleDatum::Number(n.clone()),
-                        SelfEvaluatingKind::String(s) => SimpleDatum::String(s.clone()),
+            winds,
+        } => {
+            match &*expr {
+                Expr::Variable(v) => {
+                    let res = match env.borrow().get(*v) {
+                        Some(obj) => match obj {
+                            ObjectRef::Undefined => {
+                                Err(EvalError::new(EvalErrorKind::UndefinedVariable(*v)))
+                            }
+                            _ => Ok(obj),
+                        },
+                        None => Err(EvalError::new(EvalErrorKind::UndefinedVariable(*v))),
+                    };
+                    Bouncer::Bounce(State {
+                        acc: Acc::Obj(res),
+                        cont,
+                        env,
+                        rib,
+                        stack,
+                        winds,
+                    })
+                }
+                Expr::Literal(l) => Bouncer::Bounce(State {
+                    acc: Acc::Obj(Ok(match l {
+                        LiteralKind::Quotation(d) => ObjectRef::from(d.clone()),
+                        LiteralKind::SelfEvaluating(s) => ObjectRef::new(Object::Atom(match s {
+                            SelfEvaluatingKind::Boolean(b) => SimpleDatum::Boolean(*b),
+                            SelfEvaluatingKind::Character(c) => SimpleDatum::Character(*c),
+                            SelfEvaluatingKind::Number(n) => SimpleDatum::Number(n.clone()),
+                            SelfEvaluatingKind::String(s) => SimpleDatum::String(s.clone()),
+                        })),
                     })),
-                })),
-                cont,
-                env,
-                rib,
-                stack,
-            }),
-            Expr::ProcCall { operator, operands } => {
-                let tail = cont.is_tail();
-                let (acc, ncont) = match operands.split_first() {
-                    Some((first, rest)) => (
-                        Acc::Expr(first.clone()),
-                        rest.iter().cloned().rfold(
-                            Rc::new(Cont::Proc {
-                                operator: operator.clone(),
-                            }),
-                            |cont, next| Rc::new(Cont::Argument { next, cont }),
+                    cont,
+                    env,
+                    rib,
+                    stack,
+                    winds,
+                }),
+                Expr::ProcCall { operator, operands } => {
+                    let tail = cont.is_tail();
+                    let (acc, ncont) = match operands.split_first() {
+                        Some((first, rest)) => (
+                            Acc::Expr(first.clone()),
+                            rest.iter().cloned().rfold(
+                                Rc::new(Cont::Proc {
+                                    operator: operator.clone(),
+                                }),
+                                |cont, next| Rc::new(Cont::Argument { next, cont }),
+                            ),
                         ),
-                    ),
-                    None => (Acc::Expr(operator.clone()), Rc::new(Cont::Apply)),
-                };
-                Bouncer::Bounce(State {
-                    acc,
-                    cont: ncont,
-                    env: env.clone(),
-                    rib: Vec::new(),
-                    stack: if tail {
-                        stack
-                    } else {
-                        Some(Rc::new(Frame {
-                            cont,
-                            env,
-                            rib,
-                            next: stack,
-                        }))
-                    },
-                })
+                        None => (Acc::Expr(operator.clone()), Rc::new(Cont::Apply)),
+                    };
+                    Bouncer::Bounce(State {
+                        acc,
+                        cont: ncont,
+                        env: env.clone(),
+                        rib: Vec::new(),
+                        stack: if tail {
+                            stack
+                        } else {
+                            Some(Rc::new(Frame {
+                                cont,
+                                env,
+                                rib,
+                                next: stack,
+                            }))
+                        },
+                        winds,
+                    })
+                }
+                Expr::Lambda(data) => Bouncer::Bounce(State {
+                    acc: Acc::Obj(UserDefined::new(data.clone(), env.clone()).map(|proc| {
+                        ObjectRef::new(Object::Procedure(Procedure::UserDefined(proc)))
+                    })),
+                    cont,
+                    env,
+                    rib,
+                    stack,
+                    winds,
+                }),
+                Expr::Conditional {
+                    test,
+                    consequent,
+                    alternate,
+                } => Bouncer::Bounce(State {
+                    acc: Acc::Expr(test.clone()),
+                    cont: Rc::new(Cont::Conditional {
+                        consequent: consequent.clone(),
+                        alternate: alternate.clone(),
+                        cont,
+                    }),
+                    env,
+                    rib,
+                    stack,
+                    winds,
+                }),
+                Expr::Assignment { variable, value } => Bouncer::Bounce(State {
+                    acc: Acc::Expr(value.clone()),
+                    cont: Rc::new(Cont::Assignment {
+                        variable: *variable,
+                        cont,
+                    }),
+                    env,
+                    rib,
+                    stack,
+                    winds,
+                }),
+                Expr::Begin(seq) => match seq.split_first() {
+                    Some((first, rest)) => Bouncer::Bounce(State {
+                        acc: Acc::Expr(first.clone()),
+                        cont: rest
+                            .iter()
+                            .cloned()
+                            .rfold(cont, |cont, next| Rc::new(Cont::Begin { next, cont })),
+                        env,
+                        rib,
+                        stack,
+                        winds,
+                    }),
+                    None => Bouncer::Bounce(State {
+                        acc: Acc::Obj(Ok(ObjectRef::Void)),
+                        cont,
+                        env,
+                        rib,
+                        stack,
+                        winds,
+                    }),
+                },
+                Expr::SimpleLet { arg, value, body } => Bouncer::Bounce(State {
+                    acc: Acc::Expr(value.clone()),
+                    cont: Rc::new(Cont::SimpleLet {
+                        arg: *arg,
+                        body: body.clone(),
+                        cont,
+                    }),
+                    env,
+                    rib,
+                    stack,
+                    winds,
+                }),
+                Expr::Undefined => Bouncer::Bounce(State {
+                    acc: Acc::Obj(Ok(ObjectRef::Undefined)),
+                    cont,
+                    env,
+                    rib,
+                    stack,
+                    winds,
+                }),
             }
-            Expr::Lambda(data) => Bouncer::Bounce(State {
-                acc: Acc::Obj(match UserDefined::new(data.clone(), env.clone()) {
-                    Ok(proc) => Ok(ObjectRef::new(Object::Procedure(Procedure::UserDefined(
-                        proc,
-                    )))),
-                    Err(e) => Err(e),
-                }),
-                cont,
-                env,
-                rib,
-                stack,
-            }),
-            Expr::Conditional {
-                test,
-                consequent,
-                alternate,
-            } => Bouncer::Bounce(State {
-                acc: Acc::Expr(test.clone()),
-                cont: Rc::new(Cont::Conditional {
-                    consequent: consequent.clone(),
-                    alternate: alternate.clone(),
-                    cont,
-                }),
-                env,
-                rib,
-                stack,
-            }),
-            Expr::Assignment { variable, value } => Bouncer::Bounce(State {
-                acc: Acc::Expr(value.clone()),
-                cont: Rc::new(Cont::Assignment {
-                    variable: *variable,
-                    cont,
-                }),
-                env,
-                rib,
-                stack,
-            }),
-            Expr::Begin(seq) => match seq.split_first() {
-                Some((first, rest)) => Bouncer::Bounce(State {
-                    acc: Acc::Expr(first.clone()),
-                    cont: rest
-                        .iter()
-                        .cloned()
-                        .rfold(cont, |cont, next| Rc::new(Cont::Begin { next, cont })),
-                    env,
-                    rib,
-                    stack,
-                }),
-                None => Bouncer::Bounce(State {
-                    acc: Acc::Obj(Ok(ObjectRef::Void)),
-                    cont,
-                    env,
-                    rib,
-                    stack,
-                }),
-            },
-            Expr::SimpleLet { arg, value, body } => Bouncer::Bounce(State {
-                acc: Acc::Expr(value.clone()),
-                cont: Rc::new(Cont::SimpleLet {
-                    arg: *arg,
-                    body: body.clone(),
-                    cont,
-                }),
-                env,
-                rib,
-                stack,
-            }),
-            Expr::Undefined => Bouncer::Bounce(State {
-                acc: Acc::Obj(Ok(ObjectRef::Undefined)),
-                cont,
-                env,
-                rib,
-                stack,
-            }),
-        },
+        }
         State {
             acc: Acc::Obj(obj),
             cont,
             env,
             mut rib,
             stack,
+            winds,
         } => match obj {
             Ok(obj) => match &*cont {
                 Cont::Return => match stack {
@@ -254,6 +265,7 @@ pub fn eval_expr(state: State) -> Bouncer {
                         env: frame.env.clone(),
                         rib: frame.rib.clone(),
                         stack: frame.next.clone(),
+                        winds,
                     }),
                     None => Bouncer::Land(Ok(obj)),
                 },
@@ -264,6 +276,7 @@ pub fn eval_expr(state: State) -> Bouncer {
                         env,
                         rib,
                         stack,
+                        winds,
                     }),
                     _ => Bouncer::Land(Err(EvalError::new(EvalErrorKind::NotAProcedure(obj)))),
                 },
@@ -275,6 +288,7 @@ pub fn eval_expr(state: State) -> Bouncer {
                         env,
                         rib,
                         stack,
+                        winds,
                     })
                 }
                 Cont::Argument { next, cont } => {
@@ -285,6 +299,7 @@ pub fn eval_expr(state: State) -> Bouncer {
                         env,
                         rib,
                         stack,
+                        winds,
                     })
                 }
                 Cont::SimpleLet { arg, body, cont } => {
@@ -295,6 +310,7 @@ pub fn eval_expr(state: State) -> Bouncer {
                         env,
                         rib,
                         stack,
+                        winds,
                     })
                 }
                 Cont::Conditional {
@@ -313,6 +329,7 @@ pub fn eval_expr(state: State) -> Bouncer {
                             env,
                             rib,
                             stack,
+                            winds,
                         })
                     } else {
                         match alternate {
@@ -322,6 +339,7 @@ pub fn eval_expr(state: State) -> Bouncer {
                                 env,
                                 rib,
                                 stack,
+                                winds,
                             }),
                             None => Bouncer::Bounce(State {
                                 acc: Acc::Obj(Ok(ObjectRef::Void)),
@@ -329,6 +347,7 @@ pub fn eval_expr(state: State) -> Bouncer {
                                 env,
                                 rib,
                                 stack,
+                                winds,
                             }),
                         }
                     }
@@ -345,6 +364,7 @@ pub fn eval_expr(state: State) -> Bouncer {
                             env,
                             rib,
                             stack,
+                            winds,
                         })
                     }
                 }
@@ -354,6 +374,7 @@ pub fn eval_expr(state: State) -> Bouncer {
                     env,
                     rib,
                     stack,
+                    winds,
                 }),
                 Cont::Define { name, cont } => {
                     env.borrow_mut().insert(*name, obj);
@@ -363,6 +384,7 @@ pub fn eval_expr(state: State) -> Bouncer {
                         env,
                         rib,
                         stack,
+                        winds,
                     })
                 }
                 Cont::DefineProc { name, data, cont } => {
@@ -379,8 +401,41 @@ pub fn eval_expr(state: State) -> Bouncer {
                         env,
                         rib,
                         stack,
+                        winds,
                     })
                 }
+                Cont::DoWinds { from, to, cont } => match (from, to) {
+                    (Some(from), Some(to)) if !Rc::ptr_eq(from, to) => todo!(),
+                    (None, Some(_)) => todo!(),
+                    (Some(_), None) => todo!(),
+                    _ => Bouncer::Bounce(State {
+                        acc: Acc::Obj(Ok(obj)),
+                        cont: cont.clone(),
+                        env,
+                        rib,
+                        stack,
+                        winds,
+                    }),
+                },
+                Cont::WindsOp { op, cont } => Bouncer::Bounce(State {
+                    acc: Acc::Obj(Ok(obj)),
+                    cont: cont.clone(),
+                    env,
+                    rib,
+                    stack,
+                    winds: match op {
+                        WindsOp::Set(winds) => winds.clone(),
+                        WindsOp::Push(in_thunk, out_thunk) => Some(Rc::new(Wind {
+                            in_thunk: in_thunk.clone(),
+                            out_thunk: out_thunk.clone(),
+                            next: winds.clone(),
+                        })),
+                        WindsOp::Pop => match winds {
+                            Some(winds) => winds.next.clone(),
+                            None => panic!("Attempted to pop empty winds"),
+                        },
+                    },
+                }),
             },
             Err(e) => Bouncer::Land(Err(e)),
         },

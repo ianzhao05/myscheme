@@ -20,6 +20,7 @@ pub struct State {
     pub env: Rc<RefCell<Env>>,
     pub rib: Vec<ObjectRef>,
     pub stack: Option<Rc<Frame>>,
+    pub winds: Option<Rc<Wind>>,
 }
 
 impl State {
@@ -33,6 +34,7 @@ impl State {
             env,
             rib: Vec::new(),
             stack: None,
+            winds: None,
         }
     }
 }
@@ -53,6 +55,20 @@ impl fmt::Debug for Frame {
             .field("next", &self.next)
             .finish()
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Wind {
+    pub in_thunk: ObjectRef,
+    pub out_thunk: ObjectRef,
+    pub next: Option<Rc<Wind>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum WindsOp {
+    Set(Option<Rc<Wind>>),
+    Push(ObjectRef, ObjectRef),
+    Pop,
 }
 
 #[derive(Debug, Clone)]
@@ -91,6 +107,15 @@ pub enum Cont {
     DefineProc {
         name: Symbol,
         data: Rc<ProcData>,
+        cont: Rc<Cont>,
+    },
+    DoWinds {
+        from: Option<Rc<Wind>>,
+        to: Option<Rc<Wind>>,
+        cont: Rc<Cont>,
+    },
+    WindsOp {
+        op: WindsOp,
         cont: Rc<Cont>,
     },
 }
