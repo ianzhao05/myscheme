@@ -119,7 +119,7 @@ impl fmt::Display for UserDefined {
 
 impl UserDefined {
     pub fn new(data: Rc<ProcData>, env: Rc<RefCell<Env>>) -> Result<Self, EvalError> {
-        let args = &data.args;
+        let args = data.args.iter().chain(data.rest.iter());
         let mut set = std::collections::HashSet::new();
         for arg in args {
             if set.contains(arg) {
