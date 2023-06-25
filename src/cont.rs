@@ -126,11 +126,14 @@ pub enum Cont {
 
 impl Cont {
     pub fn from_body(body: &[ExprOrDef], cont: Option<Rc<Cont>>) -> Rc<Cont> {
-        body.iter().cloned().rfold(
+        body.iter().rfold(
             cont.unwrap_or_else(|| Rc::new(Cont::Return)),
             |cont, eod| match eod {
-                ExprOrDef::Expr(next) => Rc::new(Cont::Begin { next, cont }),
-                ExprOrDef::Definition(def) => match &*def {
+                ExprOrDef::Expr(next) => Rc::new(Cont::Begin {
+                    next: next.clone(),
+                    cont,
+                }),
+                ExprOrDef::Definition(def) => match &**def {
                     Definition::Variable { name, value } => Rc::new(Cont::Begin {
                         next: value.clone(),
                         cont: Rc::new(Cont::Define { name: *name, cont }),
@@ -148,9 +151,9 @@ impl Cont {
     }
 
     pub fn from_defs(defs: &[Rc<Definition>], cont: Option<Rc<Cont>>) -> Rc<Cont> {
-        defs.iter().cloned().rfold(
+        defs.iter().rfold(
             cont.unwrap_or_else(|| Rc::new(Cont::Return)),
-            |cont, def| match &*def {
+            |cont, def| match &**def {
                 Definition::Variable { name, value } => Rc::new(Cont::Begin {
                     next: value.clone(),
                     cont: Rc::new(Cont::Define { name: *name, cont }),

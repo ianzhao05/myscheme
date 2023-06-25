@@ -160,7 +160,7 @@ impl Call for UserDefined {
         }
         let env = Rc::new(RefCell::new(Env::new(Some(self.env.clone()))));
         let mut benv = env.borrow_mut();
-        let mut args_iter = args.iter().cloned();
+        let mut args_iter = args.into_iter();
         for (arg, val) in self.data.args.iter().zip(args_iter.by_ref()) {
             benv.insert(*arg, val);
         }
