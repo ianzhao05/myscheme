@@ -233,11 +233,11 @@ impl Call for Continuation {
         }
         let arg = rib[0].clone();
         Bouncer::Bounce(State {
-            acc: Acc::Obj(Ok(arg)),
+            acc: Acc::Obj(Ok(ObjectRef::Undefined)),
             cont: Rc::new(Cont::DoWinds {
                 from: winds.clone(),
                 to: self.winds.clone(),
-                cont: Rc::new(Cont::Return),
+                cont: Rc::new(Cont::ReturnVal { val: arg }),
             }),
             env,
             rib: Vec::new(),

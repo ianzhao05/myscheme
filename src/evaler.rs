@@ -269,6 +269,17 @@ pub fn eval_expr(state: State) -> Bouncer {
                     }),
                     None => Bouncer::Land(Ok(obj)),
                 },
+                Cont::ReturnVal { val } => match stack {
+                    Some(frame) => Bouncer::Bounce(State {
+                        acc: Acc::Obj(Ok(val.clone())),
+                        cont: frame.cont.clone(),
+                        env: frame.env.clone(),
+                        rib: frame.rib.clone(),
+                        stack: frame.next.clone(),
+                        winds,
+                    }),
+                    None => Bouncer::Land(Ok(val.clone())),
+                },
                 Cont::Apply => match obj.try_deref() {
                     Some(Object::Procedure(p)) => p.call(State {
                         acc: Acc::Obj(Ok(ObjectRef::Undefined)),
@@ -404,19 +415,64 @@ pub fn eval_expr(state: State) -> Bouncer {
                         winds,
                     })
                 }
-                Cont::DoWinds { from, to, cont } => match (from, to) {
-                    (Some(from), Some(to)) if !Rc::ptr_eq(from, to) => todo!(),
-                    (None, Some(_)) => todo!(),
-                    (Some(_), None) => todo!(),
-                    _ => Bouncer::Bounce(State {
+                Cont::DoWinds { from, to, cont } => {
+                    let (ncont, nwinds) = match (from, to) {
+                        (None, Some(sto)) => (
+                            Rc::new(Cont::DoWinds {
+                                from: None,
+                                to: sto.next.clone(),
+                                cont: Rc::new(Cont::ApplyThunk {
+                                    thunk: sto.in_thunk.clone(),
+                                    cont: Rc::new(Cont::WindsOp {
+                                        op: WindsOp::Set(to.clone()),
+                                        cont: cont.clone(),
+                                    }),
+                                }),
+                            }),
+                            from.clone(),
+                        ),
+                        (Some(sfrom), None) => (
+                            Rc::new(Cont::ApplyThunk {
+                                thunk: sfrom.out_thunk.clone(),
+                                cont: Rc::new(Cont::DoWinds {
+                                    from: sfrom.next.clone(),
+                                    to: None,
+                                    cont: Rc::new(Cont::WindsOp {
+                                        op: WindsOp::Set(to.clone()),
+                                        cont: cont.clone(),
+                                    }),
+                                }),
+                            }),
+                            from.clone(),
+                        ),
+                        (Some(sfrom), Some(sto)) if !Rc::ptr_eq(sfrom, sto) => (
+                            Rc::new(Cont::ApplyThunk {
+                                thunk: sfrom.out_thunk.clone(),
+                                cont: Rc::new(Cont::DoWinds {
+                                    from: sfrom.next.clone(),
+                                    to: sto.next.clone(),
+                                    cont: Rc::new(Cont::ApplyThunk {
+                                        thunk: sto.in_thunk.clone(),
+                                        cont: Rc::new(Cont::WindsOp {
+                                            op: WindsOp::Set(to.clone()),
+                                            cont: cont.clone(),
+                                        }),
+                                    }),
+                                }),
+                            }),
+                            from.clone(),
+                        ),
+                        _ => (cont.clone(), to.clone()),
+                    };
+                    Bouncer::Bounce(State {
                         acc: Acc::Obj(Ok(obj)),
-                        cont: cont.clone(),
+                        cont: ncont,
                         env,
                         rib,
                         stack,
-                        winds,
-                    }),
-                },
+                        winds: nwinds,
+                    })
+                }
                 Cont::WindsOp { op, cont } => Bouncer::Bounce(State {
                     acc: Acc::Obj(Ok(obj)),
                     cont: cont.clone(),

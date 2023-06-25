@@ -1,7 +1,9 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::cont::{Acc, Cont, Frame, State, WindsOp};
+use crate::env::Env;
 use crate::evaler::{EvalError, EvalErrorKind};
 use crate::expr::Expr;
 use crate::interner::Symbol;
@@ -116,6 +118,7 @@ fn dynamic_wind(state: State) -> Bouncer {
         )
     };
     let sym = Symbol::from("res");
+    let env = Rc::new(RefCell::new(Env::new(Some(env))));
     Bouncer::Bounce(State {
         acc: Acc::Obj(Ok(in_thunk.clone())),
         cont: Rc::new(Cont::Apply),
@@ -141,7 +144,7 @@ fn dynamic_wind(state: State) -> Bouncer {
                     }),
                 }),
             }),
-            env: env.clone(),
+            env,
             rib: Vec::new(),
             next: stack,
         })),

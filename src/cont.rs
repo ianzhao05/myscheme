@@ -74,6 +74,9 @@ pub enum WindsOp {
 #[derive(Debug, Clone)]
 pub enum Cont {
     Return,
+    ReturnVal {
+        val: ObjectRef,
+    },
     Apply,
     Proc {
         operator: Rc<Expr>,
