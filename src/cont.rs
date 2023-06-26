@@ -20,6 +20,7 @@ pub struct State {
     pub env: Rc<RefCell<Env>>,
     pub rib: Vec<ObjectRef>,
     pub stack: Option<Rc<Frame>>,
+    pub winds: Option<Rc<Wind>>,
 }
 
 impl State {
@@ -33,6 +34,7 @@ impl State {
             env,
             rib: Vec::new(),
             stack: None,
+            winds: None,
         }
     }
 }
@@ -56,8 +58,25 @@ impl fmt::Debug for Frame {
 }
 
 #[derive(Debug, Clone)]
+pub struct Wind {
+    pub in_thunk: ObjectRef,
+    pub out_thunk: ObjectRef,
+    pub next: Option<Rc<Wind>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum WindsOp {
+    Set(Option<Rc<Wind>>),
+    Push(ObjectRef, ObjectRef),
+    Pop,
+}
+
+#[derive(Debug, Clone)]
 pub enum Cont {
     Return,
+    ReturnVal {
+        val: ObjectRef,
+    },
     Apply,
     Proc {
         operator: Rc<Expr>,
@@ -93,15 +112,31 @@ pub enum Cont {
         data: Rc<ProcData>,
         cont: Rc<Cont>,
     },
+    DoWinds {
+        from: Option<Rc<Wind>>,
+        to: Option<Rc<Wind>>,
+        cont: Rc<Cont>,
+    },
+    WindsOp {
+        op: WindsOp,
+        cont: Rc<Cont>,
+    },
+    ApplyThunk {
+        thunk: ObjectRef,
+        cont: Rc<Cont>,
+    },
 }
 
 impl Cont {
     pub fn from_body(body: &[ExprOrDef], cont: Option<Rc<Cont>>) -> Rc<Cont> {
-        body.iter().cloned().rfold(
+        body.iter().rfold(
             cont.unwrap_or_else(|| Rc::new(Cont::Return)),
             |cont, eod| match eod {
-                ExprOrDef::Expr(next) => Rc::new(Cont::Begin { next, cont }),
-                ExprOrDef::Definition(def) => match &*def {
+                ExprOrDef::Expr(next) => Rc::new(Cont::Begin {
+                    next: next.clone(),
+                    cont,
+                }),
+                ExprOrDef::Definition(def) => match &**def {
                     Definition::Variable { name, value } => Rc::new(Cont::Begin {
                         next: value.clone(),
                         cont: Rc::new(Cont::Define { name: *name, cont }),
@@ -119,9 +154,9 @@ impl Cont {
     }
 
     pub fn from_defs(defs: &[Rc<Definition>], cont: Option<Rc<Cont>>) -> Rc<Cont> {
-        defs.iter().cloned().rfold(
+        defs.iter().rfold(
             cont.unwrap_or_else(|| Rc::new(Cont::Return)),
-            |cont, def| match &*def {
+            |cont, def| match &**def {
                 Definition::Variable { name, value } => Rc::new(Cont::Begin {
                     next: value.clone(),
                     cont: Rc::new(Cont::Define { name: *name, cont }),

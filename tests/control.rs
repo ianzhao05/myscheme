@@ -64,6 +64,70 @@ fn callcc() {
 }
 
 #[test]
+fn dynamic_wind() {
+    assert_eval_eq!(
+        "(let* ((path '())
+                (add (lambda (s) (set! path (cons s path)))))
+           (dynamic-wind (lambda () (add 'a)) (lambda () (add 'b)) (lambda () (add 'c)))
+           (reverse path))",
+        "'(a b c)"
+    );
+
+    assert_eval_eq!(
+        "(let ((path '())
+               (c #f))
+           (let ((add (lambda (s)
+                        (set! path (cons s path)))))
+             (dynamic-wind
+                 (lambda () (add 'connect))
+                 (lambda ()
+                   (add (call-with-current-continuation
+                         (lambda (c0)
+                           (set! c c0)
+                           'talk1))))
+                 (lambda () (add 'disconnect)))
+             (if (< (length path) 4)
+                 (c 'talk2)
+                 (reverse path))))",
+        "'(connect talk1 disconnect connect talk2 disconnect)"
+    );
+
+    assert_eval_eq!(
+        "(define path '())
+         (define (m x) (lambda () (set! path (cons x path))))
+         (define (id x) x)
+         (define c
+           (dynamic-wind
+            (m 'in1)
+            (lambda ()
+              (let ((k1 (call-with-current-continuation id)))
+                ((m 'c1))
+                (let ((k2 (dynamic-wind
+                           (m 'in2)
+                           (lambda ()
+                             (let ((k2 (call-with-current-continuation id)))
+                               ((m 'c2))
+                               k2))
+                           (m 'out2))))
+                  (dynamic-wind
+                   (m 'in3)
+                   (lambda ()
+                     (let ((k3 (call-with-current-continuation id)))
+                       ((m 'c3))
+                       (k2 id)
+                       k3))
+                   (m 'out3)))))
+            (m 'out1)))
+         (reverse path)
+         (set! path '())
+         (c id)
+         (reverse path)",
+        "'(in1 c1 in2 c2 out2 in3 c3 out3 in2 c2 out2 in3 c3 out3 out1)
+         '(in1 in3 c3 out3 out1)"
+    );
+}
+
+#[test]
 fn eval() {
     assert_eval_eq!(
         "(let ((a 3) (b 7)) (eval `(* ,a ,b) (scheme-report-environment 5)))",

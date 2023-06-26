@@ -1,8 +1,12 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::cont::{Acc, Cont, State};
+use crate::cont::{Acc, Cont, Frame, State, WindsOp};
+use crate::env::Env;
 use crate::evaler::{EvalError, EvalErrorKind};
+use crate::expr::Expr;
+use crate::interner::Symbol;
 use crate::object::{Object, ObjectRef};
 use crate::proc::{Continuation, Procedure};
 use crate::trampoline::Bouncer;
@@ -11,11 +15,11 @@ use super::utils::ControlMap;
 
 fn callcc(state: State) -> Bouncer {
     let State {
-        acc: _,
-        cont: _,
         env,
         rib,
         stack,
+        winds,
+        ..
     } = state;
     if rib.len() != 1 {
         return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ArityMismatch {
@@ -25,7 +29,7 @@ fn callcc(state: State) -> Bouncer {
         })));
     }
     let proc = rib[0].clone();
-    let cont_obj = Continuation::new(stack.clone());
+    let cont_obj = Continuation::new(stack.clone(), winds.clone());
     Bouncer::Bounce(State {
         acc: Acc::Obj(Ok(proc)),
         cont: Rc::new(Cont::Apply),
@@ -34,16 +38,17 @@ fn callcc(state: State) -> Bouncer {
             cont_obj,
         )))],
         stack,
+        winds,
     })
 }
 
 fn apply(state: State) -> Bouncer {
     let State {
-        acc: _,
-        cont: _,
         env,
         rib,
         stack,
+        winds,
+        ..
     } = state;
     if rib.len() < 2 {
         return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ArityMismatch {
@@ -85,6 +90,65 @@ fn apply(state: State) -> Bouncer {
         env,
         rib: nrib,
         stack,
+        winds,
+    })
+}
+
+fn dynamic_wind(state: State) -> Bouncer {
+    let State {
+        env,
+        rib,
+        stack,
+        winds,
+        ..
+    } = state;
+    if rib.len() != 3 {
+        return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ArityMismatch {
+            expected: 3,
+            max_expected: 3,
+            got: rib.len(),
+        })));
+    }
+    let (in_thunk, body_thunk, out_thunk) = {
+        let mut rib = rib.into_iter();
+        (
+            rib.next().unwrap(),
+            rib.next().unwrap(),
+            rib.next().unwrap(),
+        )
+    };
+    let sym = Symbol::from("res");
+    let env = Rc::new(RefCell::new(Env::new(Some(env))));
+    Bouncer::Bounce(State {
+        acc: Acc::Obj(Ok(in_thunk.clone())),
+        cont: Rc::new(Cont::Apply),
+        env: env.clone(),
+        rib: Vec::new(),
+        stack: Some(Rc::new(Frame {
+            cont: Rc::new(Cont::WindsOp {
+                op: WindsOp::Push(in_thunk, out_thunk.clone()),
+                cont: Rc::new(Cont::ApplyThunk {
+                    thunk: body_thunk,
+                    cont: Rc::new(Cont::Define {
+                        name: sym,
+                        cont: Rc::new(Cont::WindsOp {
+                            op: WindsOp::Pop,
+                            cont: Rc::new(Cont::ApplyThunk {
+                                thunk: out_thunk,
+                                cont: Rc::new(Cont::Begin {
+                                    next: Rc::new(Expr::Variable(sym)),
+                                    cont: Rc::new(Cont::Return),
+                                }),
+                            }),
+                        }),
+                    }),
+                }),
+            }),
+            env,
+            rib: Vec::new(),
+            next: stack,
+        })),
+        winds,
     })
 }
 
@@ -92,6 +156,7 @@ pub fn cprimitives() -> ControlMap {
     let mut m: ControlMap = HashMap::new();
     m.insert("apply", apply);
     m.insert("call-with-current-continuation", callcc);
+    m.insert("dynamic-wind", dynamic_wind);
     m
 }
 

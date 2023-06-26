@@ -17,8 +17,8 @@ $ cargo run -- file.scm # run a file
   - Primitive forms: `define`, `lambda`, `if`, `quote`, `set!`
   - Derived forms: `cond`, `case`, `and`, `or`, `let`, `let*`, `letrec`, `begin`, `do`, named `let`, `delay`, and quasiquotation (`quasiquote`, `unquote`, `unquote-splicing`)
 - Proper tail recursion, as required by R5RS
-- First-class continuations
-- Implementation of almost all required primitive functions
+- First-class continuations (with `call-with-current-continuation` and `dynamic-wind`)
+- Implementation of all required primitive functions
 
 ### Not Yet Implemented
 
@@ -116,7 +116,7 @@ The naive approach to evaluation is a simple recursive procedure. For example, `
 
 The solution is to use a manual, heap-allocated ["spaghetti" stack](https://en.wikipedia.org/wiki/Parent_pointer_tree) and a continuation-based approach to evaluation that is tail-recursive. Continuations, not to be confused with the continuation objects produced by `call-with-current-continuation`, are structures that represent the rest of the computation to be performed. For instance, the continuation of `(if test consequent alternate)` stores `consequent` and `alternate`, and when the value of `test` is "applied" to this continuation, either `consequent` or `alternate` is set to be the next expression to be evaluated. Continuations store any such necessary data as well as a reference to the parent continuation (unless it is of the `Return` or `Apply` variant). Continuations are defined in [cont.rs](src/cont.rs).
 
-Evaluation is modeled by a loop where each iteration represents one "step" of the evaluation (either evaluating a single expression or applying a value to continuation). Each iteration consumes and returns a `State` (also defined in [cont.rs](src/cont.rs)), comparable to the registers of Dybvig's virtual machine. The `State` contains an accumulator that is either an expression or a value to apply to a continuation, the current continuation, the current environment, the current "rib" (vector of values to be applied to procedures), and reference to the active stack frame. The "loop" is actually a tail-recursive function that is trampolined in [trampoline.rs](src/trampoline.rs) to emulate a loop. This also has the advantage of being able to split up the logic of evaluation, as any function that consumes and returns a `State` can be integrated into the loop. For example, `eval` defers the logic of procedure application to [proc.rs](src/proc.rs), where the `Call` trait defines the `call` method that consumes and returns a `State`.
+Evaluation is modeled by a loop where each iteration represents one "step" of the evaluation (either evaluating a single expression or applying a value to continuation). Each iteration consumes and returns a `State` (also defined in [cont.rs](src/cont.rs)), comparable to the registers of Dybvig's virtual machine. The `State` contains an accumulator that is either an expression or a value to apply to a continuation, the current continuation, the current environment, the current "rib" (vector of values to be applied to procedures), a reference to the active stack frame, and a reference to the active winds (used by `dynamic-wind`). The "loop" is actually a tail-recursive function that is trampolined in [trampoline.rs](src/trampoline.rs) to emulate a loop. This also has the advantage of being able to split up the logic of evaluation, as any function that consumes and returns a `State` can be integrated into the loop. For example, `eval` defers the logic of procedure application to [proc.rs](src/proc.rs), where procedures implement the `Call` trait by defining a method that consumes and returns a `State`.
 
 For example, `(if #t a 2)` would be evaluated as follows (say that `a` is bound to `1` in the environment):
 
@@ -125,13 +125,13 @@ For example, `(if #t a 2)` would be evaluated as follows (say that `a` is bound 
 3. The expression `#t` is encountered, which is a simply an atom, so it is replaced by the value `#t` in the accumulator.
 4. The value `#t` is applied to the continuation above, which sets the accumulator to the expression `a` and the continuation to `Return`.
 5. The expression `a` is encountered, which leads to a variable lookup. The accumulator is set to `a`'s value, which is `1`.
-6. The value `1` is applied to the continuation `Return`, which simply halts the loop with the value `1` since we are at the top-level (no stack).
+6. The value `1` is applied to the continuation `Return`, which simply halts the loop with the value `1` since we are at the top-level. If we were not at the top-level, a stack frame would be popped, the previous state would be restored, and the value `1` would be left in the accumulator.
 
 #### Procedure Application and Continuations
 
 Procedure application involves the creation of a new stack frame, which saves the continuation, environment, and rib of the previous state (they are also defined in [cont.rs](src/cont.rs)). The state is then replaced with a continuation that, when invoked, will evaluate the operator and operands one-by-one. The last continuation in the chain is `Apply`, which extends the procedure's saved environment as previously described and replaces the current state with one that will evaluate the procedure's body in the new environment. The last continuation in this chain is `Return`, which will pop off the stack frame, restore the previous state, and leave the return value in the accumulator. For calls in a tail position, which occurs simply when the current continuation is `Return`, the current state does not need to be saved, so no stack frame is created. This is sufficient to support unbounded tail recursion.
 
-Continuations (the results of `call-with-current-continuation`) are implemented by objects that simply capture the current stack. When they are called with a value, they restore the stored stack and set the accumulator to the given value. This is why the stack needs to be stored as a tree rather than as a linked list: continuations are first-class objects that can be stored in environments, which necessitates keeping their particular branch of the stack alive for as long as they are.
+Continuations (the results of `call-with-current-continuation`) are implemented by objects that simply capture the current stack and winds. When they are called, they build a continuation that will execute thunks registered through `dynamic-wind` according to the change in dynamic extent as a result of the call. Then, they restore the stored stack and arrange to return the given value, which jumps execution of the program back to where the continuation was saved. The stack needs to be stored as a tree rather than as a linked list: continuations are first-class objects that can be stored in environments, which necessitates keeping their particular branch of the stack alive for as long as they are. Winds are stored in a similar manner.
 
 ### Other Details
 

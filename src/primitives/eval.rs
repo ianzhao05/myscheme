@@ -14,13 +14,7 @@ use crate::trampoline::Bouncer;
 use super::utils::{ensure_arity, expr_cv, get_env, ControlMap, PrimitiveMap};
 
 pub fn eval(state: State) -> Bouncer {
-    let State {
-        acc: _,
-        cont: _,
-        env: _,
-        rib,
-        stack,
-    } = state;
+    let State { rib, stack, .. } = state;
     if rib.len() != 2 {
         return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ArityMismatch {
             expected: 2,
@@ -49,6 +43,7 @@ pub fn eval(state: State) -> Bouncer {
         },
         rib: vec![],
         stack,
+        winds: None,
     })
 }
 
