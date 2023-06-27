@@ -1,14 +1,16 @@
 [package]
 name = "myscheme"
+repository = "https://github.com/ianzhao05/myscheme"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+exclude = ["myscheme-wasm"]
 
 [dependencies]
 num = "0.4"
 once_cell = "1.17.1"
 regex = "1.6.0"
+getrandom = { version = "0.2", features = ["js"] }
+wasm-bindgen = "0.2.87"
 
 [dependencies.uuid]
 version = "1.3.1"
@@ -16,3 +18,6 @@ features = ["v4", "fast-rng", "macro-diagnostics"]
 
 [dev-dependencies]
 assert_fs = "1.0.13"
+
+[workspace]
+members = ["myscheme-wasm"]

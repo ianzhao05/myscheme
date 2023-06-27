@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>MyScheme Web Demo</title>
+  </head>
+  <body>
+    <script type="module">
+      import init, { eval_expr } from "./myscheme_wasm.js";
+      function ev(e) {
+        e.preventDefault();
+        document.getElementById("result").textContent = eval_expr(
+          document.getElementById("code").value
+        );
+      }
+      init().then(() => {
+        document.getElementById("loading").remove();
+        document.getElementById("loaded").style.display = "block";
+        const form = document.getElementById("evalForm");
+        form.onsubmit = ev;
+        form.onkeydown = (e) => {
+          if (
+            (e.ctrlKey || e.metaKey) &&
+            (e.keyCode == 13 || e.keyCode == 10)
+          ) {
+            ev(e);
+          }
+        };
+      });
+    </script>
+    <p id="loading">Loading WASM binary...</p>
+    <div id="loaded" style="display: none">
+      <form id="evalForm">
+        <textarea
+          id="code"
+          rows="30"
+          cols="80"
+          style="font-family: monospace"
+          spellcheck="false"
+        >
+(define (build-list n)
+  (if (zero? n) '()
+      (cons n (build-list (- n 1)))))
+
+(define (foldl f init lst)
+  (if (null? lst) init
+      (foldl f (f init (car lst)) (cdr lst))))
+
+(define l (build-list 10))
+(foldl + 0 l)
+(foldl * 1 l)
+</textarea
+        >
+        <br />
+        <button>Eval (cmd/ctrl+enter)</button>
+      </form>
+      <p id="resultLabel">Result:</p>
+      <pre id="result"></pre>
+    </div>
+  </body>
+</html>

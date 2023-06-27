@@ -1,0 +1,27 @@
+name: Deploy WASM
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build package
+        run: |
+          wasm-pack build ./myscheme-wasm --target web
+          cp ./myscheme-wasm/index.html ./myscheme-wasm/pkg
+          rm ./myscheme-wasm/pkg/.gitignore
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./myscheme-wasm/pkg
