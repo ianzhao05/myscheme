@@ -67,12 +67,12 @@ pub enum Datum {
     EmptyList,
 }
 
-impl TryFrom<ObjectRef> for Datum {
+impl TryFrom<&ObjectRef> for Datum {
     type Error = ();
 
-    fn try_from(obj: ObjectRef) -> Result<Self, Self::Error> {
+    fn try_from(obj: &ObjectRef) -> Result<Self, Self::Error> {
         match obj {
-            ObjectRef::Object(o) => match &*o {
+            ObjectRef::Object(o) => match &**o {
                 Object::Atom(a) => Ok(Datum::Simple(a.clone())),
                 Object::Pair(p) => Ok(Datum::Compound(CompoundDatum::List({
                     let mut acc = vec![];
@@ -80,14 +80,14 @@ impl TryFrom<ObjectRef> for Datum {
                     loop {
                         cur = {
                             let b = cur.borrow();
-                            acc.push(b.0.clone().try_into()?);
+                            acc.push((&b.0).try_into()?);
                             match &b.1 {
                                 ObjectRef::Object(o) => match &**o {
                                     Object::Pair(p) => p.clone(),
                                     _ => {
                                         break ListKind::Improper(
                                             acc,
-                                            Box::new(b.1.clone().try_into()?),
+                                            Box::new((&b.1).try_into()?),
                                         );
                                     }
                                 },
@@ -102,7 +102,6 @@ impl TryFrom<ObjectRef> for Datum {
                 Object::Vector(v) => Ok(Datum::Compound(CompoundDatum::Vector(
                     v.borrow()
                         .iter()
-                        .cloned()
                         .map(Datum::try_from)
                         .collect::<Result<_, _>>()?,
                 ))),

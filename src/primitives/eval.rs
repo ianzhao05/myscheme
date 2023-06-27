@@ -26,7 +26,7 @@ pub fn eval(state: State) -> Bouncer {
         Ok(env_spec) => env_spec,
         Err(e) => return Bouncer::Land(Err(e)),
     };
-    let Ok(datum) = rib[0].clone().try_into() else {
+    let Ok(datum) = (&rib[0]).try_into() else {
         return Bouncer::Land(Err(expr_cv(&rib[0])));
     };
     let expr = match parse(datum) {
