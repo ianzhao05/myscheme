@@ -57,11 +57,37 @@ impl fmt::Debug for Frame {
     }
 }
 
+impl Drop for Frame {
+    fn drop(&mut self) {
+        let mut next = self.next.take();
+        while let Some(frame) = next {
+            if let Ok(mut frame) = Rc::try_unwrap(frame) {
+                next = frame.next.take();
+            } else {
+                break;
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Wind {
     pub in_thunk: ObjectRef,
     pub out_thunk: ObjectRef,
     pub next: Option<Rc<Wind>>,
+}
+
+impl Drop for Wind {
+    fn drop(&mut self) {
+        let mut next = self.next.take();
+        while let Some(wind) = next {
+            if let Ok(mut wind) = Rc::try_unwrap(wind) {
+                next = wind.next.take();
+            } else {
+                break;
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
