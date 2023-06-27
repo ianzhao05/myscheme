@@ -522,7 +522,7 @@ fn eval_def(def: Rc<Definition>, env: Rc<RefCell<Env>>) -> Result<ObjectRef, Eva
     match &*def {
         Definition::Variable { name, value } => trampoline(Bouncer::Bounce(State::new(
             Acc::Expr(value.clone()),
-            env.clone(),
+            env,
             Some(Rc::new(Cont::Define {
                 name: *name,
                 cont: Rc::new(Cont::Return),
@@ -538,7 +538,7 @@ fn eval_def(def: Rc<Definition>, env: Rc<RefCell<Env>>) -> Result<ObjectRef, Eva
         }
         Definition::Begin(defs) => trampoline(Bouncer::Bounce(State::new(
             Acc::Obj(Ok(ObjectRef::Undefined)),
-            env.clone(),
+            env,
             Some(Cont::from_defs(defs, None)),
         ))),
     }

@@ -147,7 +147,7 @@ pub fn primitives() -> PrimitiveMap {
     m.insert("close-output-port", close_output_port);
     m.insert("current-input-port", current_input_port);
     m.insert("current-output-port", current_output_port);
-    m.insert("write-char", |args| write_char(args));
+    m.insert("write-char", write_char);
     m.insert("display", |args| display_write(args, false));
     m.insert("write", |args| display_write(args, true));
     m.insert("read", read);

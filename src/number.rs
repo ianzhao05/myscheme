@@ -29,7 +29,7 @@ impl fmt::Display for RealKind {
         match self {
             RealKind::Real(r) => {
                 let mag = r.abs();
-                if mag != 0.0 && (mag > 1e16 || mag < 1e-16) {
+                if mag != 0.0 && !(1e-16..=1e16).contains(&mag) {
                     write!(f, "{r:e}")
                 } else if r.fract() == 0.0 {
                     r.fmt(f)?;
@@ -291,8 +291,7 @@ impl RealKind {
         match self {
             RealKind::Real(r) => RealKind::Real(
                 BigRational::from_f64(*r)
-                    .map(|r| r.numer().to_f64())
-                    .flatten()
+                    .and_then(|r| r.numer().to_f64())
                     .unwrap_or(f64::NAN),
             ),
             RealKind::Rational(r) => RealKind::Integer(r.numer().clone()),
@@ -310,8 +309,7 @@ impl RealKind {
         match self {
             RealKind::Real(r) => RealKind::Real(
                 BigRational::from_f64(*r)
-                    .map(|r| r.denom().to_f64())
-                    .flatten()
+                    .and_then(|r| r.denom().to_f64())
                     .unwrap_or(f64::NAN),
             ),
             RealKind::Rational(r) => RealKind::Integer(r.denom().clone()),
@@ -562,7 +560,7 @@ impl Number {
                 _ => return Number::from_str_radix(&s[(i * 2)..], radix, inexact),
             }
         }
-        return Number::from_str_radix(&s[4..], radix, inexact);
+        Number::from_str_radix(&s[4..], radix, inexact)
     }
 
     pub fn from_str_radix(
@@ -572,7 +570,7 @@ impl Number {
     ) -> Result<Self, ParseNumberError> {
         let has_slash = s.contains('/');
         let has_decimal = s.contains('.');
-        let has_exp = s.contains(&['e', 'E', 's', 'S', 'f', 'F', 'd', 'D', 'l', 'L']);
+        let has_exp = s.contains(['e', 'E', 's', 'S', 'f', 'F', 'd', 'D', 'l', 'L']);
         let inexact = match inexact {
             Some(i) => i,
             None => {
@@ -599,9 +597,7 @@ impl Number {
                         message: "Exponent not allowed in rational".to_owned(),
                     });
                 }
-                let mut split = s.splitn(2, '/');
-                let num = split.next().unwrap();
-                let den = split.next().unwrap();
+                let (num, den) = s.split_once('/').unwrap();
                 return Ok(Number::Real(RealKind::Real(
                     f64::from_str_radix(num, radix).map_err(ParseNumberError::new)?
                         / f64::from_str_radix(den, radix).map_err(ParseNumberError::new)?,
@@ -609,7 +605,7 @@ impl Number {
             }
             return Ok(Number::Real(RealKind::Real(
                 f64::from_str_radix(
-                    &s.replace(&['s', 'S', 'f', 'F', 'd', 'D', 'l', 'L'], "e"),
+                    &s.replace(['s', 'S', 'f', 'F', 'd', 'D', 'l', 'L'], "e"),
                     radix,
                 )
                 .map_err(ParseNumberError::new)?,

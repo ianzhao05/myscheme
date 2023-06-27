@@ -38,9 +38,9 @@ pub fn get_len(arg: &ObjectRef) -> Result<usize, EvalError> {
             RealKind::Integer(i) if i.sign() != Sign::Minus => {
                 i.try_into().map_err(|_| len_cv(arg))
             }
-            _ => return Err(len_cv(arg)),
+            _ => Err(len_cv(arg)),
         },
-        _ => return Err(len_cv(arg)),
+        _ => Err(len_cv(arg)),
     }
 }
 

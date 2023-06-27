@@ -174,7 +174,7 @@ impl Cont {
                     }),
                     Definition::Begin(defs) => Self::from_defs(defs, Some(cont)),
                 },
-                ExprOrDef::MixedBegin(eods) => Self::from_body(&eods, Some(cont)),
+                ExprOrDef::MixedBegin(eods) => Self::from_body(eods, Some(cont)),
             },
         )
     }

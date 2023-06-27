@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 use std::{cell::RefCell, rc::Rc};
 
 use crate::eval_str;
@@ -51,8 +51,8 @@ impl Env {
     }
 
     pub fn set(&mut self, name: Symbol, val: ObjectRef) -> bool {
-        if self.bindings.contains_key(&name) {
-            self.bindings.insert(name, val);
+        if let Entry::Occupied(mut e) = self.bindings.entry(name) {
+            e.insert(val);
             true
         } else {
             match &self.parent {

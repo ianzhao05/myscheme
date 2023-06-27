@@ -106,20 +106,19 @@ fn process_proc<I: DoubleEndedIterator<Item = Datum>>(
         }
         Ok((
             name,
-            fi.into_iter()
-                .map(|d| match d {
-                    Datum::Simple(SimpleDatum::Symbol(s)) => {
-                        if is_keyword(s) {
-                            Err(ParserError {
-                                kind: ParserErrorKind::IllegalVariableName(s),
-                            })
-                        } else {
-                            Ok(s)
-                        }
+            fi.map(|d| match d {
+                Datum::Simple(SimpleDatum::Symbol(s)) => {
+                    if is_keyword(s) {
+                        Err(ParserError {
+                            kind: ParserErrorKind::IllegalVariableName(s),
+                        })
+                    } else {
+                        Ok(s)
                     }
-                    _ => Err(bs_err()),
-                })
-                .collect::<Result<Vec<_>, _>>()?,
+                }
+                _ => Err(bs_err()),
+            })
+            .collect::<Result<Vec<_>, _>>()?,
         ))
     };
     match list {
@@ -295,7 +294,7 @@ fn process_qq(datum: Datum, qq_level: u32) -> Result<Rc<Expr>, ParserError> {
                 {
                     let s = *s;
                     let mut li = list.into_iter().skip(1);
-                    let arg = li.next().ok_or_else(|| ParserError {
+                    let arg = li.next().ok_or(ParserError {
                         kind: ParserErrorKind::BadSyntax(s),
                     })?;
                     if li.next().is_some() {
@@ -382,7 +381,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
     };
     let process_bindings =
         |binding_data: Vec<Datum>| -> Result<Vec<(Symbol, Rc<Expr>)>, ParserError> {
-            Ok(binding_data
+            binding_data
                 .into_iter()
                 .map(|binding| {
                     let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = binding else {
@@ -398,7 +397,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                         Err(bs_err())
                     }
                 })
-                .collect::<Result<Vec<_>, _>>()?)
+                .collect::<Result<Vec<_>, _>>()
         };
     match kw {
         _ if kw == "define".into() => {
@@ -535,7 +534,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                         acc = Some(if seq.len() == 1 {
                             seq.into_iter().next().unwrap()
                         } else {
-                            Rc::new(Expr::Begin(seq.into()))
+                            Rc::new(Expr::Begin(seq))
                         });
                     }
                     _ => {
@@ -592,7 +591,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                                     consequent: if seq.len() == 1 {
                                         seq.into_iter().next().unwrap()
                                     } else {
-                                        Rc::new(Expr::Begin(seq.into()))
+                                        Rc::new(Expr::Begin(seq))
                                     },
                                     alternate: acc,
                                 }))
@@ -684,7 +683,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                         acc = Some(if seq.len() == 1 {
                             seq.into_iter().next().unwrap()
                         } else {
-                            Rc::new(Expr::Begin(seq.into()))
+                            Rc::new(Expr::Begin(seq))
                         });
                     }
                     Datum::Compound(CompoundDatum::List(ListKind::Proper(_))) => {
@@ -699,7 +698,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                             consequent: if seq.len() == 1 {
                                 seq.into_iter().next().unwrap()
                             } else {
-                                Rc::new(Expr::Begin(seq.into()))
+                                Rc::new(Expr::Begin(seq))
                             },
                             alternate: acc,
                         }));
@@ -842,7 +841,10 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                     operands: vals,
                 }),
             );
-            let operands = vec![Rc::new(Expr::Undefined); args.len()];
+            let operands = {
+                let data = Rc::new(Expr::Undefined);
+                vec![data; args.len()]
+            };
             Ok(ExprOrDef::new_expr(Expr::ProcCall {
                 operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
                     args,
@@ -909,8 +911,8 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                                 rest: None,
                                 body: vec![ExprOrDef::new_expr(Expr::Conditional {
                                     test,
-                                    consequent: Rc::new(Expr::Begin(seq.into())),
-                                    alternate: Some(Rc::new(Expr::Begin(body.into()))),
+                                    consequent: Rc::new(Expr::Begin(seq)),
+                                    alternate: Some(Rc::new(Expr::Begin(body))),
                                 })],
                             }))),
                         }),

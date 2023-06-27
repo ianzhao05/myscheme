@@ -52,14 +52,14 @@ fn int_to_char(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
             Object::Atom(SimpleDatum::Number(Number::Real(n))) => {
                 let i: u32 = match n {
                     RealKind::Rational(r) if r.is_integer() => {
-                        r.to_integer().try_into().map_err(|_| charval_cv(&arg))?
+                        r.to_integer().try_into().map_err(|_| charval_cv(arg))?
                     }
-                    RealKind::Integer(bi) => bi.try_into().map_err(|_| charval_cv(&arg))?,
-                    _ => return Err(charval_cv(&arg)),
+                    RealKind::Integer(bi) => bi.try_into().map_err(|_| charval_cv(arg))?,
+                    _ => return Err(charval_cv(arg)),
                 };
-                std::char::from_u32(i).ok_or_else(|| charval_cv(&arg))?
+                std::char::from_u32(i).ok_or_else(|| charval_cv(arg))?
             }
-            _ => return Err(charval_cv(&arg)),
+            _ => return Err(charval_cv(arg)),
         },
     ))))
 }

@@ -57,7 +57,7 @@ fn apply(state: State) -> Bouncer {
             got: rib.len(),
         })));
     }
-    let mut nrib: Vec<_> = rib[1..rib.len() - 1].iter().cloned().collect();
+    let mut nrib: Vec<_> = rib[1..rib.len() - 1].to_vec();
     let last = rib.last().unwrap();
     let mut arg = last.clone();
     loop {

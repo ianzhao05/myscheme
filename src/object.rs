@@ -13,10 +13,11 @@ pub enum EnvSpec {
     Null,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum ObjectRef {
     Object(Rc<Object>),
     EnvSpec(EnvSpec),
+    #[default]
     Undefined,
     EmptyList,
     Void,
@@ -184,12 +185,6 @@ impl fmt::Display for ObjectRef {
     }
 }
 
-impl Default for ObjectRef {
-    fn default() -> Self {
-        ObjectRef::Undefined
-    }
-}
-
 #[derive(Debug)]
 pub enum Object {
     Atom(SimpleDatum),
@@ -236,8 +231,8 @@ impl Drop for Object {
             _ => {}
         }
         while let Some(o) = st.pop() {
-            match o {
-                ObjectRef::Object(o) => match &Rc::try_unwrap(o) {
+            if let ObjectRef::Object(o) = o {
+                match &Rc::try_unwrap(o) {
                     Ok(Object::Pair(p)) => {
                         let mut b = p.borrow_mut();
                         st.push(take(&mut b.0));
@@ -247,8 +242,7 @@ impl Drop for Object {
                         st.extend(v.borrow_mut().iter_mut().map(take));
                     }
                     _ => {}
-                },
-                _ => {}
+                }
             }
         }
     }
