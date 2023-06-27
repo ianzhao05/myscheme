@@ -184,6 +184,12 @@ impl fmt::Display for ObjectRef {
     }
 }
 
+impl Default for ObjectRef {
+    fn default() -> Self {
+        ObjectRef::Undefined
+    }
+}
+
 #[derive(Debug)]
 pub enum Object {
     Atom(SimpleDatum),
@@ -209,6 +215,41 @@ impl PartialEq for Object {
             }
             (Object::Procedure(p1), Object::Procedure(p2)) => p1 == p2,
             _ => false,
+        }
+    }
+}
+
+impl Drop for Object {
+    fn drop(&mut self) {
+        use std::mem::take;
+
+        let mut st = Vec::new();
+        match self {
+            Object::Pair(p) => {
+                let mut b = p.borrow_mut();
+                st.push(take(&mut b.0));
+                st.push(take(&mut b.1));
+            }
+            Object::Vector(v) => {
+                st.extend(v.borrow_mut().iter_mut().map(take));
+            }
+            _ => {}
+        }
+        while let Some(o) = st.pop() {
+            match o {
+                ObjectRef::Object(o) => match &Rc::try_unwrap(o) {
+                    Ok(Object::Pair(p)) => {
+                        let mut b = p.borrow_mut();
+                        st.push(take(&mut b.0));
+                        st.push(take(&mut b.1));
+                    }
+                    Ok(Object::Vector(v)) => {
+                        st.extend(v.borrow_mut().iter_mut().map(take));
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
         }
     }
 }
