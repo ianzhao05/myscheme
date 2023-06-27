@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
+use num::traits::ToPrimitive;
+
 use crate::datum::SimpleDatum;
 use crate::evaler::EvalError;
 use crate::number::{Number, RealKind};
@@ -50,11 +52,11 @@ fn int_to_char(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     Ok(ObjectRef::new(Object::Atom(SimpleDatum::Character(
         match arg.try_deref_or(charval_cv)? {
             Object::Atom(SimpleDatum::Number(Number::Real(n))) => {
-                let i: u32 = match n {
+                let i = match n {
                     RealKind::Rational(r) if r.is_integer() => {
-                        r.to_integer().try_into().map_err(|_| charval_cv(arg))?
+                        r.to_u32().ok_or_else(|| charval_cv(arg))?
                     }
-                    RealKind::Integer(bi) => bi.try_into().map_err(|_| charval_cv(arg))?,
+                    RealKind::Integer(bi) => bi.to_u32().ok_or_else(|| charval_cv(arg))?,
                     _ => return Err(charval_cv(arg)),
                 };
                 std::char::from_u32(i).ok_or_else(|| charval_cv(arg))?

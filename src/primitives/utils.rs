@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use num::bigint::Sign;
+use num::traits::ToPrimitive;
 
 use crate::cont::State;
 use crate::datum::SimpleDatum;
@@ -33,10 +34,10 @@ pub fn get_len(arg: &ObjectRef) -> Result<usize, EvalError> {
     match arg.try_deref_or(len_cv)? {
         Object::Atom(SimpleDatum::Number(Number::Real(n))) => match n {
             RealKind::Rational(r) if r.is_integer() && r.numer().sign() != Sign::Minus => {
-                r.to_integer().try_into().map_err(|_| len_cv(arg))
+                r.to_usize().ok_or_else(|| len_cv(arg))
             }
             RealKind::Integer(i) if i.sign() != Sign::Minus => {
-                i.try_into().map_err(|_| len_cv(arg))
+                i.to_usize().ok_or_else(|| len_cv(arg))
             }
             _ => Err(len_cv(arg)),
         },
@@ -45,13 +46,13 @@ pub fn get_len(arg: &ObjectRef) -> Result<usize, EvalError> {
 }
 
 pub fn get_radix(arg: &ObjectRef) -> Result<u32, EvalError> {
-    let radix: u32 = match arg.try_deref_or(radix_cv)? {
+    let radix = match arg.try_deref_or(radix_cv)? {
         Object::Atom(SimpleDatum::Number(Number::Real(n))) => match n {
             RealKind::Rational(r) if r.is_integer() && r.numer().sign() != Sign::Minus => {
-                r.to_integer().try_into().map_err(|_| radix_cv(arg))?
+                r.to_u32().ok_or_else(|| radix_cv(arg))?
             }
             RealKind::Integer(i) if i.sign() != Sign::Minus => {
-                i.try_into().map_err(|_| radix_cv(arg))?
+                i.to_u32().ok_or_else(|| radix_cv(arg))?
             }
             _ => return Err(radix_cv(arg)),
         },
