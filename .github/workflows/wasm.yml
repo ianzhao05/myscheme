@@ -12,6 +12,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: ./myscheme-wasm
+
     steps:
       - uses: actions/checkout@v3
 
@@ -19,15 +23,13 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build package
-        run: wasm-pack build ./myscheme-wasm --target web
+        run: wasm-pack build --target web
 
       - name: Archive artifact
         run: |
-          tar \
-            --dereference --hard-dereference \
-            --transform 's/.*\///g' \
-            -cvf "$RUNNER_TEMP/artifact.tar" \
-            ./myscheme-wasm/{www/*,pkg/*.{js,wasm}}
+          tar -C ./www -cvf "$RUNNER_TEMP/artifact.tar" .
+          cd ./pkg
+          tar -rvf "$RUNNER_TEMP/artifact.tar" *.{js,wasm}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
