@@ -4,6 +4,10 @@ on:
   push:
     branches: ["main"]
 
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -15,13 +19,37 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build package
-        run: |
-          wasm-pack build ./myscheme-wasm --target web
-          cp ./myscheme-wasm/index.html ./myscheme-wasm/pkg
-          rm ./myscheme-wasm/pkg/.gitignore
+        run: wasm-pack build ./myscheme-wasm --target web
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+      - name: Archive artifact
+        run: |
+          tar \
+            --transform 's/.*\///g' \
+            -cvf "$RUNNER_TEMP/artifact.tar" \
+            ./myscheme-wasm/{www/*,pkg/*.{js,wasm}}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./myscheme-wasm/pkg
+          name: github-pages
+          path: ${{ runner.temp }}/artifact.tar
+          retention-days: 1
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2
