@@ -7,7 +7,7 @@ use crate::port::Port;
 
 use super::utils::{ensure_arity, PrimitiveMap};
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum Type {
     Boolean,
     Symbol,

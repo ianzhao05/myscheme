@@ -38,13 +38,13 @@ fn close_output_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 fn current_input_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 0);
 
-    Ok(STDIN.with(|s| s.clone()))
+    Ok(STDIN.with(ObjectRef::clone))
 }
 
 fn current_output_port(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 0);
 
-    Ok(STDOUT.with(|s| s.clone()))
+    Ok(STDOUT.with(ObjectRef::clone))
 }
 
 fn write_char(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
@@ -54,7 +54,7 @@ fn write_char(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     let arg = args
         .get(1)
         .cloned()
-        .unwrap_or_else(|| STDOUT.with(|s| s.clone()));
+        .unwrap_or_else(|| STDOUT.with(ObjectRef::clone));
     let mut op = get_oport(&arg)?.borrow_mut();
     match op.as_mut() {
         Some(w) => write!(w, "{c}").map_err(|_| EvalError::new(EvalErrorKind::IOError))?,
@@ -69,7 +69,7 @@ fn display_write(args: &[ObjectRef], write: bool) -> Result<ObjectRef, EvalError
     let arg = args
         .get(1)
         .cloned()
-        .unwrap_or_else(|| STDOUT.with(|s| s.clone()));
+        .unwrap_or_else(|| STDOUT.with(ObjectRef::clone));
     let mut op = get_oport(&arg)?.borrow_mut();
     match op.as_mut() {
         Some(w) => (if write {
@@ -89,7 +89,7 @@ fn read(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     let arg = args
         .first()
         .cloned()
-        .unwrap_or_else(|| STDIN.with(|s| s.clone()));
+        .unwrap_or_else(|| STDIN.with(ObjectRef::clone));
     let mut ip = get_iport(&arg)?.borrow_mut();
     let datum = match ip.as_mut() {
         Some(r) => r
@@ -110,7 +110,7 @@ fn read_peek_char(args: &[ObjectRef], peek: bool) -> Result<ObjectRef, EvalError
     let arg = args
         .first()
         .cloned()
-        .unwrap_or_else(|| STDIN.with(|s| s.clone()));
+        .unwrap_or_else(|| STDIN.with(ObjectRef::clone));
     let mut ip = get_iport(&arg)?.borrow_mut();
     let c = match ip.as_mut() {
         Some(r) => r
@@ -130,7 +130,7 @@ fn char_ready(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     let arg = args
         .first()
         .cloned()
-        .unwrap_or_else(|| STDIN.with(|s| s.clone()));
+        .unwrap_or_else(|| STDIN.with(ObjectRef::clone));
     let mut ip = get_iport(&arg)?.borrow_mut();
     let res = match ip.as_mut() {
         Some(r) => r.char_ready(),

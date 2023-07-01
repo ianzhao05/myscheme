@@ -5,7 +5,7 @@ use num::{BigInt, BigRational, Integer, One, Signed, ToPrimitive, Zero};
 
 use crate::datum::SimpleDatum;
 use crate::evaler::{EvalError, EvalErrorKind};
-use crate::number::*;
+use crate::number::{Number, RealKind};
 use crate::object::{Object, ObjectRef};
 
 use super::utils::{ensure_arity, get_int, get_num, get_radix, get_string, PrimitiveMap};
@@ -151,6 +151,7 @@ fn expt(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ))))
 }
 
+#[derive(Debug, Clone, Copy)]
 enum IntOp {
     Quotient,
     Remainder,
@@ -207,17 +208,11 @@ fn rationalize(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     let y = get_num(&args[1])?;
     let inexact = !x.is_exact() || !y.is_exact();
 
-    let x = match x.to_exact_rational() {
-        Some(r) => r,
-        None => return Ok(args[0].clone()),
-    };
-    let y = match y.abs().to_exact_rational() {
-        Some(r) => r,
-        None => {
-            return Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
-                Number::Real(RealKind::Real(0.0)),
-            ))))
-        }
+    let Some(x) = x.to_exact_rational() else { return Ok(args[0].clone()) };
+    let Some(y) = y.abs().to_exact_rational() else {
+        return Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
+            Number::Real(RealKind::Real(0.0)),
+        ))))
     };
 
     let mut lo = &x - &y;

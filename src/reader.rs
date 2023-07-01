@@ -150,9 +150,8 @@ fn read_impl<I: Iterator<Item = Token>>(tip: &mut Peekable<I>) -> Result<Datum, 
                 if let Token::RParen = token {
                     tip.next();
                     return Ok(Datum::Compound(CompoundDatum::Vector(vector)));
-                } else {
-                    vector.push(read_impl(tip)?);
                 }
+                vector.push(read_impl(tip)?);
             }
         }
     }

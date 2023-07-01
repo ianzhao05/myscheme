@@ -44,9 +44,9 @@ impl ObjectRef {
     pub fn equal(this: &Self, other: &Self) -> bool {
         match (this, other) {
             (ObjectRef::Object(o1), ObjectRef::Object(o2)) => o1 == o2,
-            (ObjectRef::EmptyList, ObjectRef::EmptyList) => true,
-            (ObjectRef::Void, ObjectRef::Void) => true,
-            (ObjectRef::Eof, ObjectRef::Eof) => true,
+            (ObjectRef::EmptyList, ObjectRef::EmptyList)
+            | (ObjectRef::Void, ObjectRef::Void)
+            | (ObjectRef::Eof, ObjectRef::Eof) => true,
             (ObjectRef::EnvSpec(a), ObjectRef::EnvSpec(b)) => a == b,
             _ => false,
         }
@@ -73,7 +73,7 @@ impl Deref for ObjectRef {
     fn deref(&self) -> &Self::Target {
         match self {
             ObjectRef::Object(o) => o,
-            _ => panic!("Cannot deref {:?}", self),
+            _ => panic!("Cannot deref {self:?}"),
         }
     }
 }
@@ -86,15 +86,15 @@ impl PartialEq for ObjectRef {
                     Rc::ptr_eq(o1, o2)
                 }
                 (Object::Atom(a), Object::Atom(b)) => a == b,
-                (Object::Pair(_), Object::Pair(_)) => Rc::ptr_eq(o1, o2),
-                (Object::Vector(_), Object::Vector(_)) => Rc::ptr_eq(o1, o2),
-                (Object::Procedure(_), Object::Procedure(_)) => Rc::ptr_eq(o1, o2),
-                (Object::Port(_), Object::Port(_)) => Rc::ptr_eq(o1, o2),
+                (Object::Pair(_), Object::Pair(_))
+                | (Object::Vector(_), Object::Vector(_))
+                | (Object::Procedure(_), Object::Procedure(_))
+                | (Object::Port(_), Object::Port(_)) => Rc::ptr_eq(o1, o2),
                 _ => false,
             },
-            (ObjectRef::EmptyList, ObjectRef::EmptyList) => true,
-            (ObjectRef::Void, ObjectRef::Void) => true,
-            (ObjectRef::Eof, ObjectRef::Eof) => true,
+            (ObjectRef::EmptyList, ObjectRef::EmptyList)
+            | (ObjectRef::Void, ObjectRef::Void)
+            | (ObjectRef::Eof, ObjectRef::Eof) => true,
             (ObjectRef::EnvSpec(a), ObjectRef::EnvSpec(b)) => a == b,
             _ => false,
         }

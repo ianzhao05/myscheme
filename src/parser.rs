@@ -576,7 +576,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                                         }),
                                         alternate: acc,
                                     }),
-                                }))
+                                }));
                             }
                             second => {
                                 let seq = std::iter::once(second)
@@ -594,7 +594,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                                         Rc::new(Expr::Begin(seq))
                                     },
                                     alternate: acc,
-                                }))
+                                }));
                             }
                         }
                     }
@@ -611,24 +611,23 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 .rev()
                 .map(parse_expr)
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(ExprOrDef::Expr(match ops.len() {
-                0 => Rc::new(Expr::Literal(LiteralKind::SelfEvaluating(
+            Ok(ExprOrDef::Expr(if ops.is_empty() {
+                Rc::new(Expr::Literal(LiteralKind::SelfEvaluating(
                     SelfEvaluatingKind::Boolean(true),
-                ))),
-                _ => {
-                    let mut oi = ops.into_iter();
-                    let mut acc = oi.next().unwrap();
-                    for op in oi {
-                        acc = Rc::new(Expr::Conditional {
-                            test: op,
-                            consequent: acc,
-                            alternate: Some(Rc::new(Expr::Literal(LiteralKind::SelfEvaluating(
-                                SelfEvaluatingKind::Boolean(false),
-                            )))),
-                        });
-                    }
-                    acc
+                )))
+            } else {
+                let mut oi = ops.into_iter();
+                let mut acc = oi.next().unwrap();
+                for op in oi {
+                    acc = Rc::new(Expr::Conditional {
+                        test: op,
+                        consequent: acc,
+                        alternate: Some(Rc::new(Expr::Literal(LiteralKind::SelfEvaluating(
+                            SelfEvaluatingKind::Boolean(false),
+                        )))),
+                    });
                 }
+                acc
             }))
         }
         _ if kw == "or".into() => {
@@ -636,27 +635,26 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 .rev()
                 .map(parse_expr)
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(ExprOrDef::Expr(match ops.len() {
-                0 => Rc::new(Expr::Literal(LiteralKind::SelfEvaluating(
+            Ok(ExprOrDef::Expr(if ops.is_empty() {
+                Rc::new(Expr::Literal(LiteralKind::SelfEvaluating(
                     SelfEvaluatingKind::Boolean(false),
-                ))),
-                _ => {
-                    let mut oi = ops.into_iter();
-                    let mut acc = oi.next().unwrap();
-                    for op in oi {
-                        let temp = gen_temp_name();
-                        acc = Rc::new(Expr::SimpleLet {
-                            arg: temp,
-                            value: op,
-                            body: Rc::new(Expr::Conditional {
-                                test: Rc::new(Expr::Variable(temp)),
-                                consequent: Rc::new(Expr::Variable(temp)),
-                                alternate: Some(acc),
-                            }),
-                        });
-                    }
-                    acc
+                )))
+            } else {
+                let mut oi = ops.into_iter();
+                let mut acc = oi.next().unwrap();
+                for op in oi {
+                    let temp = gen_temp_name();
+                    acc = Rc::new(Expr::SimpleLet {
+                        arg: temp,
+                        value: op,
+                        body: Rc::new(Expr::Conditional {
+                            test: Rc::new(Expr::Variable(temp)),
+                            consequent: Rc::new(Expr::Variable(temp)),
+                            alternate: Some(acc),
+                        }),
+                    });
                 }
+                acc
             }))
         }
         _ if kw == "case".into() => {

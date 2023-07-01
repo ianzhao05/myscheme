@@ -69,7 +69,7 @@ fn string_set(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
         }));
     }
     let mut buf = [0];
-    s.replace_range(i..i + 1, c.encode_utf8(&mut buf));
+    s.replace_range(i..=i, c.encode_utf8(&mut buf));
     Ok(ObjectRef::Void)
 }
 

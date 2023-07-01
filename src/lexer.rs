@@ -296,7 +296,7 @@ impl SexpReader {
                             }
                         }
                     }
-                    self.token_buf.push(token)
+                    self.token_buf.push(token);
                 }
                 Err(e) => match e.kind {
                     LexerErrorKind::UnclosedString

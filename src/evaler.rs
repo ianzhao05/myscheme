@@ -364,11 +364,7 @@ pub fn eval_expr(state: State) -> Bouncer {
                     }
                 }
                 Cont::Assignment { variable, cont } => {
-                    if !env.borrow_mut().set(*variable, obj) {
-                        Bouncer::Land(Err(EvalError::new(EvalErrorKind::UndefinedVariable(
-                            *variable,
-                        ))))
-                    } else {
+                    if env.borrow_mut().set(*variable, obj) {
                         Bouncer::Bounce(State {
                             acc: Acc::Obj(Ok(ObjectRef::Void)),
                             cont: cont.clone(),
@@ -377,6 +373,10 @@ pub fn eval_expr(state: State) -> Bouncer {
                             stack,
                             winds,
                         })
+                    } else {
+                        Bouncer::Land(Err(EvalError::new(EvalErrorKind::UndefinedVariable(
+                            *variable,
+                        ))))
                     }
                 }
                 Cont::Begin { next, cont } => Bouncer::Bounce(State {

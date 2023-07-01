@@ -128,8 +128,7 @@ impl RealKind {
     pub fn is_exact(&self) -> bool {
         match self {
             RealKind::Real(_) => false,
-            RealKind::Rational(_) => true,
-            RealKind::Integer(_) => true,
+            RealKind::Rational(_) | RealKind::Integer(_) => true,
         }
     }
 
@@ -425,8 +424,8 @@ impl PartialEq for RealKind {
             (RealKind::Real(a), RealKind::Real(b)) => a == b,
             (RealKind::Rational(a), RealKind::Rational(b)) => a == b,
             (RealKind::Integer(a), RealKind::Integer(b)) => a == b,
-            (RealKind::Rational(a), RealKind::Integer(b)) => a.is_integer() && a.numer() == b,
-            (RealKind::Integer(b), RealKind::Rational(a)) => a.is_integer() && a.numer() == b,
+            (RealKind::Rational(a), RealKind::Integer(b))
+            | (RealKind::Integer(b), RealKind::Rational(a)) => a.is_integer() && a.numer() == b,
             _ => false,
         }
     }
@@ -445,7 +444,7 @@ impl PartialOrd for RealKind {
             (RealKind::Integer(a), RealKind::Rational(b)) => {
                 BigRational::from(a.clone()).partial_cmp(b)
             }
-            _ => other.partial_cmp(self).map(|o| o.reverse()),
+            _ => other.partial_cmp(self).map(std::cmp::Ordering::reverse),
         }
     }
 }
