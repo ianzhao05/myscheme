@@ -24,6 +24,7 @@ jobs:
       - name: Archive artifact
         run: |
           tar \
+            --dereference --hard-dereference \
             --transform 's/.*\///g' \
             -cvf "$RUNNER_TEMP/artifact.tar" \
             ./myscheme-wasm/{www/*,pkg/*.{js,wasm}}
