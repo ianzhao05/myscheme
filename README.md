@@ -10,6 +10,8 @@ $ cargo run # start a REPL
 $ cargo run -- file.scm # run a file
 ```
 
+A WebAssembly version of the interpreter is available at [ianzhao05.github.io/myscheme](https://ianzhao05.github.io/myscheme/).
+
 ## Supported Features
 
 - Complete lexing and parsing of S-expressions

@@ -76,6 +76,40 @@ impl IPort {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+pub mod web {
+    use std::cell::RefCell;
+    use std::io::{self, Write};
+
+    thread_local! {
+        pub static OUT_BUF: RefCell<Vec<u8>> = RefCell::new(Vec::new());
+    }
+
+    pub struct OutBuffer;
+
+    impl Write for OutBuffer {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            OUT_BUF.with(|b| b.borrow_mut().extend_from_slice(buf));
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl OutBuffer {
+        pub fn new() -> Self {
+            Self
+        }
+
+        pub fn take_buf() -> String {
+            String::from_utf8(OUT_BUF.with(|b| std::mem::take(b.borrow_mut().as_mut())))
+                .expect("Should be valid UTF-8")
+        }
+    }
+}
+
 pub enum Port {
     Input(RefCell<Option<IPort>>),
     Output(RefCell<Option<Box<dyn Write>>>),
@@ -102,8 +136,14 @@ impl Port {
         ))))
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn new_stdout() -> Self {
         Port::Output(RefCell::new(Some(Box::new(io::stdout()))))
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn new_stdout() -> Self {
+        Port::Output(RefCell::new(Some(Box::new(web::OutBuffer::new()))))
     }
 }
 

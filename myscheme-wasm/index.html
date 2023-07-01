@@ -2,6 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MyScheme Web Demo</title>
   </head>
   <body>
@@ -9,9 +10,9 @@
       import init, { eval_expr } from "./myscheme_wasm.js";
       function ev(e) {
         e.preventDefault();
-        document.getElementById("result").textContent = eval_expr(
-          document.getElementById("code").value
-        );
+        const res = eval_expr(document.getElementById("code").value);
+        document.getElementById("result").textContent = res.result;
+        document.getElementById("stdout").textContent = res.stdout;
       }
       init().then(() => {
         document.getElementById("loading").remove();
@@ -56,6 +57,8 @@
       </form>
       <p id="resultLabel">Result:</p>
       <pre id="result"></pre>
+      <p id="stdoutLabel">Stdout:</p>
+      <pre id="stdout"></pre>
     </div>
   </body>
 </html>
