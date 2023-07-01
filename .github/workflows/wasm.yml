@@ -29,7 +29,7 @@ jobs:
         run: |
           tar -C ./www -cvf "$RUNNER_TEMP/artifact.tar" .
           cd ./pkg
-          tar -rvf "$RUNNER_TEMP/artifact.tar" *.{js,wasm}
+          tar -rvf "$RUNNER_TEMP/artifact.tar" ./*.{js,wasm}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
