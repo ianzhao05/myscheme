@@ -21,7 +21,7 @@ pub enum ParserErrorKind {
     BadSyntax(Symbol),
     IllegalEmptyList,
     IllegalVector,
-    IllegalDot,
+    IllegalImproperList,
     IllegalVariableName(Symbol),
     IllegalDefine,
     IllegalUnquote,
@@ -42,7 +42,7 @@ impl fmt::Display for ParserError {
             ParserErrorKind::BadSyntax(s) => write!(f, "Bad syntax {s}"),
             ParserErrorKind::IllegalEmptyList => write!(f, "Illegal empty list"),
             ParserErrorKind::IllegalVector => write!(f, "Vector must be quoted"),
-            ParserErrorKind::IllegalDot => write!(f, "Illegal dot"),
+            ParserErrorKind::IllegalImproperList => write!(f, "Illegal improper list"),
             ParserErrorKind::IllegalVariableName(s) => {
                 write!(f, "Illegal variable name {s}")
             }
@@ -988,35 +988,56 @@ pub fn parse(datum: Datum) -> Result<ExprOrDef, ParserError> {
             },
         },
         Datum::Compound(compound) => match compound {
-            CompoundDatum::List(list) => match list {
-                ListKind::Proper(list) => {
-                    let mut li = list.into_iter();
-                    let first = li.next().ok_or(ParserError {
-                        kind: ParserErrorKind::IllegalEmptyList,
-                    })?;
-                    match first {
-                        Datum::Simple(SimpleDatum::Symbol(kw)) if is_keyword(kw) => {
-                            process_keyword(kw, li)
+            CompoundDatum::List(list) => {
+                let expanded = match list {
+                    ListKind::Proper(list) => list,
+                    ListKind::Improper(mut list, mut end) => {
+                        loop {
+                            match *end {
+                                Datum::EmptyList => break,
+                                Datum::Compound(CompoundDatum::List(nlist)) => match nlist {
+                                    ListKind::Proper(nlist) => {
+                                        list.extend(nlist);
+                                        break;
+                                    }
+                                    ListKind::Improper(nlist, nend) => {
+                                        list.extend(nlist);
+                                        end = nend;
+                                    }
+                                },
+                                _ => {
+                                    return Err(ParserError {
+                                        kind: ParserErrorKind::IllegalImproperList,
+                                    })
+                                }
+                            }
                         }
-                        _ => {
-                            let operator = parse_expr(first)?;
-                            let rest = li
-                                .map(|e| match parse_expr(e) {
-                                    Ok(expr) => Ok(expr),
-                                    Err(err) => Err(err),
-                                })
-                                .collect::<Result<Vec<_>, _>>()?;
-                            Ok(ExprOrDef::new_expr(Expr::ProcCall {
-                                operator,
-                                operands: rest,
-                            }))
-                        }
+                        list
+                    }
+                };
+                let mut li = expanded.into_iter();
+                let first = li.next().ok_or(ParserError {
+                    kind: ParserErrorKind::IllegalEmptyList,
+                })?;
+                match first {
+                    Datum::Simple(SimpleDatum::Symbol(kw)) if is_keyword(kw) => {
+                        process_keyword(kw, li)
+                    }
+                    _ => {
+                        let operator = parse_expr(first)?;
+                        let rest = li
+                            .map(|e| match parse_expr(e) {
+                                Ok(expr) => Ok(expr),
+                                Err(err) => Err(err),
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        Ok(ExprOrDef::new_expr(Expr::ProcCall {
+                            operator,
+                            operands: rest,
+                        }))
                     }
                 }
-                ListKind::Improper(_, _) => Err(ParserError {
-                    kind: ParserErrorKind::IllegalDot,
-                }),
-            },
+            }
             CompoundDatum::Vector(_) => Err(ParserError {
                 kind: ParserErrorKind::IllegalVector,
             }),
@@ -1086,7 +1107,7 @@ mod tests {
         assert_eq!(
             parse(improper_list_datum![int_datum!(1); int_datum!(2)]),
             Err(ParserError {
-                kind: ParserErrorKind::IllegalDot,
+                kind: ParserErrorKind::IllegalImproperList,
             })
         );
         assert_eq!(
@@ -1094,6 +1115,43 @@ mod tests {
             Err(ParserError {
                 kind: ParserErrorKind::IllegalVector,
             })
+        );
+    }
+
+    #[test]
+    fn list_expansion() {
+        let parsed = parse(proper_list_datum![
+            symbol_datum!("if"),
+            bool_datum!(true),
+            int_datum!(1),
+            int_datum!(2),
+        ]);
+        assert_eq!(
+            parsed,
+            parse(improper_list_datum![
+                symbol_datum!("if");
+                proper_list_datum![
+                    bool_datum!(true),
+                    int_datum!(1),
+                    int_datum!(2),
+                ]
+            ])
+        );
+        assert_eq!(
+            parsed,
+            parse(improper_list_datum![
+                symbol_datum!("if");
+                improper_list_datum![
+                    bool_datum!(true);
+                    improper_list_datum![
+                        int_datum!(1);
+                        improper_list_datum![
+                            int_datum!(2);
+                            Datum::EmptyList
+                        ]
+                    ]
+                ]
+            ])
         );
     }
 

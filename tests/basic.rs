@@ -181,3 +181,10 @@ fn quasiquotes() {
         "'`((unquote a b c)) '`#((unquote-splicing a b c))"
     );
 }
+
+#[test]
+fn parsing() {
+    assert_eval_eq!("(if . (#t . (1 2)))", "1");
+    assert_eval_eq!("(if #t . (1 2))", "1");
+    assert_eval_eq!("(if . (#t . (1 . (2 . ()))))", "1");
+}
