@@ -12,9 +12,9 @@ use uuid::Uuid;
 
 fn gen_temp_name() -> Symbol {
     if cfg!(test) {
-        "__temp_var".into()
+        "#temp_var".into()
     } else {
-        format!("__temp_{}", Uuid::new_v4().simple()).into()
+        format!("#{}", Uuid::new_v4().simple()).into()
     }
 }
 
@@ -1615,16 +1615,16 @@ mod tests {
                     }),
                     consequent: Rc::new(Expr::Begin(vec_rc![int_expr!(3), int_expr!(4)])),
                     alternate: Some(Rc::new(Expr::SimpleLet {
-                        arg: "__temp_var".into(),
+                        arg: "#temp_var".into(),
                         value: Rc::new(Expr::ProcCall {
                             operator: Rc::new(var_expr!("cons")),
                             operands: vec_rc![int_expr!(5), int_expr!(6)]
                         }),
                         body: Rc::new(Expr::Conditional {
-                            test: Rc::new(var_expr!("__temp_var")),
+                            test: Rc::new(var_expr!("#temp_var")),
                             consequent: Rc::new(Expr::ProcCall {
                                 operator: Rc::new(var_expr!("car")),
-                                operands: vec_rc![var_expr!("__temp_var")]
+                                operands: vec_rc![var_expr!("#temp_var")]
                             }),
                             alternate: Some(Rc::new(int_expr!(3))),
                         })
@@ -1698,11 +1698,11 @@ mod tests {
                 bool_datum!(true),
             ]),
             Ok(ExprOrDef::new_expr(Expr::SimpleLet {
-                arg: "__temp_var".into(),
+                arg: "#temp_var".into(),
                 value: Rc::new(int_expr!(1)),
                 body: Rc::new(Expr::Conditional {
-                    test: Rc::new(var_expr!("__temp_var")),
-                    consequent: Rc::new(var_expr!("__temp_var")),
+                    test: Rc::new(var_expr!("#temp_var")),
+                    consequent: Rc::new(var_expr!("#temp_var")),
                     alternate: Some(Rc::new(bool_expr!(true))),
                 })
             }))
@@ -1723,13 +1723,13 @@ mod tests {
                 proper_list_datum![symbol_datum!("else"), int_datum!(6)],
             ]),
             Ok(ExprOrDef::new_expr(Expr::SimpleLet {
-                arg: "__temp_var".into(),
+                arg: "#temp_var".into(),
                 value: Rc::new(int_expr!(42)),
                 body: Rc::new(Expr::Conditional {
                     test: Rc::new(Expr::ProcCall {
                         operator: Rc::new(var_expr!("memv")),
                         operands: vec_rc![
-                            var_expr!("__temp_var"),
+                            var_expr!("#temp_var"),
                             Expr::Literal(LiteralKind::Quotation(proper_list_datum![int_datum!(
                                 1
                             )]))
@@ -1740,7 +1740,7 @@ mod tests {
                         test: Rc::new(Expr::ProcCall {
                             operator: Rc::new(var_expr!("memv")),
                             operands: vec_rc![
-                                var_expr!("__temp_var"),
+                                var_expr!("#temp_var"),
                                 Expr::Literal(LiteralKind::Quotation(proper_list_datum![
                                     int_datum!(3),
                                     int_datum!(4)
@@ -1862,11 +1862,11 @@ mod tests {
                     body: vec![
                         ExprOrDef::new_expr(Expr::ProcCall {
                             operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                                args: vec!["__temp_var".into()],
+                                args: vec!["#temp_var".into()],
                                 rest: None,
                                 body: vec![ExprOrDef::new_expr(Expr::Assignment {
                                     variable: "x".into(),
-                                    value: Rc::new(var_expr!("__temp_var"))
+                                    value: Rc::new(var_expr!("#temp_var"))
                                 })]
                             }))),
                             operands: vec_rc![int_expr!(1)]
@@ -1969,11 +1969,11 @@ mod tests {
             ]),
             Ok(ExprOrDef::new_expr(Expr::ProcCall {
                 operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                    args: vec!["__temp_var".into()],
+                    args: vec!["#temp_var".into()],
                     rest: None,
                     body: vec![
                         ExprOrDef::new_expr(Expr::Assignment {
-                            variable: "__temp_var".into(),
+                            variable: "#temp_var".into(),
                             value: Rc::new(Expr::Lambda(Rc::new(ProcData {
                                 args: vec!["x".into(), "y".into()],
                                 rest: None,
@@ -1988,7 +1988,7 @@ mod tests {
                                     }])),
                                     alternate: Some(Rc::new(Expr::Begin(vec_rc![
                                         Expr::ProcCall {
-                                            operator: Rc::new(var_expr!("__temp_var")),
+                                            operator: Rc::new(var_expr!("#temp_var")),
                                             operands: vec_rc![
                                                 Expr::ProcCall {
                                                     operator: Rc::new(var_expr!("+")),
@@ -2002,7 +2002,7 @@ mod tests {
                             })))
                         }),
                         ExprOrDef::new_expr(Expr::ProcCall {
-                            operator: Rc::new(var_expr!("__temp_var")),
+                            operator: Rc::new(var_expr!("#temp_var")),
                             operands: vec_rc![int_expr!(1), int_expr!(5)]
                         })
                     ]
@@ -2020,11 +2020,11 @@ mod tests {
             ]),
             Ok(ExprOrDef::new_expr(Expr::ProcCall {
                 operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                    args: vec!["__temp_var".into()],
+                    args: vec!["#temp_var".into()],
                     rest: None,
                     body: vec![
                         ExprOrDef::new_expr(Expr::Assignment {
-                            variable: "__temp_var".into(),
+                            variable: "#temp_var".into(),
                             value: Rc::new(Expr::Lambda(Rc::new(ProcData {
                                 args: vec![],
                                 rest: None,
@@ -2037,7 +2037,7 @@ mod tests {
                                             operands: vec_rc![]
                                         },
                                         Expr::ProcCall {
-                                            operator: Rc::new(var_expr!("__temp_var")),
+                                            operator: Rc::new(var_expr!("#temp_var")),
                                             operands: vec_rc![]
                                         }
                                     ])))
@@ -2045,7 +2045,7 @@ mod tests {
                             })))
                         }),
                         ExprOrDef::new_expr(Expr::ProcCall {
-                            operator: Rc::new(var_expr!("__temp_var")),
+                            operator: Rc::new(var_expr!("#temp_var")),
                             operands: vec_rc![]
                         })
                     ]
