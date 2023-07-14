@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
@@ -6,6 +7,7 @@ use crate::datum::*;
 use crate::expr::*;
 use crate::interner::Symbol;
 
+use once_cell::sync::Lazy;
 use uuid::Uuid;
 
 fn gen_temp_name() -> Symbol {
@@ -57,31 +59,34 @@ impl fmt::Display for ParserError {
 }
 
 fn is_keyword(symb: Symbol) -> bool {
-    [
-        "quote",
-        "lambda",
-        "if",
-        "set!",
-        "begin",
-        "cond",
-        "and",
-        "or",
-        "case",
-        "let",
-        "let*",
-        "letrec",
-        "do",
-        "delay",
-        "quasiquote",
-        "else",
-        "=>",
-        "define",
-        "unquote",
-        "unquote-splicing",
-    ]
-    .into_iter()
-    .map(Symbol::from)
-    .any(|k| k == symb)
+    static KW_SET: Lazy<HashSet<Symbol>> = Lazy::new(|| {
+        [
+            "quote",
+            "lambda",
+            "if",
+            "set!",
+            "begin",
+            "cond",
+            "and",
+            "or",
+            "case",
+            "let",
+            "let*",
+            "letrec",
+            "do",
+            "delay",
+            "quasiquote",
+            "else",
+            "=>",
+            "define",
+            "unquote",
+            "unquote-splicing",
+        ]
+        .into_iter()
+        .map(Symbol::from)
+        .collect()
+    });
+    KW_SET.contains(&symb)
 }
 
 fn process_proc<I: DoubleEndedIterator<Item = Datum>>(
