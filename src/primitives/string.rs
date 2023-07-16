@@ -145,7 +145,7 @@ fn string_append(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     Ok(ObjectRef::new_string(acc))
 }
 
-pub fn primitives() -> PrimitiveMap {
+pub(super) fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("make-string", make_string);
     m.insert("string", string);
@@ -189,7 +189,7 @@ pub fn primitives() -> PrimitiveMap {
     m
 }
 
-pub const PRELUDE: &str = "
+pub(super) const PRELUDE: &str = "
 (define (string->list s)
   (let loop ((i (- (string-length s) 1)) (acc '()))
     (if (< i 0)

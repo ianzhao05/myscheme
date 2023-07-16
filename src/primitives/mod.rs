@@ -20,7 +20,7 @@ use crate::interner::Symbol;
 use crate::object::{Object, ObjectRef};
 use crate::proc::{Primitive, PrimitiveFunc, Procedure};
 
-pub fn primitives() -> HashMap<Symbol, ObjectRef> {
+pub(crate) fn primitives() -> HashMap<Symbol, ObjectRef> {
     [
         numeric::primitives(),
         eq::primitives(),
@@ -63,7 +63,7 @@ pub fn primitives() -> HashMap<Symbol, ObjectRef> {
     .collect()
 }
 
-pub static PRELUDE: Lazy<String> = Lazy::new(|| {
+pub(crate) static PRELUDE: Lazy<String> = Lazy::new(|| {
     [
         numeric::PRELUDE,
         eq::PRELUDE,

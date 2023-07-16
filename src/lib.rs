@@ -19,7 +19,7 @@ pub mod trampoline;
 pub use crate::interpret::{eval_str, repl, write_results};
 
 #[cfg(test)]
-pub mod test_util {
+pub(crate) mod test_util {
     macro_rules! tokenize {
         ($e:expr) => {
             $crate::lexer::Lexer::new($e).collect::<Result<Vec<_>, _>>()

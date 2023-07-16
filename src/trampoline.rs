@@ -7,7 +7,7 @@ pub enum Bouncer {
     Land(Result<ObjectRef, EvalError>),
 }
 
-pub fn trampoline(mut bouncer: Bouncer) -> Result<ObjectRef, EvalError> {
+pub(crate) fn trampoline(mut bouncer: Bouncer) -> Result<ObjectRef, EvalError> {
     loop {
         match bouncer {
             Bouncer::Bounce(state) => bouncer = eval_expr(state),

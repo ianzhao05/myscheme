@@ -13,24 +13,25 @@ use crate::object::{EnvSpec, Object, ObjectRef};
 use crate::port::{IPort, Port};
 use crate::trampoline::Bouncer;
 
-pub type PrimitiveMap = HashMap<&'static str, fn(&[ObjectRef]) -> Result<ObjectRef, EvalError>>;
-pub type ControlMap = HashMap<&'static str, fn(State) -> Bouncer>;
+pub(super) type PrimitiveMap =
+    HashMap<&'static str, fn(&[ObjectRef]) -> Result<ObjectRef, EvalError>>;
+pub(super) type ControlMap = HashMap<&'static str, fn(State) -> Bouncer>;
 
-pub fn get_num(arg: &ObjectRef) -> Result<&Number, EvalError> {
+pub(super) fn get_num(arg: &ObjectRef) -> Result<&Number, EvalError> {
     match arg.try_deref_or(num_cv)? {
         Object::Atom(SimpleDatum::Number(n)) => Ok(n),
         _ => Err(num_cv(arg)),
     }
 }
 
-pub fn get_int(arg: &ObjectRef) -> Result<&Number, EvalError> {
+pub(super) fn get_int(arg: &ObjectRef) -> Result<&Number, EvalError> {
     match arg.try_deref_or(int_cv)? {
         Object::Atom(SimpleDatum::Number(n)) if n.is_integer() => Ok(n),
         _ => Err(int_cv(arg)),
     }
 }
 
-pub fn get_len(arg: &ObjectRef) -> Result<usize, EvalError> {
+pub(super) fn get_len(arg: &ObjectRef) -> Result<usize, EvalError> {
     match arg.try_deref_or(len_cv)? {
         Object::Atom(SimpleDatum::Number(Number::Real(n))) => match n {
             RealKind::Rational(r) if r.is_integer() && r.numer().sign() != Sign::Minus => {
@@ -45,7 +46,7 @@ pub fn get_len(arg: &ObjectRef) -> Result<usize, EvalError> {
     }
 }
 
-pub fn get_radix(arg: &ObjectRef) -> Result<u32, EvalError> {
+pub(super) fn get_radix(arg: &ObjectRef) -> Result<u32, EvalError> {
     let radix = match arg.try_deref_or(radix_cv)? {
         Object::Atom(SimpleDatum::Number(Number::Real(n))) => match n {
             RealKind::Rational(r) if r.is_integer() && r.numer().sign() != Sign::Minus => {
@@ -64,56 +65,58 @@ pub fn get_radix(arg: &ObjectRef) -> Result<u32, EvalError> {
     }
 }
 
-pub fn get_string(arg: &ObjectRef) -> Result<&RefCell<String>, EvalError> {
+pub(super) fn get_string(arg: &ObjectRef) -> Result<&RefCell<String>, EvalError> {
     match arg.try_deref_or(string_cv)? {
         Object::Atom(SimpleDatum::String(s)) => Ok(s),
         _ => Err(string_cv(arg)),
     }
 }
 
-pub fn get_char(arg: &ObjectRef) -> Result<char, EvalError> {
+pub(super) fn get_char(arg: &ObjectRef) -> Result<char, EvalError> {
     match arg.try_deref_or(char_cv)? {
         Object::Atom(SimpleDatum::Character(c)) => Ok(*c),
         _ => Err(char_cv(arg)),
     }
 }
 
-pub fn get_symbol(arg: &ObjectRef) -> Result<Symbol, EvalError> {
+pub(super) fn get_symbol(arg: &ObjectRef) -> Result<Symbol, EvalError> {
     match arg.try_deref_or(symbol_cv)? {
         Object::Atom(SimpleDatum::Symbol(s)) => Ok(*s),
         _ => Err(symbol_cv(arg)),
     }
 }
 
-pub fn get_pair(arg: &ObjectRef) -> Result<&RefCell<(ObjectRef, ObjectRef)>, EvalError> {
+pub(super) fn get_pair(arg: &ObjectRef) -> Result<&RefCell<(ObjectRef, ObjectRef)>, EvalError> {
     match arg.try_deref_or(pair_cv)? {
         Object::Pair(p) => Ok(p),
         _ => Err(pair_cv(arg)),
     }
 }
 
-pub fn get_vector(arg: &ObjectRef) -> Result<&RefCell<Vec<ObjectRef>>, EvalError> {
+pub(super) fn get_vector(arg: &ObjectRef) -> Result<&RefCell<Vec<ObjectRef>>, EvalError> {
     match arg.try_deref_or(vector_cv)? {
         Object::Vector(v) => Ok(v),
         _ => Err(vector_cv(arg)),
     }
 }
 
-pub fn get_iport(arg: &ObjectRef) -> Result<&RefCell<Option<IPort>>, EvalError> {
+pub(super) fn get_iport(arg: &ObjectRef) -> Result<&RefCell<Option<IPort>>, EvalError> {
     match arg.try_deref_or(iport_cv)? {
         Object::Port(Port::Input(ip)) => Ok(ip),
         _ => Err(iport_cv(arg)),
     }
 }
 
-pub fn get_oport(arg: &ObjectRef) -> Result<&RefCell<Option<Box<dyn std::io::Write>>>, EvalError> {
+pub(super) fn get_oport(
+    arg: &ObjectRef,
+) -> Result<&RefCell<Option<Box<dyn std::io::Write>>>, EvalError> {
     match arg.try_deref_or(oport_cv)? {
         Object::Port(Port::Output(op)) => Ok(op),
         _ => Err(oport_cv(arg)),
     }
 }
 
-pub fn get_version(arg: &ObjectRef) -> Result<(), EvalError> {
+pub(super) fn get_version(arg: &ObjectRef) -> Result<(), EvalError> {
     match arg.try_deref_or(five_cv)? {
         Object::Atom(SimpleDatum::Number(Number::Real(n)))
             if n.is_exact() && n == &RealKind::Integer(5.into()) =>
@@ -124,7 +127,7 @@ pub fn get_version(arg: &ObjectRef) -> Result<(), EvalError> {
     }
 }
 
-pub fn get_env(arg: &ObjectRef) -> Result<EnvSpec, EvalError> {
+pub(super) fn get_env(arg: &ObjectRef) -> Result<EnvSpec, EvalError> {
     match arg {
         ObjectRef::EnvSpec(env) => Ok(*env),
         _ => Err(env_cv(arg)),
@@ -157,11 +160,11 @@ macro_rules! ensure_arity {
         }
     };
 }
-pub(crate) use ensure_arity;
+pub(super) use ensure_arity;
 
 macro_rules! cv_fn {
     ($fn_name:ident, $s:expr) => {
-        pub(crate) fn $fn_name(got: &$crate::object::ObjectRef) -> $crate::evaler::EvalError {
+        pub(super) fn $fn_name(got: &$crate::object::ObjectRef) -> $crate::evaler::EvalError {
             $crate::evaler::EvalError::new($crate::evaler::EvalErrorKind::ContractViolation {
                 expected: $s,
                 got: got.clone(),

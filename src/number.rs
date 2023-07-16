@@ -4,8 +4,7 @@ use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssi
 use std::str::FromStr;
 
 use num::{
-    bigint::ToBigInt, BigInt, BigRational, Complex, FromPrimitive, Integer, Num, Signed,
-    ToPrimitive, Zero,
+    bigint::ToBigInt, BigInt, BigRational, FromPrimitive, Integer, Num, Signed, ToPrimitive, Zero,
 };
 
 fn perfect_root(n: &BigInt, exp: u32) -> Option<BigInt> {
@@ -449,12 +448,13 @@ impl PartialOrd for RealKind {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum ComplexKind {
-    Real(Complex<f64>),
-    Rational(Complex<BigRational>),
-    Integer(Complex<BigInt>),
-}
+// TODO: implement complex numbers
+// #[derive(Debug, PartialEq, Clone)]
+// pub enum ComplexKind {
+//     Real(Complex<f64>),
+//     Rational(Complex<BigRational>),
+//     Integer(Complex<BigInt>),
+// }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Number {

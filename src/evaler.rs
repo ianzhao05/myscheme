@@ -91,7 +91,7 @@ impl fmt::Display for EvalError {
     }
 }
 
-pub fn eval_expr(state: State) -> Bouncer {
+pub(crate) fn eval_expr(state: State) -> Bouncer {
     match state {
         State {
             acc: Acc::Expr(expr),

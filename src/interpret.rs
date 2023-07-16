@@ -9,7 +9,7 @@ use crate::object::ObjectRef;
 use crate::parser::parse;
 use crate::reader::Reader;
 
-pub fn until_err<T, E>(err: &mut &mut Result<(), SchemeError>, item: Result<T, E>) -> Option<T>
+fn until_err<T, E>(err: &mut &mut Result<(), SchemeError>, item: Result<T, E>) -> Option<T>
 where
     E: std::convert::Into<SchemeError>,
 {

@@ -82,7 +82,7 @@ pub mod web {
     use std::io::{self, Write};
 
     thread_local! {
-        pub static OUT_BUF: RefCell<Vec<u8>> = RefCell::new(Vec::new());
+        static OUT_BUF: RefCell<Vec<u8>> = RefCell::new(Vec::new());
     }
 
     pub struct OutBuffer;
@@ -166,6 +166,6 @@ impl fmt::Display for Port {
 }
 
 thread_local! {
-    pub static STDIN: ObjectRef = ObjectRef::new(Object::Port(Port::new_stdin()));
-    pub static STDOUT: ObjectRef = ObjectRef::new(Object::Port(Port::new_stdout()));
+    pub(crate) static STDIN: ObjectRef = ObjectRef::new(Object::Port(Port::new_stdin()));
+    pub(crate) static STDOUT: ObjectRef = ObjectRef::new(Object::Port(Port::new_stdout()));
 }

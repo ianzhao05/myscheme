@@ -13,7 +13,7 @@ use crate::trampoline::Bouncer;
 
 use super::utils::{ensure_arity, expr_cv, get_env, ControlMap, PrimitiveMap};
 
-pub fn eval(state: State) -> Bouncer {
+fn eval(state: State) -> Bouncer {
     let State { rib, stack, .. } = state;
     if rib.len() != 2 {
         return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ArityMismatch {
@@ -47,19 +47,19 @@ pub fn eval(state: State) -> Bouncer {
     })
 }
 
-pub fn return_env(args: &[ObjectRef], env: EnvSpec) -> Result<ObjectRef, EvalError> {
+fn return_env(args: &[ObjectRef], env: EnvSpec) -> Result<ObjectRef, EvalError> {
     ensure_arity!(args, 1);
     get_version(&args[0])?;
     Ok(ObjectRef::EnvSpec(env))
 }
 
-pub fn cprimitives() -> ControlMap {
+pub(super) fn cprimitives() -> ControlMap {
     let mut m: ControlMap = HashMap::new();
     m.insert("eval", eval);
     m
 }
 
-pub fn primitives() -> PrimitiveMap {
+pub(super) fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("scheme-report-environment", |args| {
         return_env(args, EnvSpec::SchemeReport)

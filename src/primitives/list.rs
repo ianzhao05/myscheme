@@ -30,7 +30,7 @@ fn set_select(args: &[ObjectRef], first: bool) -> Result<ObjectRef, EvalError> {
     Ok(ObjectRef::Void)
 }
 
-pub fn primitives() -> PrimitiveMap {
+pub(super) fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("cons", cons);
     m.insert("car", |args| select(args, true));
@@ -40,7 +40,7 @@ pub fn primitives() -> PrimitiveMap {
     m
 }
 
-pub const PRELUDE: &str = "
+pub(super) const PRELUDE: &str = "
 (define (list? x)
   (if (null? x) #t (if (pair? x) (list? (cdr x)) #f)))
 

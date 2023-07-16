@@ -73,7 +73,7 @@ fn vector_fill(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     Ok(ObjectRef::Void)
 }
 
-pub fn primitives() -> PrimitiveMap {
+pub(super) fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("vector", vector);
     m.insert("make-vector", make_vector);
@@ -84,7 +84,7 @@ pub fn primitives() -> PrimitiveMap {
     m
 }
 
-pub const PRELUDE: &str = "
+pub(super) const PRELUDE: &str = "
 (define (list->vector lst)
   (apply vector lst))
 

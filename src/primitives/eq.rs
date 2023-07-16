@@ -31,14 +31,14 @@ fn eq(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ))))
 }
 
-pub fn primitives() -> PrimitiveMap {
+pub(super) fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("eqv?", eqv);
     m.insert("eq?", eq);
     m
 }
 
-pub const PRELUDE: &str = "
+pub(super) const PRELUDE: &str = "
 (define (equal? a b)
   (cond
     ((pair? a)

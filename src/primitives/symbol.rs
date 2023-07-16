@@ -21,7 +21,7 @@ fn string_to_symbol(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ))))
 }
 
-pub fn primitives() -> PrimitiveMap {
+pub(super) fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("symbol->string", symbol_to_string);
     m.insert("string->symbol", string_to_symbol);

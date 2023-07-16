@@ -55,7 +55,7 @@ fn pred(args: &[ObjectRef], t: Type) -> Result<ObjectRef, EvalError> {
     ))))
 }
 
-pub fn primitives() -> PrimitiveMap {
+pub(super) fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("boolean?", |args| pred(args, Type::Boolean));
     m.insert("symbol?", |args| pred(args, Type::Symbol));
@@ -73,7 +73,7 @@ pub fn primitives() -> PrimitiveMap {
     m
 }
 
-pub const PRELUDE: &str = "
+pub(super) const PRELUDE: &str = "
 (define (not x) (if x #f #t))
 ";
 

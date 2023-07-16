@@ -152,7 +152,7 @@ fn dynamic_wind(state: State) -> Bouncer {
     })
 }
 
-pub fn cprimitives() -> ControlMap {
+pub(super) fn cprimitives() -> ControlMap {
     let mut m: ControlMap = HashMap::new();
     m.insert("apply", apply);
     m.insert("call-with-current-continuation", callcc);
@@ -160,7 +160,7 @@ pub fn cprimitives() -> ControlMap {
     m
 }
 
-pub const PRELUDE: &str = "
+pub(super) const PRELUDE: &str = "
 (define (make-promise proc)
   (let ((result-ready? #f)
         (result #f))

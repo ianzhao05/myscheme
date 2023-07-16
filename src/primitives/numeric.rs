@@ -288,7 +288,7 @@ fn string_to_number(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     }
 }
 
-pub fn primitives() -> PrimitiveMap {
+pub(super) fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("integer?", integer);
     m.insert("+", add);
@@ -381,7 +381,7 @@ pub fn primitives() -> PrimitiveMap {
     m
 }
 
-pub const PRELUDE: &str = "
+pub(super) const PRELUDE: &str = "
 (define (even? n) (= (remainder n 2) 0))
 (define (odd? n) (= (remainder n 2) 1))
 ";

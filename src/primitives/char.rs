@@ -66,7 +66,7 @@ fn int_to_char(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     ))))
 }
 
-pub fn primitives() -> PrimitiveMap {
+pub(super) fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("char=?", |args| {
         char_cmp(args, Ordering::Equal, true, false)

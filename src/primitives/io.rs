@@ -139,7 +139,7 @@ fn char_ready(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     Ok(ObjectRef::new(Object::Atom(SimpleDatum::Boolean(res))))
 }
 
-pub fn primitives() -> PrimitiveMap {
+pub(super) fn primitives() -> PrimitiveMap {
     let mut m: PrimitiveMap = HashMap::new();
     m.insert("open-input-file", |args| open_file(args, false));
     m.insert("open-output-file", |args| open_file(args, true));
@@ -157,7 +157,7 @@ pub fn primitives() -> PrimitiveMap {
     m
 }
 
-pub const PRELUDE: &str = "
+pub(super) const PRELUDE: &str = "
 (define (call-with-input-file filename proc)
   (proc (open-input-file filename)))
 
