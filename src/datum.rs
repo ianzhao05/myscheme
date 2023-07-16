@@ -54,6 +54,29 @@ pub enum ListKind {
     Improper(Vec<Datum>, Box<Datum>),
 }
 
+impl ListKind {
+    pub fn new_improper(mut list: Vec<Datum>, mut end: Datum) -> Self {
+        loop {
+            match end {
+                Datum::EmptyList => return ListKind::Proper(list),
+                Datum::Compound(CompoundDatum::List(nlist)) => match nlist {
+                    ListKind::Proper(nlist) => {
+                        list.extend(nlist);
+                        return ListKind::Proper(list);
+                    }
+                    ListKind::Improper(nlist, nend) => {
+                        list.extend(nlist);
+                        end = *nend;
+                    }
+                },
+                _ => {
+                    return ListKind::Improper(list, Box::new(end));
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum CompoundDatum {
     List(ListKind),
@@ -110,5 +133,51 @@ impl TryFrom<&ObjectRef> for Datum {
             ObjectRef::EmptyList => Ok(Datum::EmptyList),
             _ => Err(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_util::*;
+
+    #[test]
+    fn improper_flatten() {
+        assert_eq!(
+            Datum::Compound(CompoundDatum::List(ListKind::new_improper(
+                vec![int_datum!(1)],
+                improper_list_datum![
+                    int_datum!(2),
+                    int_datum!(3);
+                    int_datum!(4),
+                ]
+            ))),
+            improper_list_datum![
+                int_datum!(1),
+                int_datum!(2),
+                int_datum!(3);
+                int_datum!(4),
+            ]
+        );
+
+        let l = proper_list_datum![int_datum!(1), int_datum!(2), int_datum!(3), int_datum!(4)];
+        assert_eq!(
+            Datum::Compound(CompoundDatum::List(ListKind::new_improper(
+                vec![int_datum!(1), int_datum!(2)],
+                proper_list_datum![int_datum!(3), int_datum!(4),]
+            ))),
+            l
+        );
+        assert_eq!(
+            Datum::Compound(CompoundDatum::List(ListKind::new_improper(
+                vec![int_datum!(1), int_datum!(2)],
+                improper_list_datum![
+                    int_datum!(3),
+                    int_datum!(4);
+                    Datum::EmptyList
+                ]
+            ))),
+            l
+        );
     }
 }

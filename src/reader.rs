@@ -90,10 +90,9 @@ fn read_impl<I: Iterator<Item = Token>>(tip: &mut Peekable<I>) -> Result<Datum, 
                             kind: ReaderErrorKind::UnexpectedEndOfInput,
                         })?;
                         return if let Token::RParen = next_token {
-                            Ok(Datum::Compound(CompoundDatum::List(ListKind::Improper(
-                                list,
-                                Box::new(datum),
-                            ))))
+                            Ok(Datum::Compound(CompoundDatum::List(
+                                ListKind::new_improper(list, datum),
+                            )))
                         } else {
                             Err(ReaderError {
                                 kind: ReaderErrorKind::IllegalDot,
@@ -386,8 +385,9 @@ mod tests {
                 .into_iter(),
             ),
             Ok(improper_list_datum![
-                symbol_datum!("a");
-                improper_list_datum![symbol_datum!("b"); symbol_datum!("c")],
+                symbol_datum!("a"),
+                symbol_datum!("b");
+                symbol_datum!("c")
             ])
         );
 

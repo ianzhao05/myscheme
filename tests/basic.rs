@@ -187,4 +187,5 @@ fn parsing() {
     assert_eval_eq!("(if . (#t . (1 2)))", "1");
     assert_eval_eq!("(if #t . (1 2))", "1");
     assert_eval_eq!("(if . (#t . (1 . (2 . ()))))", "1");
+    assert_eval_eq!("(let ((x . (1)) . ()) . (x . ()))", "1");
 }
