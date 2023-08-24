@@ -208,11 +208,13 @@ fn rationalize(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     let y = get_num(&args[1])?;
     let inexact = !x.is_exact() || !y.is_exact();
 
-    let Some(x) = x.to_exact_rational() else { return Ok(args[0].clone()) };
+    let Some(x) = x.to_exact_rational() else {
+        return Ok(args[0].clone());
+    };
     let Some(y) = y.abs().to_exact_rational() else {
         return Ok(ObjectRef::new(Object::Atom(SimpleDatum::Number(
             Number::Real(RealKind::Real(0.0)),
-        ))))
+        ))));
     };
 
     let mut lo = &x - &y;

@@ -440,8 +440,9 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             binding_data
                 .into_iter()
                 .map(|binding| {
-                    let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = binding else {
-                        return Err(bs_err())
+                    let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = binding
+                    else {
+                        return Err(bs_err());
                     };
                     if parts.len() != 2 {
                         return Err(bs_err());
@@ -941,7 +942,9 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                     steps.push(step);
                 }
             }
-            let Some(Datum::Compound(CompoundDatum::List(ListKind::Proper(term)))) = operands.next() else {
+            let Some(Datum::Compound(CompoundDatum::List(ListKind::Proper(term)))) =
+                operands.next()
+            else {
                 return Err(bs_err());
             };
             let mut ei = term.into_iter().map(parse_expr);
