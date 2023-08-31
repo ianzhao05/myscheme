@@ -8,6 +8,7 @@ A Scheme interpreter written in Rust, with the aim of becoming mostly compliant 
 $ git clone https://github.com/ianzhao05/myscheme.git && cd myscheme
 $ cargo run # start a REPL
 $ cargo run -- file.scm # run a file
+$ cargo run -- -i file.scm # run a file followed by a REPL
 ```
 
 A WebAssembly version of the interpreter is available at [ianzhao05.github.io/myscheme](https://ianzhao05.github.io/myscheme/).

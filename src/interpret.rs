@@ -67,8 +67,7 @@ pub fn write_results(res: Result<Vec<ObjectRef>, SchemeError>) {
     }
 }
 
-pub fn repl() -> std::io::Result<()> {
-    let env = Env::primitives();
+pub fn repl(env: Rc<RefCell<Env>>) -> std::io::Result<()> {
     let mut sreader = SexpReader::new(String::new());
     loop {
         if sreader.buf.is_empty() {
