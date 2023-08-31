@@ -1132,11 +1132,11 @@ mod tests {
 
         assert_eq!(
             Number::Real(RealKind::Real(1.6)).round(),
-            Number::Real(RealKind::Real(2.0.into()))
+            Number::Real(RealKind::Real(2.0))
         );
         assert_eq!(
             Number::Real(RealKind::Real(1.4)).round(),
-            Number::Real(RealKind::Real(1.0.into()))
+            Number::Real(RealKind::Real(1.0))
         );
         assert_eq!(
             Number::Real(RealKind::Rational(BigRational::new(8.into(), 5.into()))).floor(),
@@ -1148,7 +1148,7 @@ mod tests {
         );
         assert_eq!(
             Number::Real(RealKind::Real(1.1)).trunc(),
-            Number::Real(RealKind::Real(1.0.into()))
+            Number::Real(RealKind::Real(1.0))
         );
 
         assert_eq!(
@@ -1157,7 +1157,7 @@ mod tests {
         );
         assert_eq!(
             Number::Real(RealKind::Real(4.0)).sqrt(),
-            Number::Real(RealKind::Real(2.0.into()))
+            Number::Real(RealKind::Real(2.0))
         );
         assert_eq!(
             Number::Real(RealKind::Rational(BigRational::new(4.into(), 9.into()))).sqrt(),
@@ -1188,11 +1188,11 @@ mod tests {
 
         assert_eq!(
             Number::Real(RealKind::Integer(2.into())).pow(&Number::Real(RealKind::Real(3.0))),
-            Number::Real(RealKind::Real(8.0.into()))
+            Number::Real(RealKind::Real(8.0))
         );
         assert_eq!(
             Number::Real(RealKind::Real(2.0)).pow(&Number::Real(RealKind::Integer(3.into()))),
-            Number::Real(RealKind::Real(8.0.into()))
+            Number::Real(RealKind::Real(8.0))
         );
 
         assert_eq!(
