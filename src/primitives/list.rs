@@ -42,8 +42,15 @@ pub(super) fn primitives() -> PrimitiveMap {
 
 pub(super) const PRELUDE: &str = "
 (define (list? x)
-  (if (null? x) #t (if (pair? x) (list? (cdr x)) #f)))
-
+  (let loop ((slow x) (fast x))
+    (cond
+      ((null? fast) #t)
+      ((not (pair? fast)) #f)
+      ((null? (cdr fast)) #t)
+      ((not (pair? (cdr fast))) #f)
+      ((eq? (cdr slow) (cddr fast)) #f)
+      (else (loop (cdr slow) (cddr fast))))))
+      
 (define (list . args) args)
 
 (define (caar x) (car (car x)))

@@ -243,6 +243,10 @@ fn list_primitives() {
     assert_eval_eq!("(list? '())", "#t");
     assert_eval_eq!("(list? '(1 2 3))", "#t");
     assert_eval_eq!("(list? '(1 2 . 3))", "#f");
+    assert_eval_eq!(
+        "(define l (list 1 2 3)) (set-cdr! (cddr l) l) (list? l)",
+        "#f"
+    );
 
     assert_eval_eq!("(cadadr '((a b) (c d) (e f)))", "'d");
 
