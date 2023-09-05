@@ -14,7 +14,9 @@ use crate::trampoline::Bouncer;
 use super::utils::{ensure_arity, expr_cv, get_env, ControlMap, PrimitiveMap};
 
 fn eval(state: State) -> Bouncer {
-    let State { rib, stack, .. } = state;
+    let State {
+        rib, stack, env, ..
+    } = state;
     if rib.len() != 2 {
         return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ArityMismatch {
             expected: 2,
@@ -29,7 +31,7 @@ fn eval(state: State) -> Bouncer {
     let Ok(datum) = (&rib[0]).try_into() else {
         return Bouncer::Land(Err(expr_cv(&rib[0])));
     };
-    let expr = match parse(datum) {
+    let expr = match parse(datum, &env) {
         Ok(ExprOrDef::Expr(expr)) => expr,
         Ok(_) => return Bouncer::Land(Err(expr_cv(&rib[0]))),
         Err(e) => return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ParserError(e)))),
