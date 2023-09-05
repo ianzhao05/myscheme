@@ -16,11 +16,12 @@ use std::collections::HashMap;
 
 use once_cell::sync::Lazy;
 
+use crate::env::EnvBinding;
 use crate::interner::Symbol;
 use crate::object::{Object, ObjectRef};
 use crate::proc::{Primitive, PrimitiveFunc, Procedure};
 
-pub(crate) fn primitives() -> HashMap<Symbol, ObjectRef> {
+pub(crate) fn primitives() -> HashMap<Symbol, EnvBinding> {
     [
         numeric::primitives(),
         eq::primitives(),
@@ -38,9 +39,8 @@ pub(crate) fn primitives() -> HashMap<Symbol, ObjectRef> {
         m.into_iter().map(|(k, v)| {
             (
                 k.into(),
-                ObjectRef::new(Object::Procedure(Procedure::Primitive(Primitive::new(
-                    k,
-                    PrimitiveFunc::Args(v),
+                EnvBinding::Variable(ObjectRef::new(Object::Procedure(Procedure::Primitive(
+                    Primitive::new(k, PrimitiveFunc::Args(v)),
                 )))),
             )
         })
@@ -52,10 +52,9 @@ pub(crate) fn primitives() -> HashMap<Symbol, ObjectRef> {
                 m.into_iter().map(|(k, v)| {
                     (
                         k.into(),
-                        ObjectRef::new(Object::Procedure(Procedure::Primitive(Primitive::new(
-                            k,
-                            PrimitiveFunc::State(v),
-                        )))),
+                        EnvBinding::Variable(ObjectRef::new(Object::Procedure(
+                            Procedure::Primitive(Primitive::new(k, PrimitiveFunc::State(v))),
+                        ))),
                     )
                 })
             }),

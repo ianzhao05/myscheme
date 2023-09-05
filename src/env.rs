@@ -4,12 +4,19 @@ use std::{cell::RefCell, rc::Rc};
 use crate::eval_str;
 use crate::interner::Symbol;
 use crate::object::ObjectRef;
+use crate::parser::macros::Transformer;
 use crate::primitives::{primitives, PRELUDE};
+
+#[derive(Debug, Clone)]
+pub enum EnvBinding {
+    Variable(ObjectRef),
+    Macro(Rc<Transformer>),
+}
 
 #[derive(Debug, Clone)]
 pub struct Env {
     parent: Option<Rc<RefCell<Env>>>,
-    bindings: HashMap<Symbol, ObjectRef>,
+    bindings: HashMap<Symbol, EnvBinding>,
 }
 
 impl Env {
@@ -18,6 +25,10 @@ impl Env {
             parent,
             bindings: HashMap::new(),
         }
+    }
+
+    pub fn empty() -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self::new(None)))
     }
 
     pub fn primitives() -> Rc<RefCell<Self>> {
@@ -38,7 +49,8 @@ impl Env {
 
     pub fn get(&self, name: Symbol) -> Option<ObjectRef> {
         match self.bindings.get(&name) {
-            Some(obj) => Some(obj.clone()),
+            Some(EnvBinding::Variable(obj)) => Some(obj.clone()),
+            Some(EnvBinding::Macro(_)) => None,
             None => match &self.parent {
                 Some(parent) => parent.borrow().get(name),
                 None => None,
@@ -47,13 +59,18 @@ impl Env {
     }
 
     pub fn insert(&mut self, name: Symbol, val: ObjectRef) {
-        self.bindings.insert(name, val);
+        self.bindings.insert(name, EnvBinding::Variable(val));
     }
 
     pub fn set(&mut self, name: Symbol, val: ObjectRef) -> bool {
         if let Entry::Occupied(mut e) = self.bindings.entry(name) {
-            e.insert(val);
-            true
+            match e.get() {
+                EnvBinding::Variable(_) => {
+                    e.insert(EnvBinding::Variable(val));
+                    true
+                }
+                EnvBinding::Macro(_) => false,
+            }
         } else {
             match &self.parent {
                 Some(parent) => parent.borrow_mut().set(name, val),
