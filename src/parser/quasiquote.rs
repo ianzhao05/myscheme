@@ -11,6 +11,7 @@ fn process_qq_list(
     mut li: impl Iterator<Item = Datum>,
     qq_level: u32,
     list_type: ListType,
+    env: &Rc<RefCell<Env>>,
 ) -> Result<(Vec<Rc<Expr>>, bool), ParserError> {
     let mut parts = vec![];
     let mut curr = vec![];
@@ -40,7 +41,7 @@ fn process_qq_list(
                         kind: ParserErrorKind::BadSyntax("unquote-splicing".into()),
                     });
                 }
-                parts.push(parse_expr(arg)?);
+                parts.push(parse_expr(arg, env)?);
             }
             _ => {
                 if let Datum::Simple(SimpleDatum::Symbol(s)) = &el {
@@ -57,6 +58,7 @@ fn process_qq_list(
                                         std::iter::once(el).chain(li).collect(),
                                     ))),
                                     qq_level,
+                                    env,
                                 )?);
                                 break;
                             }
@@ -71,7 +73,7 @@ fn process_qq_list(
                         }
                     }
                 }
-                curr.push(process_qq(el, qq_level)?);
+                curr.push(process_qq(el, qq_level, env)?);
             }
         }
     }
@@ -96,7 +98,11 @@ fn process_qq_list(
     }
 }
 
-pub(super) fn process_qq(datum: Datum, qq_level: u32) -> Result<Rc<Expr>, ParserError> {
+pub(super) fn process_qq(
+    datum: Datum,
+    qq_level: u32,
+    env: &Rc<RefCell<Env>>,
+) -> Result<Rc<Expr>, ParserError> {
     match datum {
         Datum::Simple(_) | Datum::EmptyList => {
             Ok(Rc::new(Expr::Literal(LiteralKind::Quotation(datum))))
@@ -126,7 +132,7 @@ pub(super) fn process_qq(datum: Datum, qq_level: u32) -> Result<Rc<Expr>, Parser
                                     kind: ParserErrorKind::IllegalUnquoteSplicing,
                                 });
                             }
-                            return parse_expr(arg);
+                            return parse_expr(arg, env);
                         }
                         let args: Vec<_> = li.collect();
                         let valid = args.len() == 1;
@@ -145,13 +151,14 @@ pub(super) fn process_qq(datum: Datum, qq_level: u32) -> Result<Rc<Expr>, Parser
                                     } else {
                                         qq_level - 1
                                     },
+                                    env,
                                 )?,
                             ],
                         }));
                     }
                 }
                 let (mut parts, is_improper) =
-                    process_qq_list(list.into_iter(), qq_level, ListType::Proper)?;
+                    process_qq_list(list.into_iter(), qq_level, ListType::Proper, env)?;
                 if parts.len() == 1 {
                     Ok(parts.into_iter().next().unwrap())
                 } else {
@@ -168,8 +175,8 @@ pub(super) fn process_qq(datum: Datum, qq_level: u32) -> Result<Rc<Expr>, Parser
             }
             ListKind::Improper(list, last) => {
                 let (mut parts, _) =
-                    process_qq_list(list.into_iter(), qq_level, ListType::Improper)?;
-                parts.push(process_qq(*last, qq_level)?);
+                    process_qq_list(list.into_iter(), qq_level, ListType::Improper, env)?;
+                parts.push(process_qq(*last, qq_level, env)?);
                 Ok(Rc::new(Expr::ProcCall {
                     operator: Rc::new(Expr::Variable("append".into())),
                     operands: parts,
@@ -177,7 +184,8 @@ pub(super) fn process_qq(datum: Datum, qq_level: u32) -> Result<Rc<Expr>, Parser
             }
         },
         Datum::Compound(CompoundDatum::Vector(vector)) => {
-            let (mut parts, _) = process_qq_list(vector.into_iter(), qq_level, ListType::Vector)?;
+            let (mut parts, _) =
+                process_qq_list(vector.into_iter(), qq_level, ListType::Vector, env)?;
             if parts.len() == 1 {
                 Ok(parts.into_iter().next().unwrap())
             } else {

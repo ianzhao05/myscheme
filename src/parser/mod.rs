@@ -1,12 +1,14 @@
 pub mod macros;
 mod quasiquote;
 
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
 
 use crate::datum::*;
+use crate::env::Env;
 use crate::expr::*;
 use crate::interner::Symbol;
 
@@ -106,6 +108,7 @@ fn process_proc<I: DoubleEndedIterator<Item = Datum>>(
     list: ListKind,
     body: I,
     named: bool,
+    env: &Rc<RefCell<Env>>,
 ) -> Result<(Option<Symbol>, ProcData), ParserError> {
     let bs_err = || ParserError {
         kind: ParserErrorKind::BadSyntax((if named { "define" } else { "lambda" }).into()),
@@ -147,7 +150,7 @@ fn process_proc<I: DoubleEndedIterator<Item = Datum>>(
                 ProcData {
                     args,
                     rest: None,
-                    body: process_body(body)?,
+                    body: process_body(body, env)?,
                 },
             ))
         }
@@ -170,7 +173,7 @@ fn process_proc<I: DoubleEndedIterator<Item = Datum>>(
                             return Err(bs_err());
                         }
                     },
-                    body: process_body(body)?,
+                    body: process_body(body, env)?,
                 },
             ))
         }
@@ -180,6 +183,7 @@ fn process_proc<I: DoubleEndedIterator<Item = Datum>>(
 fn process_define<I: DoubleEndedIterator<Item = Datum>>(
     var: Datum,
     mut body: I,
+    env: &Rc<RefCell<Env>>,
 ) -> Result<Rc<Definition>, ParserError> {
     let bs_err = || ParserError {
         kind: ParserErrorKind::BadSyntax("define".into()),
@@ -191,7 +195,7 @@ fn process_define<I: DoubleEndedIterator<Item = Datum>>(
                     kind: ParserErrorKind::IllegalVariableName(s),
                 })
             } else {
-                let expr = parse_expr(body.next().ok_or_else(bs_err)?)?;
+                let expr = parse_expr(body.next().ok_or_else(bs_err)?, env)?;
 
                 if body.next().is_none() {
                     Ok(Rc::new(Definition::Variable {
@@ -204,7 +208,7 @@ fn process_define<I: DoubleEndedIterator<Item = Datum>>(
             }
         }
         Datum::Compound(CompoundDatum::List(list)) => {
-            let (name, proc_data) = process_proc(list, body, true)?;
+            let (name, proc_data) = process_proc(list, body, true, env)?;
             Ok(Rc::new(Definition::Procedure {
                 name: name.expect("Name should be present"),
                 data: Rc::new(proc_data),
@@ -214,11 +218,14 @@ fn process_define<I: DoubleEndedIterator<Item = Datum>>(
     }
 }
 
-fn process_body<I: Iterator<Item = Datum>>(data: I) -> Result<Vec<ExprOrDef>, ParserError> {
+fn process_body<I: Iterator<Item = Datum>>(
+    data: I,
+    env: &Rc<RefCell<Env>>,
+) -> Result<Vec<ExprOrDef>, ParserError> {
     let mut eods = Vec::new();
     let mut last_is_expr = false;
     for d in data {
-        let eod = parse(d)?;
+        let eod = parse(d, env)?;
         match eod {
             ExprOrDef::Definition(_) => {
                 last_is_expr = false;
@@ -246,10 +253,12 @@ fn process_body<I: Iterator<Item = Datum>>(data: I) -> Result<Vec<ExprOrDef>, Pa
 fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
     kw: Symbol,
     mut operands: I,
+    env: &Rc<RefCell<Env>>,
 ) -> Result<ExprOrDef, ParserError> {
     let bs_err = || ParserError {
         kind: ParserErrorKind::BadSyntax(kw),
     };
+    let parse_expr_with_env = |d| parse_expr(d, env);
     let process_bindings =
         |binding_data: Vec<Datum>| -> Result<Vec<(Symbol, Rc<Expr>)>, ParserError> {
             binding_data
@@ -264,7 +273,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                     }
                     let mut pi = parts.into_iter();
                     if let Datum::Simple(SimpleDatum::Symbol(name)) = pi.next().unwrap() {
-                        Ok((name, parse_expr(pi.next().unwrap())?))
+                        Ok((name, parse_expr(pi.next().unwrap(), env)?))
                     } else {
                         Err(bs_err())
                     }
@@ -274,7 +283,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
     match kw {
         _ if kw == "define".into() => {
             let var = operands.next().ok_or_else(bs_err)?;
-            Ok(ExprOrDef::Definition(process_define(var, operands)?))
+            Ok(ExprOrDef::Definition(process_define(var, operands, env)?))
         }
         _ if kw == "quote".into() => {
             let operand = operands.next().ok_or_else(bs_err)?;
@@ -290,7 +299,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             let formals = operands.next().ok_or_else(bs_err)?;
             match formals {
                 Datum::Compound(CompoundDatum::List(list)) => {
-                    let (_, args) = process_proc(list, operands, false)?;
+                    let (_, args) = process_proc(list, operands, false, env)?;
                     Ok(ExprOrDef::new_expr(Expr::Lambda(Rc::new(args))))
                 }
                 Datum::Simple(SimpleDatum::Symbol(rest)) => {
@@ -302,13 +311,13 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                     Ok(ExprOrDef::new_expr(Expr::Lambda(Rc::new(ProcData {
                         args: vec![],
                         rest: Some(rest),
-                        body: process_body(operands)?,
+                        body: process_body(operands, env)?,
                     }))))
                 }
                 Datum::EmptyList => Ok(ExprOrDef::new_expr(Expr::Lambda(Rc::new(ProcData {
                     args: vec![],
                     rest: None,
-                    body: process_body(operands)?,
+                    body: process_body(operands, env)?,
                 })))),
                 _ => Err(bs_err()),
             }
@@ -318,7 +327,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             let mut has_def = false;
             let mut has_expr = false;
             for operand in operands {
-                let child = parse(operand)?;
+                let child = parse(operand, env)?;
                 match child {
                     ExprOrDef::Definition(_) => {
                         has_def = true;
@@ -364,7 +373,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                             return Err(bs_err());
                         }
                     },
-                    value: parse_expr(value)?,
+                    value: parse_expr(value, env)?,
                 }))
             } else {
                 Err(bs_err())
@@ -376,9 +385,9 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             let alternate = operands.next();
             if operands.next().is_none() {
                 Ok(ExprOrDef::new_expr(Expr::Conditional {
-                    test: parse_expr(test)?,
-                    consequent: parse_expr(consequent)?,
-                    alternate: alternate.map(parse_expr).transpose()?,
+                    test: parse_expr(test, env)?,
+                    consequent: parse_expr(consequent, env)?,
+                    alternate: alternate.map(parse_expr_with_env).transpose()?,
                 }))
             } else {
                 Err(bs_err())
@@ -399,7 +408,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                         if acc.is_some() {
                             return Err(bs_err());
                         }
-                        let seq = pi.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
+                        let seq = pi.map(parse_expr_with_env).collect::<Result<Vec<_>, _>>()?;
                         if seq.is_empty() {
                             return Err(bs_err());
                         }
@@ -410,7 +419,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                         });
                     }
                     _ => {
-                        let test = parse_expr(first)?;
+                        let test = parse_expr(first, env)?;
                         let second = pi.next();
                         if second.is_none() {
                             if acc.is_some() {
@@ -435,7 +444,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                                 if pi.next().is_some() {
                                     return Err(bs_err());
                                 }
-                                let recipient = parse_expr(third)?;
+                                let recipient = parse_expr(third, env)?;
                                 let temp = gen_temp_name();
                                 acc = Some(Rc::new(Expr::SimpleLet {
                                     arg: temp,
@@ -453,7 +462,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                             second => {
                                 let seq = std::iter::once(second)
                                     .chain(pi)
-                                    .map(parse_expr)
+                                    .map(parse_expr_with_env)
                                     .collect::<Result<Vec<_>, _>>()?;
                                 if seq.is_empty() {
                                     return Err(bs_err());
@@ -481,7 +490,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
         _ if kw == "and".into() => {
             let ops = operands
                 .rev()
-                .map(parse_expr)
+                .map(parse_expr_with_env)
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(ExprOrDef::Expr(if ops.is_empty() {
                 Rc::new(Expr::Literal(LiteralKind::SelfEvaluating(
@@ -505,7 +514,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
         _ if kw == "or".into() => {
             let ops = operands
                 .rev()
-                .map(parse_expr)
+                .map(parse_expr_with_env)
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(ExprOrDef::Expr(if ops.is_empty() {
                 Rc::new(Expr::Literal(LiteralKind::SelfEvaluating(
@@ -530,7 +539,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             }))
         }
         _ if kw == "case".into() => {
-            let key = parse_expr(operands.next().ok_or_else(bs_err)?)?;
+            let key = parse_expr(operands.next().ok_or_else(bs_err)?, env)?;
             let temp = gen_temp_name();
             let mut acc: Option<Rc<Expr>> = None;
             for clause in operands.rev() {
@@ -541,7 +550,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 let first = pi.next().ok_or(ParserError {
                     kind: ParserErrorKind::IllegalEmptyList,
                 })?;
-                let seq = pi.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
+                let seq = pi.map(parse_expr_with_env).collect::<Result<Vec<_>, _>>()?;
                 if seq.is_empty() {
                     return Err(bs_err());
                 }
@@ -599,7 +608,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 Datum::EmptyList => (vec![], vec![]),
                 _ => return Err(bs_err()),
             };
-            let body = process_body(operands)?;
+            let body = process_body(operands, env)?;
             match name {
                 Some(n) => Ok(ExprOrDef::new_expr(Expr::ProcCall {
                     operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
@@ -641,7 +650,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 Datum::EmptyList => vec![],
                 _ => return Err(bs_err()),
             };
-            let mut body = Some(process_body(operands)?);
+            let mut body = Some(process_body(operands, env)?);
             if bindings.is_empty() {
                 return Ok(ExprOrDef::new_expr(Expr::ProcCall {
                     operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
@@ -677,7 +686,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 Datum::EmptyList => vec![],
                 _ => return Err(bs_err()),
             };
-            let mut body = process_body(operands)?;
+            let mut body = process_body(operands, env)?;
             if bindings.is_empty() {
                 return Ok(ExprOrDef::new_expr(Expr::ProcCall {
                     operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
@@ -747,10 +756,10 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                     let Datum::Simple(SimpleDatum::Symbol(name)) = pi.next().unwrap() else {
                         return Err(bs_err());
                     };
-                    inits.push(parse_expr(pi.next().unwrap())?);
+                    inits.push(parse_expr(pi.next().unwrap(), env)?);
                     let step = pi
                         .next()
-                        .map(parse_expr)
+                        .map(parse_expr_with_env)
                         .transpose()?
                         .unwrap_or_else(|| Rc::new(Expr::Variable(name)));
                     vars.push(name);
@@ -762,10 +771,12 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             else {
                 return Err(bs_err());
             };
-            let mut ei = term.into_iter().map(parse_expr);
+            let mut ei = term.into_iter().map(parse_expr_with_env);
             let test = ei.next().ok_or_else(bs_err)??;
             let seq = ei.collect::<Result<Vec<_>, _>>()?;
-            let mut body = operands.map(parse_expr).collect::<Result<Vec<_>, _>>()?;
+            let mut body = operands
+                .map(parse_expr_with_env)
+                .collect::<Result<Vec<_>, _>>()?;
             let temp = gen_temp_name();
             body.push(Rc::new(Expr::ProcCall {
                 operator: Rc::new(Expr::Variable(temp)),
@@ -798,7 +809,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             }))
         }
         _ if kw == "delay".into() => {
-            let expr = parse_expr(operands.next().ok_or_else(bs_err)?)?;
+            let expr = parse_expr(operands.next().ok_or_else(bs_err)?, env)?;
             if operands.next().is_none() {
                 Ok(ExprOrDef::new_expr(Expr::ProcCall {
                     operator: Rc::new(Expr::Variable("make-promise".into())),
@@ -813,7 +824,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             }
         }
         _ if kw == "quasiquote".into() => {
-            let template = quasiquote::process_qq(operands.next().ok_or_else(bs_err)?, 0)?;
+            let template = quasiquote::process_qq(operands.next().ok_or_else(bs_err)?, 0, env)?;
             if operands.next().is_none() {
                 Ok(ExprOrDef::Expr(template))
             } else {
@@ -836,8 +847,8 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
     }
 }
 
-fn parse_expr(datum: Datum) -> Result<Rc<Expr>, ParserError> {
-    match parse(datum)? {
+fn parse_expr(datum: Datum, env: &Rc<RefCell<Env>>) -> Result<Rc<Expr>, ParserError> {
+    match parse(datum, env)? {
         ExprOrDef::Expr(expr) => Ok(expr),
         _ => Err(ParserError {
             kind: ParserErrorKind::IllegalDefine,
@@ -878,7 +889,7 @@ impl Iterator for ParserResultIntoIter {
     }
 }
 
-pub fn parse_top_level(datum: Datum) -> ParserResult {
+pub fn parse_top_level(datum: Datum, env: &Rc<RefCell<Env>>) -> ParserResult {
     match datum {
         Datum::Compound(CompoundDatum::List(ListKind::Proper(list)))
             if list.first()
@@ -886,11 +897,11 @@ pub fn parse_top_level(datum: Datum) -> ParserResult {
         {
             ParserResult(Ok(ParserOutput::SyntaxDefinition))
         }
-        other => ParserResult(parse(other).map(ParserOutput::ExprOrDef)),
+        other => ParserResult(parse(other, env).map(ParserOutput::ExprOrDef)),
     }
 }
 
-pub fn parse(datum: Datum) -> Result<ExprOrDef, ParserError> {
+pub fn parse(datum: Datum, env: &Rc<RefCell<Env>>) -> Result<ExprOrDef, ParserError> {
     match datum {
         Datum::Simple(simple) => match simple {
             SimpleDatum::Boolean(b) => Ok(ExprOrDef::new_expr(Expr::Literal(
@@ -921,12 +932,12 @@ pub fn parse(datum: Datum) -> Result<ExprOrDef, ParserError> {
                     })?;
                     match first {
                         Datum::Simple(SimpleDatum::Symbol(kw)) if is_keyword(kw) => {
-                            process_keyword(kw, li)
+                            process_keyword(kw, li, env)
                         }
                         _ => {
-                            let operator = parse_expr(first)?;
+                            let operator = parse_expr(first, env)?;
                             let rest = li
-                                .map(|e| match parse_expr(e) {
+                                .map(|e| match parse_expr(e, env) {
                                     Ok(expr) => Ok(expr),
                                     Err(err) => Err(err),
                                 })
@@ -956,6 +967,10 @@ pub fn parse(datum: Datum) -> Result<ExprOrDef, ParserError> {
 mod tests {
     use super::*;
     use crate::test_util::*;
+
+    fn parse(datum: Datum) -> Result<ExprOrDef, ParserError> {
+        super::parse(datum, &Env::empty())
+    }
 
     #[test]
     fn literals() {
@@ -1037,11 +1052,10 @@ mod tests {
         );
 
         assert_eq!(
-            parse_expr(proper_list_datum![
-                symbol_datum!("define"),
-                symbol_datum!("x"),
-                int_datum!(42),
-            ]),
+            parse_expr(
+                proper_list_datum![symbol_datum!("define"), symbol_datum!("x"), int_datum!(42),],
+                &Env::empty()
+            ),
             Err(ParserError {
                 kind: ParserErrorKind::IllegalDefine,
             })
