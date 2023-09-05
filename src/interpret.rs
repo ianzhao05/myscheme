@@ -6,7 +6,7 @@ use crate::err::SchemeError;
 use crate::evaler::eval;
 use crate::lexer::{Lexer, SexpReader, Token};
 use crate::object::ObjectRef;
-use crate::parser::parse;
+use crate::parser::parse_top_level;
 use crate::reader::Reader;
 
 fn until_err<T, E>(err: &mut &mut Result<(), SchemeError>, item: Result<T, E>) -> Option<T>
@@ -26,7 +26,7 @@ pub fn eval_str(s: &str, env: Rc<RefCell<Env>>) -> Result<Vec<ObjectRef>, Scheme
     let (mut le, mut re, mut pe) = (Ok(()), Ok(()), Ok(()));
     let tokens = Lexer::new(s).scan(&mut le, until_err);
     let data = Reader::new(tokens).scan(&mut re, until_err);
-    let exprs = data.map(parse).scan(&mut pe, until_err);
+    let exprs = data.flat_map(parse_top_level).scan(&mut pe, until_err);
     let res = exprs
         .map(|expr| eval(expr, env.clone()).map_err(Into::into))
         .collect();
@@ -42,7 +42,7 @@ pub fn eval_tokens(
 ) -> Result<Vec<ObjectRef>, SchemeError> {
     let (mut re, mut pe) = (Ok(()), Ok(()));
     let data = Reader::new(tokens.into_iter()).scan(&mut re, until_err);
-    let exprs = data.map(parse).scan(&mut pe, until_err);
+    let exprs = data.flat_map(parse_top_level).scan(&mut pe, until_err);
     let res = exprs
         .map(|expr| eval(expr, env.clone()).map_err(Into::into))
         .collect();
