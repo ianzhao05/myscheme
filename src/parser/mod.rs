@@ -1,3 +1,6 @@
+pub mod macros;
+mod quasiquote;
+
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
@@ -29,6 +32,8 @@ pub enum ParserErrorKind {
     IllegalUnquote,
     IllegalUnquoteSplicing,
     MissingExpression,
+    IllegalSyntaxRules,
+    IllegalDefineSyntax,
 }
 
 #[derive(Debug, PartialEq)]
@@ -49,9 +54,15 @@ impl fmt::Display for ParserError {
                 write!(f, "Illegal variable name {s}")
             }
             ParserErrorKind::IllegalDefine => write!(f, "Definition not allowed here"),
-            ParserErrorKind::IllegalUnquote => write!(f, "Unquote not allowed here"),
+            ParserErrorKind::IllegalUnquote => write!(f, "unquote not allowed here"),
             ParserErrorKind::IllegalUnquoteSplicing => {
-                write!(f, "Unquote-splicing not allowed here")
+                write!(f, "unquote-splicing not allowed here")
+            }
+            ParserErrorKind::IllegalDefineSyntax => {
+                write!(f, "define-syntax only allowed on top level")
+            }
+            ParserErrorKind::IllegalSyntaxRules => {
+                write!(f, "syntax-rules not allowed here")
             }
             ParserErrorKind::MissingExpression => write!(f, "Missing expression"),
         }
@@ -81,6 +92,8 @@ fn is_keyword(symb: Symbol) -> bool {
             "define",
             "unquote",
             "unquote-splicing",
+            "define-syntax",
+            "syntax-rules",
         ]
         .into_iter()
         .map(Symbol::from)
@@ -230,209 +243,6 @@ fn process_body<I: Iterator<Item = Datum>>(data: I) -> Result<Vec<ExprOrDef>, Pa
     }
 }
 
-mod quasiquote {
-    use super::*;
-
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    enum ListType {
-        Proper,
-        Improper,
-        Vector,
-    }
-
-    fn process_qq_list(
-        mut li: impl Iterator<Item = Datum>,
-        qq_level: u32,
-        list_type: ListType,
-    ) -> Result<(Vec<Rc<Expr>>, bool), ParserError> {
-        let mut parts = vec![];
-        let mut curr = vec![];
-        let mut to_push = None;
-        while let Some(el) = li.next() {
-            match el {
-                Datum::Compound(CompoundDatum::List(ListKind::Proper(l)))
-                    if matches!(
-                        l.first(),
-                        Some(Datum::Simple(SimpleDatum::Symbol(s)))
-                            if *s == "unquote-splicing".into()
-                    ) && qq_level == 0 =>
-                {
-                    if !curr.is_empty() {
-                        parts.push(Rc::new(Expr::ProcCall {
-                            operator: Rc::new(Expr::Variable("list".into())),
-                            operands: curr,
-                        }));
-                        curr = vec![];
-                    }
-                    let mut us = l.into_iter().skip(1);
-                    let arg = us.next().ok_or_else(|| ParserError {
-                        kind: ParserErrorKind::BadSyntax("unquote-splicing".into()),
-                    })?;
-                    if us.next().is_some() {
-                        return Err(ParserError {
-                            kind: ParserErrorKind::BadSyntax("unquote-splicing".into()),
-                        });
-                    }
-                    parts.push(parse_expr(arg)?);
-                }
-                _ => {
-                    if let Datum::Simple(SimpleDatum::Symbol(s)) = &el {
-                        let (is_unquote, is_unquote_splicing, is_quasiquote) = (
-                            *s == "unquote".into(),
-                            *s == "unquote-splicing".into(),
-                            *s == "quasiquote".into(),
-                        );
-                        if is_unquote || is_unquote_splicing || is_quasiquote {
-                            match list_type {
-                                ListType::Proper => {
-                                    to_push = Some(process_qq(
-                                        Datum::Compound(CompoundDatum::List(ListKind::Proper(
-                                            std::iter::once(el).chain(li).collect(),
-                                        ))),
-                                        qq_level,
-                                    )?);
-                                    break;
-                                }
-                                ListType::Improper => {
-                                    if qq_level == 0 && !is_quasiquote {
-                                        return Err(ParserError {
-                                            kind: ParserErrorKind::BadSyntax(*s),
-                                        });
-                                    }
-                                }
-                                ListType::Vector => {}
-                            }
-                        }
-                    }
-                    curr.push(process_qq(el, qq_level)?);
-                }
-            }
-        }
-        if !curr.is_empty() {
-            parts.push(Rc::new(Expr::ProcCall {
-                operator: Rc::new(Expr::Variable(
-                    (if list_type == ListType::Vector && parts.is_empty() {
-                        "vector"
-                    } else {
-                        "list"
-                    })
-                    .into(),
-                )),
-                operands: curr,
-            }));
-        }
-        if let Some(to_push) = to_push {
-            parts.push(to_push);
-            Ok((parts, true))
-        } else {
-            Ok((parts, false))
-        }
-    }
-
-    pub(super) fn process_qq(datum: Datum, qq_level: u32) -> Result<Rc<Expr>, ParserError> {
-        match datum {
-            Datum::Simple(_) | Datum::EmptyList => {
-                Ok(Rc::new(Expr::Literal(LiteralKind::Quotation(datum))))
-            }
-            Datum::Compound(CompoundDatum::List(list)) => match list {
-                ListKind::Proper(list) => {
-                    if let Some(Datum::Simple(SimpleDatum::Symbol(s))) = list.first() {
-                        let (is_unquote, is_unquote_splicing, is_quasiquote) = (
-                            *s == "unquote".into(),
-                            *s == "unquote-splicing".into(),
-                            *s == "quasiquote".into(),
-                        );
-                        if is_unquote || is_unquote_splicing || is_quasiquote {
-                            let s = *s;
-                            let mut li = list.into_iter().skip(1);
-                            if qq_level == 0 && !is_quasiquote {
-                                let arg = li.next().ok_or(ParserError {
-                                    kind: ParserErrorKind::BadSyntax(s),
-                                })?;
-                                if li.next().is_some() {
-                                    return Err(ParserError {
-                                        kind: ParserErrorKind::BadSyntax(s),
-                                    });
-                                }
-                                if is_unquote_splicing {
-                                    return Err(ParserError {
-                                        kind: ParserErrorKind::IllegalUnquoteSplicing,
-                                    });
-                                }
-                                return parse_expr(arg);
-                            }
-                            let args: Vec<_> = li.collect();
-                            let valid = args.len() == 1;
-                            return Ok(Rc::new(Expr::ProcCall {
-                                operator: Rc::new(Expr::Variable("cons".into())),
-                                operands: vec![
-                                    Rc::new(Expr::Literal(LiteralKind::Quotation(Datum::Simple(
-                                        SimpleDatum::Symbol(s),
-                                    )))),
-                                    process_qq(
-                                        Datum::Compound(CompoundDatum::List(ListKind::Proper(
-                                            args,
-                                        ))),
-                                        if !valid {
-                                            qq_level
-                                        } else if is_quasiquote {
-                                            qq_level + 1
-                                        } else {
-                                            qq_level - 1
-                                        },
-                                    )?,
-                                ],
-                            }));
-                        }
-                    }
-                    let (mut parts, is_improper) =
-                        process_qq_list(list.into_iter(), qq_level, ListType::Proper)?;
-                    if parts.len() == 1 {
-                        Ok(parts.into_iter().next().unwrap())
-                    } else {
-                        if !is_improper {
-                            parts.push(Rc::new(Expr::Literal(LiteralKind::Quotation(
-                                Datum::EmptyList,
-                            ))));
-                        }
-                        Ok(Rc::new(Expr::ProcCall {
-                            operator: Rc::new(Expr::Variable("append".into())),
-                            operands: parts,
-                        }))
-                    }
-                }
-                ListKind::Improper(list, last) => {
-                    let (mut parts, _) =
-                        process_qq_list(list.into_iter(), qq_level, ListType::Improper)?;
-                    parts.push(process_qq(*last, qq_level)?);
-                    Ok(Rc::new(Expr::ProcCall {
-                        operator: Rc::new(Expr::Variable("append".into())),
-                        operands: parts,
-                    }))
-                }
-            },
-            Datum::Compound(CompoundDatum::Vector(vector)) => {
-                let (mut parts, _) =
-                    process_qq_list(vector.into_iter(), qq_level, ListType::Vector)?;
-                if parts.len() == 1 {
-                    Ok(parts.into_iter().next().unwrap())
-                } else {
-                    parts.push(Rc::new(Expr::Literal(LiteralKind::Quotation(
-                        Datum::EmptyList,
-                    ))));
-                    Ok(Rc::new(Expr::ProcCall {
-                        operator: Rc::new(Expr::Variable("list->vector".into())),
-                        operands: vec![Rc::new(Expr::ProcCall {
-                            operator: Rc::new(Expr::Variable("append".into())),
-                            operands: parts,
-                        })],
-                    }))
-                }
-            }
-        }
-    }
-}
-
 fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
     kw: Symbol,
     mut operands: I,
@@ -537,7 +347,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                         .into_iter()
                         .map(|eod| match eod {
                             ExprOrDef::Expr(e) => e,
-                            _ => unreachable!("should not encounter non-definition"),
+                            _ => unreachable!("should not encounter non-expression"),
                         })
                         .collect(),
                 )))
@@ -1016,6 +826,12 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
         _ if kw == "unquote-splicing".into() => Err(ParserError {
             kind: ParserErrorKind::IllegalUnquoteSplicing,
         }),
+        _ if kw == "define-syntax".into() => Err(ParserError {
+            kind: ParserErrorKind::IllegalDefineSyntax,
+        }),
+        _ if kw == "syntax-rules".into() => Err(ParserError {
+            kind: ParserErrorKind::IllegalSyntaxRules,
+        }),
         _ => unreachable!("keyword should have been handled"),
     }
 }
@@ -1026,6 +842,51 @@ fn parse_expr(datum: Datum) -> Result<Rc<Expr>, ParserError> {
         _ => Err(ParserError {
             kind: ParserErrorKind::IllegalDefine,
         }),
+    }
+}
+
+#[derive(Debug)]
+pub enum ParserOutput {
+    ExprOrDef(ExprOrDef),
+    SyntaxDefinition,
+}
+
+#[derive(Debug)]
+pub struct ParserResult(Result<ParserOutput, ParserError>);
+
+impl IntoIterator for ParserResult {
+    type Item = Result<ExprOrDef, ParserError>;
+    type IntoIter = ParserResultIntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        ParserResultIntoIter(Some(self))
+    }
+}
+
+#[derive(Debug)]
+pub struct ParserResultIntoIter(Option<ParserResult>);
+
+impl Iterator for ParserResultIntoIter {
+    type Item = Result<ExprOrDef, ParserError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.0.take()?.0 {
+            Ok(ParserOutput::ExprOrDef(eod)) => Some(Ok(eod)),
+            Ok(ParserOutput::SyntaxDefinition) => None,
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
+
+pub fn parse_top_level(datum: Datum) -> ParserResult {
+    match datum {
+        Datum::Compound(CompoundDatum::List(ListKind::Proper(list)))
+            if list.first()
+                == Some(&Datum::Simple(SimpleDatum::Symbol("define-syntax".into()))) =>
+        {
+            ParserResult(Ok(ParserOutput::SyntaxDefinition))
+        }
+        other => ParserResult(parse(other).map(ParserOutput::ExprOrDef)),
     }
 }
 
@@ -2406,5 +2267,19 @@ mod tests {
                 kind: ParserErrorKind::IllegalUnquoteSplicing
             })
         );
+    }
+
+    #[test]
+    fn define_syntax_top_level() {
+        assert_eq!(
+            parse(proper_list_datum![
+                symbol_datum!("if"),
+                proper_list_datum![symbol_datum!("define-syntax")],
+                bool_datum!(false)
+            ]),
+            Err(ParserError {
+                kind: ParserErrorKind::IllegalDefineSyntax
+            })
+        )
     }
 }
