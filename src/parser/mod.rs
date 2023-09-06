@@ -15,6 +15,8 @@ use crate::interner::Symbol;
 use once_cell::sync::Lazy;
 use uuid::Uuid;
 
+use self::macros::Macro;
+
 fn gen_temp_name() -> Symbol {
     if cfg!(test) {
         "#temp_var".into()
@@ -36,6 +38,7 @@ pub enum ParserErrorKind {
     MissingExpression,
     IllegalSyntaxRules,
     IllegalDefineSyntax,
+    MissingSyntaxRules,
 }
 
 #[derive(Debug, PartialEq)]
@@ -65,6 +68,9 @@ impl fmt::Display for ParserError {
             }
             ParserErrorKind::IllegalSyntaxRules => {
                 write!(f, "syntax-rules not allowed here")
+            }
+            ParserErrorKind::MissingSyntaxRules => {
+                write!(f, "Expected syntax-rules for macro definition")
             }
             ParserErrorKind::MissingExpression => write!(f, "Missing expression"),
         }
@@ -895,7 +901,24 @@ pub fn parse_top_level(datum: Datum, env: &Rc<RefCell<Env>>) -> ParserResult {
             if list.first()
                 == Some(&Datum::Simple(SimpleDatum::Symbol("define-syntax".into()))) =>
         {
-            ParserResult(Ok(ParserOutput::SyntaxDefinition))
+            let bs_err = || ParserError {
+                kind: ParserErrorKind::BadSyntax("define-syntax".into()),
+            };
+            let mut it = list.into_iter().skip(1);
+            let (Some(Datum::Simple(SimpleDatum::Symbol(name))), Some(rules), None) =
+                (it.next(), it.next(), it.next())
+            else {
+                return ParserResult(Err(bs_err()));
+            };
+            let transformer = macros::Transformer::try_from(rules);
+            match transformer {
+                Ok(transformer) => {
+                    env.borrow_mut()
+                        .insert_macro(name, Macro::new(transformer, env.clone()));
+                    ParserResult(Ok(ParserOutput::SyntaxDefinition))
+                }
+                Err(e) => ParserResult(Err(e)),
+            }
         }
         other => ParserResult(parse(other, env).map(ParserOutput::ExprOrDef)),
     }
@@ -930,24 +953,24 @@ pub fn parse(datum: Datum, env: &Rc<RefCell<Env>>) -> Result<ExprOrDef, ParserEr
                     let first = li.next().ok_or(ParserError {
                         kind: ParserErrorKind::IllegalEmptyList,
                     })?;
-                    match first {
-                        Datum::Simple(SimpleDatum::Symbol(kw)) if is_keyword(kw) => {
-                            process_keyword(kw, li, env)
-                        }
-                        _ => {
-                            let operator = parse_expr(first, env)?;
-                            let rest = li
-                                .map(|e| match parse_expr(e, env) {
-                                    Ok(expr) => Ok(expr),
-                                    Err(err) => Err(err),
-                                })
-                                .collect::<Result<Vec<_>, _>>()?;
-                            Ok(ExprOrDef::new_expr(Expr::ProcCall {
-                                operator,
-                                operands: rest,
-                            }))
+                    if let Datum::Simple(SimpleDatum::Symbol(sym)) = first {
+                        if is_keyword(sym) {
+                            return process_keyword(sym, li, env);
+                        } else if let Some(mac) = env.borrow().get_macro(sym) {
+                            todo!("expand macro")
                         }
                     }
+                    let operator = parse_expr(first, env)?;
+                    let rest = li
+                        .map(|e| match parse_expr(e, env) {
+                            Ok(expr) => Ok(expr),
+                            Err(err) => Err(err),
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(ExprOrDef::new_expr(Expr::ProcCall {
+                        operator,
+                        operands: rest,
+                    }))
                 }
                 ListKind::Improper(_, _) => Err(ParserError {
                     kind: ParserErrorKind::IllegalImproperList,
