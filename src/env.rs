@@ -4,13 +4,13 @@ use std::{cell::RefCell, rc::Rc};
 use crate::eval_str;
 use crate::interner::Symbol;
 use crate::object::ObjectRef;
-use crate::parser::macros::Transformer;
+use crate::parser::macros::Macro;
 use crate::primitives::{primitives, PRELUDE};
 
 #[derive(Debug, Clone)]
 pub enum EnvBinding {
     Variable(ObjectRef),
-    Macro(Rc<Transformer>),
+    Macro(Rc<Macro>),
 }
 
 #[derive(Debug, Clone)]
@@ -77,5 +77,20 @@ impl Env {
                 None => false,
             }
         }
+    }
+
+    pub fn get_macro(&self, name: Symbol) -> Option<Rc<Macro>> {
+        match self.bindings.get(&name) {
+            Some(EnvBinding::Macro(mac)) => Some(mac.clone()),
+            Some(EnvBinding::Variable(_)) => None,
+            None => match &self.parent {
+                Some(parent) => parent.borrow().get_macro(name),
+                None => None,
+            },
+        }
+    }
+
+    pub fn insert_macro(&mut self, name: Symbol, mac: Macro) {
+        self.bindings.insert(name, EnvBinding::Macro(Rc::new(mac)));
     }
 }
