@@ -18,9 +18,9 @@ impl Macro {
         Self { transformer, env }
     }
 }
-fn bs_err() -> ParserError {
+fn bs_err(i: i32) -> ParserError {
     ParserError {
-        kind: ParserErrorKind::BadSyntax("syntax-rules".into()),
+        kind: ParserErrorKind::BadSyntax(format!("syntax-rules {i}").into()),
     }
 }
 
@@ -45,16 +45,17 @@ impl TryFrom<Datum> for Transformer {
                 kind: ParserErrorKind::MissingSyntaxRules,
             });
         }
-        let Some(Datum::Compound(CompoundDatum::List(ListKind::Proper(literals)))) = it.next()
-        else {
-            return Err(bs_err());
+        let literals = match it.next() {
+            Some(Datum::Compound(CompoundDatum::List(ListKind::Proper(literals)))) => literals,
+            Some(Datum::EmptyList) => Default::default(),
+            _ => return Err(bs_err(0)),
         };
         Ok(Self {
             literals: literals
                 .into_iter()
                 .map(|d| match d {
                     Datum::Simple(SimpleDatum::Symbol(s)) => Ok(s),
-                    _ => Err(bs_err()),
+                    _ => Err(bs_err(1)),
                 })
                 .collect::<Result<Vec<_>, _>>()?,
             rules: it
@@ -76,11 +77,11 @@ impl TryFrom<Datum> for SyntaxRule {
     fn try_from(datum: Datum) -> Result<Self, Self::Error> {
         let Datum::Compound(CompoundDatum::List(ListKind::Proper(pattern_template_datum))) = datum
         else {
-            return Err(bs_err());
+            return Err(bs_err(2));
         };
         let mut it = pattern_template_datum.into_iter();
         let (Some(pattern), Some(template), None) = (it.next(), it.next(), it.next()) else {
-            return Err(bs_err());
+            return Err(bs_err(3));
         };
         Ok(Self {
             pattern: ListPattern::try_from(pattern)?,
@@ -101,7 +102,7 @@ impl TryFrom<Datum> for ListPattern {
 
     fn try_from(datum: Datum) -> Result<Self, Self::Error> {
         let Datum::Compound(CompoundDatum::List(list)) = datum else {
-            return Err(bs_err());
+            return Err(bs_err(4));
         };
         match list {
             ListKind::Proper(l) => match l.last() {
@@ -120,7 +121,7 @@ impl TryFrom<Datum> for ListPattern {
                         .map(Pattern::try_from)
                         .collect::<Result<Vec<_>, _>>()?,
                 )),
-                None => Err(bs_err()),
+                None => Err(bs_err(5)),
             },
             ListKind::Improper(l, e) => Ok(ListPattern::Improper(
                 l.into_iter()
@@ -143,7 +144,7 @@ impl TryFrom<Datum> for Pattern {
 
     fn try_from(datum: Datum) -> Result<Self, Self::Error> {
         match datum {
-            Datum::Simple(SimpleDatum::Symbol(s)) if s == "...".into() => Err(bs_err()),
+            Datum::Simple(SimpleDatum::Symbol(s)) if s == "...".into() => Err(bs_err(6)),
             Datum::Simple(s) => Ok(Pattern::Simple(s)),
             compound => Ok(Pattern::List(compound.try_into()?)),
         }
@@ -161,7 +162,7 @@ impl TryFrom<Datum> for Template {
 
     fn try_from(datum: Datum) -> Result<Self, Self::Error> {
         match datum {
-            Datum::Simple(SimpleDatum::Symbol(s)) if s == "...".into() => Err(bs_err()),
+            Datum::Simple(SimpleDatum::Symbol(s)) if s == "...".into() => Err(bs_err(7)),
             Datum::Simple(s) => Ok(Template::Simple(s)),
             compound => Ok(Template::List(compound.try_into()?)),
         }
@@ -179,7 +180,7 @@ impl TryFrom<Datum> for ListTemplate {
 
     fn try_from(datum: Datum) -> Result<Self, Self::Error> {
         let Datum::Compound(CompoundDatum::List(list)) = datum else {
-            return Err(bs_err());
+            return Err(bs_err(8));
         };
         let (l, e) = match list {
             ListKind::Proper(l) => (l, None),
