@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::env;
 use std::io;
 use std::path::Path;
@@ -7,7 +6,7 @@ use std::rc::Rc;
 
 use myscheme::env::Env;
 
-fn run_file<P: AsRef<Path>>(path: P, env: Rc<RefCell<Env>>, interactive: bool) -> io::Result<()> {
+fn run_file<P: AsRef<Path>>(path: P, env: Rc<Env>, interactive: bool) -> io::Result<()> {
     let s = std::fs::read_to_string(path)?;
     myscheme::write_results(myscheme::eval_str(&s, env.clone()));
     if interactive {

@@ -1,6 +1,6 @@
 use std::fmt;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{cell::RefCell, rc::Rc};
 
 use crate::cont::{Acc, Cont, Frame, State, Wind};
 use crate::env::Env;
@@ -100,7 +100,7 @@ impl Call for Primitive {
 pub struct UserDefined {
     id: usize,
     data: Rc<ProcData>,
-    env: Rc<RefCell<Env>>,
+    env: Rc<Env>,
 }
 
 impl fmt::Debug for UserDefined {
@@ -119,7 +119,7 @@ impl fmt::Display for UserDefined {
 }
 
 impl UserDefined {
-    pub fn new(data: Rc<ProcData>, env: Rc<RefCell<Env>>) -> Result<Self, EvalError> {
+    pub fn new(data: Rc<ProcData>, env: Rc<Env>) -> Result<Self, EvalError> {
         let args = data.args.iter().chain(data.rest.iter());
         let mut set = std::collections::HashSet::new();
         for arg in args {
@@ -158,19 +158,17 @@ impl Call for UserDefined {
                 got: args.len(),
             })));
         }
-        let env = Rc::new(RefCell::new(Env::new(Some(self.env.clone()))));
-        let mut benv = env.borrow_mut();
+        let env = Env::new_empty(Some(self.env.clone()));
         let mut args_iter = args.into_iter();
         for (arg, val) in self.data.args.iter().zip(args_iter.by_ref()) {
-            benv.insert(*arg, val);
+            env.insert(*arg, val);
         }
         if let Some(rest) = &self.data.rest {
-            benv.insert(
+            env.insert(
                 *rest,
                 args_iter.rfold(ObjectRef::EmptyList, |a, b| ObjectRef::new_pair(b, a)),
             );
         }
-        drop(benv);
         Bouncer::Bounce(State {
             acc: Acc::Obj(Ok(ObjectRef::Undefined)),
             cont: Cont::from_body(&self.data.body, None),

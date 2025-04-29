@@ -14,56 +14,58 @@ pub enum EnvBinding {
 }
 
 #[derive(Debug, Clone)]
-pub struct Env {
-    parent: Option<Rc<RefCell<Env>>>,
+struct EnvInner {
+    parent: Option<Rc<Env>>,
     bindings: HashMap<Symbol, EnvBinding>,
 }
 
+#[derive(Debug, Clone)]
+pub struct Env(RefCell<EnvInner>);
+
 impl Env {
-    pub fn new(parent: Option<Rc<RefCell<Env>>>) -> Self {
-        Self {
-            parent,
-            bindings: HashMap::new(),
-        }
+    pub fn new(parent: Option<Rc<Env>>, bindings: HashMap<Symbol, EnvBinding>) -> Rc<Self> {
+        Rc::new(Self(RefCell::new(EnvInner { parent, bindings })))
     }
 
-    pub fn empty() -> Rc<RefCell<Self>> {
-        Rc::new(RefCell::new(Self::new(None)))
+    pub fn new_empty(parent: Option<Rc<Env>>) -> Rc<Self> {
+        Self::new(parent, HashMap::new())
     }
 
-    pub fn primitives() -> Rc<RefCell<Self>> {
+    pub fn primitives() -> Rc<Self> {
         thread_local! {
-            static PRIMITIVES_ENV: Rc<RefCell<Env>> = {
-                let env = Rc::new(RefCell::new(Env {
-                    parent: None,
-                    bindings: primitives(),
-                }));
-                eval_str(&PRELUDE, env.clone()).unwrap_or_else(|e| {
+            static PRIMITIVES_ENV: Rc<Env> = {
+                let env = Env::new(None, primitives());
+                eval_str(&PRELUDE, Rc::clone(&env)).unwrap_or_else(|e| {
                     panic!("Error while evaluating prelude: {e}");
                 });
                 env
             }
         }
-        PRIMITIVES_ENV.with(|env| Rc::new((**env).clone()))
+        PRIMITIVES_ENV.with(|env| Rc::new(Self::clone(env)))
     }
 
     pub fn get(&self, name: Symbol) -> Option<ObjectRef> {
-        match self.bindings.get(&name) {
+        let inner = self.0.borrow();
+        match inner.bindings.get(&name) {
             Some(EnvBinding::Variable(obj)) => Some(obj.clone()),
             Some(EnvBinding::Macro(_)) => None,
-            None => match &self.parent {
-                Some(parent) => parent.borrow().get(name),
+            None => match &inner.parent {
+                Some(parent) => parent.get(name),
                 None => None,
             },
         }
     }
 
-    pub fn insert(&mut self, name: Symbol, val: ObjectRef) {
-        self.bindings.insert(name, EnvBinding::Variable(val));
+    pub fn insert(&self, name: Symbol, val: ObjectRef) {
+        self.0
+            .borrow_mut()
+            .bindings
+            .insert(name, EnvBinding::Variable(val));
     }
 
-    pub fn set(&mut self, name: Symbol, val: ObjectRef) -> bool {
-        if let Entry::Occupied(mut e) = self.bindings.entry(name) {
+    pub fn set(&self, name: Symbol, val: ObjectRef) -> bool {
+        let mut inner = self.0.borrow_mut();
+        if let Entry::Occupied(mut e) = inner.bindings.entry(name) {
             match e.get() {
                 EnvBinding::Variable(_) => {
                     e.insert(EnvBinding::Variable(val));
@@ -72,25 +74,29 @@ impl Env {
                 EnvBinding::Macro(_) => false,
             }
         } else {
-            match &self.parent {
-                Some(parent) => parent.borrow_mut().set(name, val),
+            match &inner.parent {
+                Some(parent) => parent.set(name, val),
                 None => false,
             }
         }
     }
 
     pub fn get_macro(&self, name: Symbol) -> Option<Rc<Macro>> {
-        match self.bindings.get(&name) {
-            Some(EnvBinding::Macro(mac)) => Some(mac.clone()),
+        let inner = self.0.borrow();
+        match inner.bindings.get(&name) {
+            Some(EnvBinding::Macro(mac)) => Some(Rc::clone(mac)),
             Some(EnvBinding::Variable(_)) => None,
-            None => match &self.parent {
-                Some(parent) => parent.borrow().get_macro(name),
+            None => match &inner.parent {
+                Some(parent) => parent.get_macro(name),
                 None => None,
             },
         }
     }
 
-    pub fn insert_macro(&mut self, name: Symbol, mac: Macro) {
-        self.bindings.insert(name, EnvBinding::Macro(Rc::new(mac)));
+    pub fn insert_macro(&self, name: Symbol, mac: Macro) {
+        self.0
+            .borrow_mut()
+            .bindings
+            .insert(name, EnvBinding::Macro(Rc::new(mac)));
     }
 }

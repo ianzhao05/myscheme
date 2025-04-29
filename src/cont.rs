@@ -1,5 +1,5 @@
 use std::fmt;
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 
 use crate::env::Env;
 use crate::evaler::EvalError;
@@ -17,14 +17,14 @@ pub enum Acc {
 pub struct State {
     pub acc: Acc,
     pub cont: Rc<Cont>,
-    pub env: Rc<RefCell<Env>>,
+    pub env: Rc<Env>,
     pub rib: Vec<ObjectRef>,
     pub stack: Option<Rc<Frame>>,
     pub winds: Option<Rc<Wind>>,
 }
 
 impl State {
-    pub fn new(acc: Acc, env: Rc<RefCell<Env>>, cont: Option<Rc<Cont>>) -> Self {
+    pub fn new(acc: Acc, env: Rc<Env>, cont: Option<Rc<Cont>>) -> Self {
         Self {
             acc,
             cont: match cont {
@@ -42,7 +42,7 @@ impl State {
 #[derive(Clone)]
 pub struct Frame {
     pub cont: Rc<Cont>,
-    pub env: Rc<RefCell<Env>>,
+    pub env: Rc<Env>,
     pub rib: Vec<ObjectRef>,
     pub next: Option<Rc<Frame>>,
 }
