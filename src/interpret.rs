@@ -1,5 +1,5 @@
 use std::io::{self, Write};
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 
 use crate::env::Env;
 use crate::err::SchemeError;
@@ -22,7 +22,7 @@ where
     }
 }
 
-pub fn eval_str(s: &str, env: Rc<RefCell<Env>>) -> Result<Vec<ObjectRef>, SchemeError> {
+pub fn eval_str(s: &str, env: Rc<Env>) -> Result<Vec<ObjectRef>, SchemeError> {
     let (mut le, mut re, mut pe) = (Ok(()), Ok(()), Ok(()));
     let tokens = Lexer::new(s).scan(&mut le, until_err);
     let data = Reader::new(tokens).scan(&mut re, until_err);
@@ -38,10 +38,7 @@ pub fn eval_str(s: &str, env: Rc<RefCell<Env>>) -> Result<Vec<ObjectRef>, Scheme
     res
 }
 
-pub fn eval_tokens(
-    tokens: Vec<Token>,
-    env: Rc<RefCell<Env>>,
-) -> Result<Vec<ObjectRef>, SchemeError> {
+pub fn eval_tokens(tokens: Vec<Token>, env: Rc<Env>) -> Result<Vec<ObjectRef>, SchemeError> {
     let (mut re, mut pe) = (Ok(()), Ok(()));
     let data = Reader::new(tokens.into_iter()).scan(&mut re, until_err);
     let exprs = data
@@ -71,7 +68,7 @@ pub fn write_results(res: Result<Vec<ObjectRef>, SchemeError>) {
     }
 }
 
-pub fn repl(env: Rc<RefCell<Env>>) -> std::io::Result<()> {
+pub fn repl(env: Rc<Env>) -> std::io::Result<()> {
     let mut sreader = SexpReader::new(String::new());
     loop {
         if sreader.buf.is_empty() {

@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::datum::{CompoundDatum, Datum, ListKind, SimpleDatum};
@@ -10,11 +9,11 @@ use super::{ParserError, ParserErrorKind};
 #[derive(Debug, Clone)]
 pub struct Macro {
     transformer: Transformer,
-    env: Rc<RefCell<Env>>,
+    env: Rc<Env>,
 }
 
 impl Macro {
-    pub fn new(transformer: Transformer, env: Rc<RefCell<Env>>) -> Self {
+    pub fn new(transformer: Transformer, env: Rc<Env>) -> Self {
         Self { transformer, env }
     }
 }

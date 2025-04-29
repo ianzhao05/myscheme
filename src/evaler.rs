@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::fmt;
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 
 use crate::cont::{Acc, Cont, Frame, State, Wind, WindsOp};
 use crate::datum::SimpleDatum;
@@ -103,7 +103,7 @@ pub(crate) fn eval_expr(state: State) -> Bouncer {
         } => {
             match &*expr {
                 Expr::Variable(v) => {
-                    let res = match env.borrow().get(*v) {
+                    let res = match env.get(*v) {
                         Some(obj) => match obj {
                             ObjectRef::Undefined => {
                                 Err(EvalError::new(EvalErrorKind::UndefinedVariable(*v)))
@@ -314,7 +314,7 @@ pub(crate) fn eval_expr(state: State) -> Bouncer {
                     })
                 }
                 Cont::SimpleLet { arg, body, cont } => {
-                    env.borrow_mut().insert(*arg, obj);
+                    env.insert(*arg, obj);
                     Bouncer::Bounce(State {
                         acc: Acc::Expr(body.clone()),
                         cont: cont.clone(),
@@ -364,7 +364,7 @@ pub(crate) fn eval_expr(state: State) -> Bouncer {
                     }
                 }
                 Cont::Assignment { variable, cont } => {
-                    if env.borrow_mut().set(*variable, obj) {
+                    if env.set(*variable, obj) {
                         Bouncer::Bounce(State {
                             acc: Acc::Obj(Ok(ObjectRef::Void)),
                             cont: cont.clone(),
@@ -388,7 +388,7 @@ pub(crate) fn eval_expr(state: State) -> Bouncer {
                     winds,
                 }),
                 Cont::Define { name, cont } => {
-                    env.borrow_mut().insert(*name, obj);
+                    env.insert(*name, obj);
                     Bouncer::Bounce(State {
                         acc: Acc::Obj(Ok(ObjectRef::Void)),
                         cont: cont.clone(),
@@ -405,7 +405,7 @@ pub(crate) fn eval_expr(state: State) -> Bouncer {
                             Err(e) => return Bouncer::Land(Err(e)),
                         },
                     ));
-                    env.borrow_mut().insert(*name, ObjectRef::new(proc));
+                    env.insert(*name, ObjectRef::new(proc));
                     Bouncer::Bounce(State {
                         acc: Acc::Obj(Ok(ObjectRef::Void)),
                         cont: cont.clone(),
@@ -518,7 +518,7 @@ pub(crate) fn eval_expr(state: State) -> Bouncer {
     }
 }
 
-fn eval_def(def: Rc<Definition>, env: Rc<RefCell<Env>>) -> Result<ObjectRef, EvalError> {
+fn eval_def(def: Rc<Definition>, env: Rc<Env>) -> Result<ObjectRef, EvalError> {
     match &*def {
         Definition::Variable { name, value } => trampoline(Bouncer::Bounce(State::new(
             Acc::Expr(value.clone()),
@@ -533,7 +533,7 @@ fn eval_def(def: Rc<Definition>, env: Rc<RefCell<Env>>) -> Result<ObjectRef, Eva
                 data.clone(),
                 env.clone(),
             )?));
-            env.borrow_mut().insert(*name, ObjectRef::new(proc));
+            env.insert(*name, ObjectRef::new(proc));
             Ok(ObjectRef::Void)
         }
         Definition::Begin(defs) => trampoline(Bouncer::Bounce(State::new(
@@ -544,7 +544,7 @@ fn eval_def(def: Rc<Definition>, env: Rc<RefCell<Env>>) -> Result<ObjectRef, Eva
     }
 }
 
-pub fn eval(eod: ExprOrDef, env: Rc<RefCell<Env>>) -> Result<ObjectRef, EvalError> {
+pub fn eval(eod: ExprOrDef, env: Rc<Env>) -> Result<ObjectRef, EvalError> {
     match eod {
         ExprOrDef::Expr(expr) => Ok(trampoline(Bouncer::Bounce(State::new(
             Acc::Expr(expr),
@@ -567,7 +567,7 @@ mod tests {
 
     #[test]
     fn atoms() {
-        let env = Rc::new(RefCell::new(Env::new(None)));
+        let env = Env::new_empty(None);
 
         assert_eq!(
             eval(ExprOrDef::new_expr(int_expr!(1)), env.clone()),
@@ -582,7 +582,7 @@ mod tests {
 
     #[test]
     fn quotes() {
-        let env = Rc::new(RefCell::new(Env::new(None)));
+        let env = Env::new_empty(None);
 
         assert_eq!(
             eval(
@@ -654,7 +654,7 @@ mod tests {
 
     #[test]
     fn simple_defines() {
-        let env = Rc::new(RefCell::new(Env::new(None)));
+        let env = Env::new_empty(None);
 
         assert_eq!(
             eval(ExprOrDef::new_expr(var_expr!("a")), env.clone()),
@@ -703,7 +703,7 @@ mod tests {
 
     #[test]
     fn assignments() {
-        let env = Rc::new(RefCell::new(Env::new(None)));
+        let env = Env::new_empty(None);
         assert_eq!(
             eval(
                 ExprOrDef::new_def(Definition::Variable {
@@ -732,7 +732,7 @@ mod tests {
 
     #[test]
     fn proc_defines() {
-        let env = Rc::new(RefCell::new(Env::new(None)));
+        let env = Env::new_empty(None);
 
         assert_eq!(
             eval(
@@ -815,7 +815,7 @@ mod tests {
 
     #[test]
     fn begins() {
-        let env = Rc::new(RefCell::new(Env::new(None)));
+        let env = Env::new_empty(None);
 
         assert_eq!(
             eval(

@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -118,7 +117,7 @@ fn dynamic_wind(state: State) -> Bouncer {
         )
     };
     let sym = Symbol::from("res");
-    let env = Rc::new(RefCell::new(Env::new(Some(env))));
+    let env = Env::new_empty(Some(env));
     Bouncer::Bounce(State {
         acc: Acc::Obj(Ok(in_thunk.clone())),
         cont: Rc::new(Cont::Apply),

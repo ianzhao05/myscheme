@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -41,7 +40,7 @@ fn eval(state: State) -> Bouncer {
         cont: Rc::new(Cont::Return),
         env: match env_spec {
             EnvSpec::SchemeReport => Env::primitives(),
-            EnvSpec::Null => Rc::new(RefCell::new(Env::new(None))),
+            EnvSpec::Null => Env::new_empty(None),
         },
         rib: vec![],
         stack,

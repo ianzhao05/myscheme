@@ -1,7 +1,6 @@
 pub mod macros;
 mod quasiquote;
 
-use std::cell::RefCell;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
@@ -114,7 +113,7 @@ fn process_proc<I: DoubleEndedIterator<Item = Datum>>(
     list: ListKind,
     body: I,
     named: bool,
-    env: &Rc<RefCell<Env>>,
+    env: &Rc<Env>,
 ) -> Result<(Option<Symbol>, ProcData), ParserError> {
     let bs_err = || ParserError {
         kind: ParserErrorKind::BadSyntax((if named { "define" } else { "lambda" }).into()),
@@ -189,7 +188,7 @@ fn process_proc<I: DoubleEndedIterator<Item = Datum>>(
 fn process_define<I: DoubleEndedIterator<Item = Datum>>(
     var: Datum,
     mut body: I,
-    env: &Rc<RefCell<Env>>,
+    env: &Rc<Env>,
 ) -> Result<Rc<Definition>, ParserError> {
     let bs_err = || ParserError {
         kind: ParserErrorKind::BadSyntax("define".into()),
@@ -226,7 +225,7 @@ fn process_define<I: DoubleEndedIterator<Item = Datum>>(
 
 fn process_body<I: Iterator<Item = Datum>>(
     data: I,
-    env: &Rc<RefCell<Env>>,
+    env: &Rc<Env>,
 ) -> Result<Vec<ExprOrDef>, ParserError> {
     let mut eods = Vec::new();
     let mut last_is_expr = false;
@@ -259,7 +258,7 @@ fn process_body<I: Iterator<Item = Datum>>(
 fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
     kw: Symbol,
     mut operands: I,
-    env: &Rc<RefCell<Env>>,
+    env: &Rc<Env>,
 ) -> Result<ExprOrDef, ParserError> {
     let bs_err = || ParserError {
         kind: ParserErrorKind::BadSyntax(kw),
@@ -853,7 +852,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
     }
 }
 
-fn parse_expr(datum: Datum, env: &Rc<RefCell<Env>>) -> Result<Rc<Expr>, ParserError> {
+fn parse_expr(datum: Datum, env: &Rc<Env>) -> Result<Rc<Expr>, ParserError> {
     match parse(datum, env)? {
         ExprOrDef::Expr(expr) => Ok(expr),
         _ => Err(ParserError {
@@ -895,7 +894,7 @@ impl Iterator for ParserResultIntoIter {
     }
 }
 
-pub fn parse_top_level(datum: Datum, env: &Rc<RefCell<Env>>) -> ParserResult {
+pub fn parse_top_level(datum: Datum, env: &Rc<Env>) -> ParserResult {
     match datum {
         Datum::Compound(CompoundDatum::List(ListKind::Proper(list)))
             if list.first()
@@ -913,8 +912,7 @@ pub fn parse_top_level(datum: Datum, env: &Rc<RefCell<Env>>) -> ParserResult {
             let transformer = macros::Transformer::try_from(rules);
             match transformer {
                 Ok(transformer) => {
-                    env.borrow_mut()
-                        .insert_macro(name, Macro::new(transformer, env.clone()));
+                    env.insert_macro(name, Macro::new(transformer, Rc::clone(env)));
                     ParserResult(Ok(ParserOutput::SyntaxDefinition))
                 }
                 Err(e) => ParserResult(Err(e)),
@@ -924,7 +922,7 @@ pub fn parse_top_level(datum: Datum, env: &Rc<RefCell<Env>>) -> ParserResult {
     }
 }
 
-pub fn parse(datum: Datum, env: &Rc<RefCell<Env>>) -> Result<ExprOrDef, ParserError> {
+pub fn parse(datum: Datum, env: &Rc<Env>) -> Result<ExprOrDef, ParserError> {
     match datum {
         Datum::Simple(simple) => match simple {
             SimpleDatum::Boolean(b) => Ok(ExprOrDef::new_expr(Expr::Literal(
@@ -956,7 +954,7 @@ pub fn parse(datum: Datum, env: &Rc<RefCell<Env>>) -> Result<ExprOrDef, ParserEr
                     if let Datum::Simple(SimpleDatum::Symbol(sym)) = first {
                         if is_keyword(sym) {
                             return process_keyword(sym, li, env);
-                        } else if let Some(mac) = env.borrow().get_macro(sym) {
+                        } else if let Some(mac) = env.get_macro(sym) {
                             todo!("expand macro")
                         }
                     }
@@ -992,7 +990,7 @@ mod tests {
     use crate::test_util::*;
 
     fn parse(datum: Datum) -> Result<ExprOrDef, ParserError> {
-        super::parse(datum, &Env::empty())
+        super::parse(datum, &Env::new_empty(None))
     }
 
     #[test]
@@ -1077,7 +1075,7 @@ mod tests {
         assert_eq!(
             parse_expr(
                 proper_list_datum![symbol_datum!("define"), symbol_datum!("x"), int_datum!(42),],
-                &Env::empty()
+                &Env::new_empty(None)
             ),
             Err(ParserError {
                 kind: ParserErrorKind::IllegalDefine,
