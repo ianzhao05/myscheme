@@ -13,8 +13,7 @@ mod vector;
 mod utils;
 
 use std::collections::HashMap;
-
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 use crate::env::EnvBinding;
 use crate::interner::Symbol;
@@ -62,7 +61,7 @@ pub(crate) fn primitives() -> HashMap<Symbol, EnvBinding> {
     .collect()
 }
 
-pub(crate) static PRELUDE: Lazy<String> = Lazy::new(|| {
+pub(crate) static PRELUDE: LazyLock<String> = LazyLock::new(|| {
     [
         numeric::PRELUDE,
         eq::PRELUDE,

@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Mutex;
-
-use once_cell::sync::Lazy;
+use std::sync::{LazyLock, Mutex};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Symbol(usize);
@@ -49,7 +47,7 @@ impl Interner {
     }
 }
 
-static INTERNER: Lazy<Mutex<Interner>> = Lazy::new(|| Mutex::new(Interner::new()));
+static INTERNER: LazyLock<Mutex<Interner>> = LazyLock::new(|| Mutex::new(Interner::new()));
 
 impl From<String> for Symbol {
     fn from(s: String) -> Self {
