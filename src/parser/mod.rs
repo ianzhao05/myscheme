@@ -5,7 +5,6 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
-use std::sync::LazyLock;
 
 use crate::datum::*;
 use crate::env::Env;
@@ -77,8 +76,8 @@ impl fmt::Display for ParserError {
 }
 
 fn is_keyword(symb: Symbol) -> bool {
-    static KW_SET: LazyLock<HashSet<Symbol>> = LazyLock::new(|| {
-        [
+    thread_local! {
+        static KW_SET: HashSet<Symbol> = [
             "quote",
             "lambda",
             "if",
@@ -104,9 +103,9 @@ fn is_keyword(symb: Symbol) -> bool {
         ]
         .into_iter()
         .map(Symbol::from)
-        .collect()
-    });
-    KW_SET.contains(&symb)
+        .collect();
+    }
+    KW_SET.with(|ks| ks.contains(&symb))
 }
 
 fn process_proc<I: DoubleEndedIterator<Item = Datum>>(

@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
-use std::sync::LazyLock;
 
+use const_format::formatcp;
 use regex::Regex;
 
 use crate::interner::Symbol;
@@ -103,25 +103,19 @@ impl<'a> Iterator for Lexer<'a> {
         const INITIAL: &str = r"a-zA-Z!$%&*:<=>?^_~/";
         const DELIMITER: &str = r#"[\s\(\)";]|$"#;
 
-        static ATMOSPHERE: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r"\A(?:\s+|;.*)").unwrap());
-        static IDENTIFIER: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(&format!(
+        thread_local! {
+            static ATMOSPHERE: Regex = Regex::new(r"\A(?:\s+|;.*)").unwrap();
+            static IDENTIFIER: Regex = Regex::new(formatcp!(
                 r"\A([{INITIAL}][{INITIAL}0-9+\-\.@]*|\+|-|\.{{3}})(?:{DELIMITER})"
             ))
-            .unwrap()
-        });
-        static CHARACTER: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(&format!(
+            .unwrap();
+            static CHARACTER: Regex = Regex::new(formatcp!(
                 r"\A#\\(space|newline|[^a-zA-Z]|[a-zA-z](?:{DELIMITER}))"
             ))
-            .unwrap()
-        });
-        static STRING: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r#"\A"((?:\\.|[^\\"])*)""#).unwrap());
-        // TODO: implement complex numbers
-        static NUMBER: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(&format!(
+            .unwrap();
+            static STRING: Regex = Regex::new(r#"\A"((?:\\.|[^\\"])*)""#).unwrap();
+            // TODO: implement complex numbers
+            static NUMBER: Regex = Regex::new(formatcp!(
                 r"(?ix)\A(
                     (?:\#[ie]\#d|(?:\#d)?(?:\#[ie])?)
                     [+-]?
@@ -136,10 +130,9 @@ impl<'a> Iterator for Lexer<'a> {
                     [+-]?[0-9a-f]+(?:/[0-9a-f]+)?
                   )(?:{DELIMITER})"
             ))
-            .unwrap()
-        });
-        static DOT: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(&format!(r"\A\.(?:{DELIMITER})")).unwrap());
+            .unwrap();
+            static DOT: Regex = Regex::new(formatcp!(r"\A\.(?:{DELIMITER})")).unwrap();
+        }
 
         while self.pos < self.exp.len() {
             let rest = &self.exp[self.pos..];
@@ -171,7 +164,7 @@ impl<'a> Iterator for Lexer<'a> {
                     });
                 }
                 '#' => {
-                    return if let Some(c) = CHARACTER.captures(rest) {
+                    return if let Some(c) = CHARACTER.with(|re| re.captures(rest)) {
                         let m = c.get(0).unwrap();
                         self.pos += if m.end() == 4 { 3 } else { m.end() };
 
@@ -188,7 +181,7 @@ impl<'a> Iterator for Lexer<'a> {
                             Some('f') => Ok(Token::Boolean(false)),
                             Some('(') => Ok(Token::Vector),
                             _ => {
-                                if let Some(c) = NUMBER.captures(rest) {
+                                if let Some(c) = NUMBER.with(|re| re.captures(rest)) {
                                     let m = c.get(1).unwrap();
                                     self.pos += m.end() - 2;
                                     Ok(Token::Number(m.as_str().to_owned()))
@@ -203,7 +196,7 @@ impl<'a> Iterator for Lexer<'a> {
                     };
                 }
                 '"' => {
-                    return if let Some(c) = STRING.captures(rest) {
+                    return if let Some(c) = STRING.with(|re| re.captures(rest)) {
                         self.pos += c.get(0).unwrap().end();
                         Some(Ok(Token::String(
                             c[1].to_owned()
@@ -218,16 +211,16 @@ impl<'a> Iterator for Lexer<'a> {
                     };
                 }
                 _ => {
-                    if let Some(m) = ATMOSPHERE.find(rest) {
+                    if let Some(m) = ATMOSPHERE.with(|re| re.find(rest)) {
                         self.pos += m.end();
-                    } else if let Some(c) = IDENTIFIER.captures(rest) {
+                    } else if let Some(c) = IDENTIFIER.with(|re| re.captures(rest)) {
                         let m = c.get(1).unwrap();
                         self.pos += m.end();
                         return Some(Ok(Token::Identifier(m.as_str().into())));
-                    } else if DOT.is_match(rest) {
+                    } else if DOT.with(|re| re.is_match(rest)) {
                         self.pos += 1;
                         return Some(Ok(Token::Dot));
-                    } else if let Some(c) = NUMBER.captures(rest) {
+                    } else if let Some(c) = NUMBER.with(|re| re.captures(rest)) {
                         let m = c.get(1).unwrap();
                         self.pos += m.end();
                         return Some(Ok(Token::Number(m.as_str().to_owned())));

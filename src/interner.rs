@@ -1,6 +1,6 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::{LazyLock, Mutex};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Symbol(usize);
@@ -47,31 +47,35 @@ impl Interner {
     }
 }
 
-static INTERNER: LazyLock<Mutex<Interner>> = LazyLock::new(|| Mutex::new(Interner::new()));
+thread_local! {
+    static INTERNER: RefCell<Interner> = RefCell::new(Interner::new());
+}
 
 impl From<String> for Symbol {
     fn from(s: String) -> Self {
-        INTERNER.lock().unwrap().intern(s)
+        INTERNER.with_borrow_mut(|i| i.intern(s))
     }
 }
 
 impl From<&str> for Symbol {
     fn from(s: &str) -> Self {
-        INTERNER.lock().unwrap().intern_ref(s)
+        INTERNER.with_borrow_mut(|i| i.intern_ref(s))
     }
 }
 
 impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(INTERNER.lock().unwrap().resolve(*self))
+        INTERNER.with_borrow(|i| f.write_str(i.resolve(*self)))
     }
 }
 
 impl fmt::Debug for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Symbol")
-            .field("index", &self.0)
-            .field("str", &INTERNER.lock().unwrap().resolve(*self))
-            .finish()
+        INTERNER.with_borrow(|i| {
+            f.debug_struct("Symbol")
+                .field("index", &self.0)
+                .field("str", &i.resolve(*self))
+                .finish()
+        })
     }
 }
