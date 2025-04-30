@@ -13,7 +13,6 @@ mod vector;
 mod utils;
 
 use std::collections::HashMap;
-use std::sync::LazyLock;
 
 use crate::env::EnvBinding;
 use crate::interner::Symbol;
@@ -61,16 +60,13 @@ pub(crate) fn primitives() -> HashMap<Symbol, EnvBinding> {
     .collect()
 }
 
-pub(crate) static PRELUDE: LazyLock<String> = LazyLock::new(|| {
-    [
-        numeric::PRELUDE,
-        eq::PRELUDE,
-        list::PRELUDE,
-        pred::PRELUDE,
-        control::PRELUDE,
-        vector::PRELUDE,
-        io::PRELUDE,
-        string::PRELUDE,
-    ]
-    .join("")
-});
+pub(crate) const PRELUDE: &str = const_format::concatcp!(
+    numeric::PRELUDE,
+    eq::PRELUDE,
+    list::PRELUDE,
+    pred::PRELUDE,
+    control::PRELUDE,
+    vector::PRELUDE,
+    io::PRELUDE,
+    string::PRELUDE,
+);
