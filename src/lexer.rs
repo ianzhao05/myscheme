@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
+use std::sync::LazyLock;
 
-use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::interner::Symbol;
@@ -103,22 +103,24 @@ impl<'a> Iterator for Lexer<'a> {
         const INITIAL: &str = r"a-zA-Z!$%&*:<=>?^_~/";
         const DELIMITER: &str = r#"[\s\(\)";]|$"#;
 
-        static ATMOSPHERE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\A(?:\s+|;.*)").unwrap());
-        static IDENTIFIER: Lazy<Regex> = Lazy::new(|| {
+        static ATMOSPHERE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"\A(?:\s+|;.*)").unwrap());
+        static IDENTIFIER: LazyLock<Regex> = LazyLock::new(|| {
             Regex::new(&format!(
                 r"\A([{INITIAL}][{INITIAL}0-9+\-\.@]*|\+|-|\.{{3}})(?:{DELIMITER})"
             ))
             .unwrap()
         });
-        static CHARACTER: Lazy<Regex> = Lazy::new(|| {
+        static CHARACTER: LazyLock<Regex> = LazyLock::new(|| {
             Regex::new(&format!(
                 r"\A#\\(space|newline|[^a-zA-Z]|[a-zA-z](?:{DELIMITER}))"
             ))
             .unwrap()
         });
-        static STRING: Lazy<Regex> = Lazy::new(|| Regex::new(r#"\A"((?:\\.|[^\\"])*)""#).unwrap());
+        static STRING: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r#"\A"((?:\\.|[^\\"])*)""#).unwrap());
         // TODO: implement complex numbers
-        static NUMBER: Lazy<Regex> = Lazy::new(|| {
+        static NUMBER: LazyLock<Regex> = LazyLock::new(|| {
             Regex::new(&format!(
                 r"(?ix)\A(
                     (?:\#[ie]\#d|(?:\#d)?(?:\#[ie])?)
@@ -136,8 +138,8 @@ impl<'a> Iterator for Lexer<'a> {
             ))
             .unwrap()
         });
-        static DOT: Lazy<Regex> =
-            Lazy::new(|| Regex::new(&format!(r"\A\.(?:{DELIMITER})")).unwrap());
+        static DOT: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(&format!(r"\A\.(?:{DELIMITER})")).unwrap());
 
         while self.pos < self.exp.len() {
             let rest = &self.exp[self.pos..];

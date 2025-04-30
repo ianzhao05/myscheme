@@ -5,13 +5,13 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
+use std::sync::LazyLock;
 
 use crate::datum::*;
 use crate::env::Env;
 use crate::expr::*;
 use crate::interner::Symbol;
 
-use once_cell::sync::Lazy;
 use uuid::Uuid;
 
 use self::macros::Macro;
@@ -77,7 +77,7 @@ impl fmt::Display for ParserError {
 }
 
 fn is_keyword(symb: Symbol) -> bool {
-    static KW_SET: Lazy<HashSet<Symbol>> = Lazy::new(|| {
+    static KW_SET: LazyLock<HashSet<Symbol>> = LazyLock::new(|| {
         [
             "quote",
             "lambda",
