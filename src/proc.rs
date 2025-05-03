@@ -120,14 +120,6 @@ impl fmt::Display for UserDefined {
 
 impl UserDefined {
     pub fn new(data: Rc<ProcData>, env: Rc<Env>) -> Result<Self, EvalError> {
-        let args = data.args.iter().chain(data.rest.iter());
-        let mut set = std::collections::HashSet::new();
-        for arg in args {
-            if set.contains(arg) {
-                return Err(EvalError::new(EvalErrorKind::DuplicateArg(*arg)));
-            }
-            set.insert(arg);
-        }
         Ok(Self {
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             data,

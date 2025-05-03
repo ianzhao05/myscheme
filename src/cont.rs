@@ -113,7 +113,6 @@ pub enum Cont {
     },
     SimpleLet {
         arg: Symbol,
-        body: Rc<Expr>,
         cont: Rc<Cont>,
     },
     Conditional {
