@@ -43,13 +43,6 @@ impl SynEnv {
         }
     }
 
-    pub(super) fn get_macro(&self, name: Symbol) -> Option<Rc<Macro>> {
-        self.get(name).and_then(|binding| match binding {
-            EnvBinding::Macro(mac) => Some(mac),
-            _ => None,
-        })
-    }
-
     pub(super) fn insert_macro(&self, name: Symbol, mac: Rc<Macro>) {
         self.0
             .borrow_mut()

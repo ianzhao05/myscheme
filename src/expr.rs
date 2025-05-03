@@ -55,7 +55,7 @@ pub enum Expr {
     SimpleLet {
         arg: Symbol,
         value: Rc<Expr>,
-        body: Rc<Expr>,
+        body: Vec<ExprOrDef>,
     },
     Undefined,
 }
