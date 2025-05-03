@@ -6,7 +6,7 @@ use crate::err::SchemeError;
 use crate::evaler::eval;
 use crate::lexer::{Lexer, SexpReader, Token};
 use crate::object::ObjectRef;
-use crate::parser::parse_top_level;
+use crate::parser::{parse_top_level, syn_env::SynEnv};
 use crate::reader::Reader;
 
 fn until_err<T, E>(err: &mut &mut Result<(), SchemeError>, item: Result<T, E>) -> Option<T>
@@ -22,12 +22,16 @@ where
     }
 }
 
-pub fn eval_str(s: &str, env: Rc<Env>) -> Result<Vec<ObjectRef>, SchemeError> {
+pub fn eval_str(
+    s: &str,
+    env: &Rc<Env>,
+    syn_env: &Rc<SynEnv>,
+) -> Result<Vec<ObjectRef>, SchemeError> {
     let (mut le, mut re, mut pe) = (Ok(()), Ok(()), Ok(()));
     let tokens = Lexer::new(s).scan(&mut le, until_err);
     let data = Reader::new(tokens).scan(&mut re, until_err);
     let exprs = data
-        .flat_map(|datum| parse_top_level(datum, &env))
+        .flat_map(|datum| parse_top_level(datum, syn_env))
         .scan(&mut pe, until_err);
     let res = exprs
         .map(|expr| eval(expr, env.clone()).map_err(Into::into))
@@ -38,11 +42,15 @@ pub fn eval_str(s: &str, env: Rc<Env>) -> Result<Vec<ObjectRef>, SchemeError> {
     res
 }
 
-pub fn eval_tokens(tokens: Vec<Token>, env: Rc<Env>) -> Result<Vec<ObjectRef>, SchemeError> {
+pub fn eval_tokens(
+    tokens: Vec<Token>,
+    env: &Rc<Env>,
+    syn_env: &Rc<SynEnv>,
+) -> Result<Vec<ObjectRef>, SchemeError> {
     let (mut re, mut pe) = (Ok(()), Ok(()));
     let data = Reader::new(tokens.into_iter()).scan(&mut re, until_err);
     let exprs = data
-        .flat_map(|datum| parse_top_level(datum, &env))
+        .flat_map(|datum| parse_top_level(datum, syn_env))
         .scan(&mut pe, until_err);
     let res = exprs
         .map(|expr| eval(expr, env.clone()).map_err(Into::into))
@@ -68,7 +76,7 @@ pub fn write_results(res: Result<Vec<ObjectRef>, SchemeError>) {
     }
 }
 
-pub fn repl(env: Rc<Env>) -> std::io::Result<()> {
+pub fn repl(env: &Rc<Env>, syn_env: &Rc<SynEnv>) -> std::io::Result<()> {
     let mut sreader = SexpReader::new(String::new());
     loop {
         if sreader.buf.is_empty() {
@@ -83,7 +91,7 @@ pub fn repl(env: Rc<Env>) -> std::io::Result<()> {
         match sreader.try_tokenize(false) {
             Ok(ready) => {
                 if ready {
-                    write_results(eval_tokens(sreader.take_tokens(), env.clone()));
+                    write_results(eval_tokens(sreader.take_tokens(), env, syn_env));
                 }
             }
             Err(e) => write_results(Err(SchemeError::Lexer(e))),

@@ -1,22 +1,30 @@
 use std::rc::Rc;
 
 use crate::datum::{CompoundDatum, Datum, ListKind, SimpleDatum};
-use crate::env::Env;
 use crate::interner::Symbol;
 
+use super::syn_env::SynEnv;
 use super::{ParserError, ParserErrorKind};
 
 #[derive(Debug, Clone)]
 pub struct Macro {
     transformer: Transformer,
-    env: Rc<Env>,
+    env: Rc<SynEnv>,
 }
 
 impl Macro {
-    pub fn new(transformer: Transformer, env: Rc<Env>) -> Self {
+    pub fn new(transformer: Transformer, env: Rc<SynEnv>) -> Self {
         Self { transformer, env }
     }
+
+    pub fn expand<I: DoubleEndedIterator<Item = Datum>>(
+        &self,
+        mut operands: I,
+    ) -> Result<Datum, ParserError> {
+        todo!("expand")
+    }
 }
+
 fn bs_err(i: i32) -> ParserError {
     ParserError {
         kind: ParserErrorKind::BadSyntax(format!("syntax-rules {i}").into()),
@@ -65,7 +73,7 @@ impl TryFrom<Datum> for Transformer {
 }
 
 #[derive(Debug, Clone)]
-pub struct SyntaxRule {
+struct SyntaxRule {
     pattern: ListPattern,
     template: Template,
 }
@@ -90,7 +98,7 @@ impl TryFrom<Datum> for SyntaxRule {
 }
 
 #[derive(Debug, Clone)]
-pub enum ListPattern {
+enum ListPattern {
     Proper(Vec<Pattern>),
     Improper(Vec<Pattern>, Box<Pattern>),
     Ellipsized(Vec<Pattern>),
@@ -133,7 +141,7 @@ impl TryFrom<Datum> for ListPattern {
 }
 
 #[derive(Debug, Clone)]
-pub enum Pattern {
+enum Pattern {
     Simple(SimpleDatum),
     List(ListPattern),
 }
@@ -151,7 +159,7 @@ impl TryFrom<Datum> for Pattern {
 }
 
 #[derive(Debug, Clone)]
-pub enum Template {
+enum Template {
     Simple(SimpleDatum),
     List(ListTemplate),
 }
@@ -169,7 +177,7 @@ impl TryFrom<Datum> for Template {
 }
 
 #[derive(Debug, Clone)]
-pub enum ListTemplate {
+enum ListTemplate {
     Proper(Vec<Element>),
     Improper(Vec<Element>, Box<Template>),
 }
@@ -210,7 +218,7 @@ impl TryFrom<Datum> for ListTemplate {
 }
 
 #[derive(Debug, Clone)]
-pub struct Element {
+struct Element {
     template: Template,
     ellipsized: bool,
 }

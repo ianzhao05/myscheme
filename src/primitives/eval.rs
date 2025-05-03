@@ -6,16 +6,14 @@ use crate::env::Env;
 use crate::evaler::{EvalError, EvalErrorKind};
 use crate::expr::ExprOrDef;
 use crate::object::{EnvSpec, ObjectRef};
-use crate::parser::parse;
+use crate::parser::{parse, syn_env::SynEnv};
 use crate::primitives::utils::get_version;
 use crate::trampoline::Bouncer;
 
 use super::utils::{ensure_arity, expr_cv, get_env, ControlMap, PrimitiveMap};
 
 fn eval(state: State) -> Bouncer {
-    let State {
-        rib, stack, env, ..
-    } = state;
+    let State { rib, stack, .. } = state;
     if rib.len() != 2 {
         return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ArityMismatch {
             expected: 2,
@@ -30,7 +28,7 @@ fn eval(state: State) -> Bouncer {
     let Ok(datum) = (&rib[0]).try_into() else {
         return Bouncer::Land(Err(expr_cv(&rib[0])));
     };
-    let expr = match parse(datum, &env) {
+    let expr = match parse(datum, &SynEnv::builtin()) {
         Ok(ExprOrDef::Expr(expr)) => expr,
         Ok(_) => return Bouncer::Land(Err(expr_cv(&rib[0]))),
         Err(e) => return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ParserError(e)))),
