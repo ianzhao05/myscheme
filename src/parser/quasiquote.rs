@@ -11,7 +11,7 @@ fn process_qq_list(
     mut li: impl Iterator<Item = Datum>,
     qq_level: u32,
     list_type: ListType,
-    env: &Rc<Env>,
+    env: &Rc<SynEnv>,
 ) -> Result<(Vec<Rc<Expr>>, bool), ParserError> {
     let mut parts = vec![];
     let mut curr = vec![];
@@ -101,7 +101,7 @@ fn process_qq_list(
 pub(super) fn process_qq(
     datum: Datum,
     qq_level: u32,
-    env: &Rc<Env>,
+    env: &Rc<SynEnv>,
 ) -> Result<Rc<Expr>, ParserError> {
     match datum {
         Datum::Simple(_) | Datum::EmptyList => {

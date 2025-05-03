@@ -1,5 +1,6 @@
 pub mod macros;
 mod quasiquote;
+pub mod syn_env;
 
 use std::collections::HashSet;
 use std::error::Error;
@@ -7,13 +8,13 @@ use std::fmt;
 use std::rc::Rc;
 
 use crate::datum::*;
-use crate::env::Env;
 use crate::expr::*;
 use crate::interner::Symbol;
 
 use uuid::Uuid;
 
 use self::macros::Macro;
+use self::syn_env::SynEnv;
 
 fn gen_temp_name() -> Symbol {
     if cfg!(test) {
@@ -93,8 +94,6 @@ fn is_keyword(symb: Symbol) -> bool {
             "do",
             "delay",
             "quasiquote",
-            "else",
-            "=>",
             "define",
             "unquote",
             "unquote-splicing",
@@ -112,7 +111,7 @@ fn process_proc<I: DoubleEndedIterator<Item = Datum>>(
     list: ListKind,
     body: I,
     named: bool,
-    env: &Rc<Env>,
+    env: &Rc<SynEnv>,
 ) -> Result<(Option<Symbol>, ProcData), ParserError> {
     let bs_err = || ParserError {
         kind: ParserErrorKind::BadSyntax((if named { "define" } else { "lambda" }).into()),
@@ -187,7 +186,7 @@ fn process_proc<I: DoubleEndedIterator<Item = Datum>>(
 fn process_define<I: DoubleEndedIterator<Item = Datum>>(
     var: Datum,
     mut body: I,
-    env: &Rc<Env>,
+    env: &Rc<SynEnv>,
 ) -> Result<Rc<Definition>, ParserError> {
     let bs_err = || ParserError {
         kind: ParserErrorKind::BadSyntax("define".into()),
@@ -224,7 +223,7 @@ fn process_define<I: DoubleEndedIterator<Item = Datum>>(
 
 fn process_body<I: Iterator<Item = Datum>>(
     data: I,
-    env: &Rc<Env>,
+    env: &Rc<SynEnv>,
 ) -> Result<Vec<ExprOrDef>, ParserError> {
     let mut eods = Vec::new();
     let mut last_is_expr = false;
@@ -257,7 +256,7 @@ fn process_body<I: Iterator<Item = Datum>>(
 fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
     kw: Symbol,
     mut operands: I,
-    env: &Rc<Env>,
+    env: &Rc<SynEnv>,
 ) -> Result<ExprOrDef, ParserError> {
     let bs_err = || ParserError {
         kind: ParserErrorKind::BadSyntax(kw),
@@ -333,12 +332,8 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             for operand in operands {
                 let child = parse(operand, env)?;
                 match child {
-                    ExprOrDef::Definition(_) => {
-                        has_def = true;
-                    }
-                    _ => {
-                        has_expr = true;
-                    }
+                    ExprOrDef::Definition(_) => has_def = true,
+                    _ => has_expr = true,
                 }
                 children.push(child);
             }
@@ -373,9 +368,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 Ok(ExprOrDef::new_expr(Expr::Assignment {
                     variable: match variable {
                         Datum::Simple(SimpleDatum::Symbol(s)) => s,
-                        _ => {
-                            return Err(bs_err());
-                        }
+                        _ => return Err(bs_err()),
                     },
                     value: parse_expr(value, env)?,
                 }))
@@ -490,7 +483,6 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 None => Err(bs_err()),
             }
         }
-        _ if kw == "else".into() => Err(bs_err()),
         _ if kw == "and".into() => {
             let ops = operands
                 .rev()
@@ -703,9 +695,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             }
             let (args, vals): (Vec<_>, Vec<_>) = bindings.into_iter().unzip();
             let temps: Vec<_> = args.iter().map(|_| gen_temp_name()).collect();
-            let setters = args
-                .iter()
-                .zip(temps.iter())
+            let setters = std::iter::zip(&args, &temps)
                 .map(|(arg, temp)| {
                     ExprOrDef::new_expr(Expr::Assignment {
                         variable: *arg,
@@ -851,7 +841,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
     }
 }
 
-fn parse_expr(datum: Datum, env: &Rc<Env>) -> Result<Rc<Expr>, ParserError> {
+fn parse_expr(datum: Datum, env: &Rc<SynEnv>) -> Result<Rc<Expr>, ParserError> {
     match parse(datum, env)? {
         ExprOrDef::Expr(expr) => Ok(expr),
         _ => Err(ParserError {
@@ -893,7 +883,7 @@ impl Iterator for ParserResultIntoIter {
     }
 }
 
-pub fn parse_top_level(datum: Datum, env: &Rc<Env>) -> ParserResult {
+pub fn parse_top_level(datum: Datum, env: &Rc<SynEnv>) -> ParserResult {
     match datum {
         Datum::Compound(CompoundDatum::List(ListKind::Proper(list)))
             if list.first()
@@ -911,7 +901,7 @@ pub fn parse_top_level(datum: Datum, env: &Rc<Env>) -> ParserResult {
             let transformer = macros::Transformer::try_from(rules);
             match transformer {
                 Ok(transformer) => {
-                    env.insert_macro(name, Macro::new(transformer, Rc::clone(env)));
+                    env.insert_macro(name, Rc::new(Macro::new(transformer, Rc::clone(env))));
                     ParserResult(Ok(ParserOutput::SyntaxDefinition))
                 }
                 Err(e) => ParserResult(Err(e)),
@@ -921,7 +911,7 @@ pub fn parse_top_level(datum: Datum, env: &Rc<Env>) -> ParserResult {
     }
 }
 
-pub fn parse(datum: Datum, env: &Rc<Env>) -> Result<ExprOrDef, ParserError> {
+pub fn parse(datum: Datum, env: &Rc<SynEnv>) -> Result<ExprOrDef, ParserError> {
     match datum {
         Datum::Simple(simple) => match simple {
             SimpleDatum::Boolean(b) => Ok(ExprOrDef::new_expr(Expr::Literal(
@@ -954,15 +944,12 @@ pub fn parse(datum: Datum, env: &Rc<Env>) -> Result<ExprOrDef, ParserError> {
                         if is_keyword(sym) {
                             return process_keyword(sym, li, env);
                         } else if let Some(mac) = env.get_macro(sym) {
-                            todo!("expand macro")
+                            return parse(mac.expand(li)?, env);
                         }
                     }
                     let operator = parse_expr(first, env)?;
                     let rest = li
-                        .map(|e| match parse_expr(e, env) {
-                            Ok(expr) => Ok(expr),
-                            Err(err) => Err(err),
-                        })
+                        .map(|e| parse_expr(e, env))
                         .collect::<Result<Vec<_>, _>>()?;
                     Ok(ExprOrDef::new_expr(Expr::ProcCall {
                         operator,
@@ -989,7 +976,7 @@ mod tests {
     use crate::test_util::*;
 
     fn parse(datum: Datum) -> Result<ExprOrDef, ParserError> {
-        super::parse(datum, &Env::new_empty(None))
+        super::parse(datum, &SynEnv::builtin())
     }
 
     #[test]
@@ -1074,7 +1061,7 @@ mod tests {
         assert_eq!(
             parse_expr(
                 proper_list_datum![symbol_datum!("define"), symbol_datum!("x"), int_datum!(42),],
-                &Env::new_empty(None)
+                &SynEnv::builtin()
             ),
             Err(ParserError {
                 kind: ParserErrorKind::IllegalDefine,

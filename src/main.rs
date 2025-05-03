@@ -5,12 +5,18 @@ use std::process::ExitCode;
 use std::rc::Rc;
 
 use myscheme::env::Env;
+use myscheme::parser::syn_env::SynEnv;
 
-fn run_file<P: AsRef<Path>>(path: P, env: Rc<Env>, interactive: bool) -> io::Result<()> {
+fn run_file<P: AsRef<Path>>(
+    path: P,
+    env: &Rc<Env>,
+    syn_env: &Rc<SynEnv>,
+    interactive: bool,
+) -> io::Result<()> {
     let s = std::fs::read_to_string(path)?;
-    myscheme::write_results(myscheme::eval_str(&s, env.clone()));
+    myscheme::write_results(myscheme::eval_str(&s, env, syn_env));
     if interactive {
-        myscheme::repl(env)
+        myscheme::repl(env, syn_env)
     } else {
         Ok(())
     }
@@ -19,9 +25,16 @@ fn run_file<P: AsRef<Path>>(path: P, env: Rc<Env>, interactive: bool) -> io::Res
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
     let res = match args.len() {
-        1 => myscheme::repl(Env::primitives()),
-        2 if &args[1] != "-i" => run_file(&args[1], Env::primitives(), false),
-        3 if &args[1] == "-i" => run_file(&args[2], Env::primitives(), true),
+        1 => myscheme::repl(&Env::primitives(), &SynEnv::builtin()),
+        2 if &args[1] != "-i" => run_file(
+            &args[1],
+            &Env::primitives(),
+            &SynEnv::builtin(),
+            false,
+        ),
+        3 if &args[1] == "-i" => {
+            run_file(&args[2], &Env::primitives(), &SynEnv::builtin(), true)
+        }
         _ => {
             eprintln!("Usage: {} [-i] [file]", args[0]);
             return ExitCode::FAILURE;
