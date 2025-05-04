@@ -24,20 +24,32 @@ impl Macro {
         })
     }
 
-    pub fn expand(
-        &self,
-        mut operands: Vec<Datum>,
-        env_use: &Rc<SynEnv>,
-    ) -> Option<(Datum, Rc<SynEnv>)> {
-        operands.remove(0);
+    pub fn expand(&self, operands: &[Datum], env_use: &Rc<SynEnv>) -> Option<(Datum, Rc<SynEnv>)> {
         self.transformer
-            .transcribe(operands, env_use, &self.env_def)
+            .transcribe(&operands[1..], env_use, &self.env_def)
     }
 }
 
 fn bs_err(i: i32) -> ParserError {
     ParserError {
         kind: ParserErrorKind::BadSyntax(format!("syntax-rules {i}").into()),
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Compound<'a> {
+    Proper(&'a [Datum]),
+    Improper(&'a [Datum], &'a Datum),
+    Vector(&'a [Datum]),
+}
+
+impl<'a> From<&'a CompoundDatum> for Compound<'a> {
+    fn from(d: &'a CompoundDatum) -> Self {
+        match d {
+            CompoundDatum::List(ListKind::Proper(l)) => Self::Proper(l),
+            CompoundDatum::List(ListKind::Improper(l, e)) => Self::Improper(l, e),
+            CompoundDatum::Vector(v) => Self::Vector(v),
+        }
     }
 }
 
@@ -69,15 +81,13 @@ impl TryFrom<(Datum, &SynEnv)> for Transformer {
                     Datum::Simple(SimpleDatum::Symbol(s)) => Ok(s),
                     _ => Err(bs_err(1)),
                 })
-                .collect::<Result<HashSet<_>, _>>()?,
+                .try_collect()?,
             Some(Datum::EmptyList) => Default::default(),
             _ => return Err(bs_err(0)),
         };
         Ok(Self {
             literals,
-            rules: it
-                .map(|r| SyntaxRule::try_from((r, env)))
-                .collect::<Result<Vec<_>, _>>()?,
+            rules: it.map(|r| SyntaxRule::try_from((r, env))).try_collect()?,
         })
     }
 }
@@ -85,15 +95,15 @@ impl TryFrom<(Datum, &SynEnv)> for Transformer {
 impl Transformer {
     fn transcribe(
         &self,
-        operands: Vec<Datum>,
+        operands: &[Datum],
         env_use: &Rc<SynEnv>,
         env_def: &SynEnv,
     ) -> Option<(Datum, Rc<SynEnv>)> {
-        let list = ListKind::Proper(operands);
+        let list = Compound::Proper(operands);
         self.rules.iter().find_map(|rule| {
             let subst = rule
                 .pattern
-                .match_operands(&list, &self.literals, env_use, env_def)?;
+                .match_operands(list, &self.literals, env_use, env_def)?;
             Some((
                 rule.template.expand(&subst),
                 SynEnv::new(Some(env_use.clone()), rule.env_new.clone()),
@@ -104,7 +114,7 @@ impl Transformer {
 
 #[derive(Debug)]
 struct SyntaxRule {
-    pattern: ListPattern,
+    pattern: CompoundPattern,
     template: Template,
     env_new: SynEnvMap,
 }
@@ -121,7 +131,7 @@ impl TryFrom<(Datum, &SynEnv)> for SyntaxRule {
         let (Some(pattern), Some(template), None) = (it.next(), it.next(), it.next()) else {
             return Err(bs_err(3));
         };
-        let pattern = ListPattern::try_from_first(pattern)?;
+        let pattern = CompoundPattern::try_from_first(pattern)?;
         let mut template = Template::try_from(template)?;
         let mut rewrites = HashMap::new();
         let mut env_new = SynEnvMap::new();
@@ -146,24 +156,40 @@ impl TryFrom<(Datum, &SynEnv)> for SyntaxRule {
 }
 
 #[derive(Debug)]
-enum ListPattern {
+enum CompoundPattern {
     Proper(Vec<Pattern>),
     Improper(Vec<Pattern>, Box<Pattern>),
-    Ellipsized(Vec<Pattern>),
+    Ellipsized(Vec<Pattern>, Box<Pattern>),
+    Vector(Vec<Pattern>),
+    EllipsizedVector(Vec<Pattern>, Box<Pattern>),
 }
 
-impl TryFrom<Datum> for ListPattern {
+impl TryFrom<Datum> for CompoundPattern {
     type Error = ParserError;
 
     fn try_from(datum: Datum) -> Result<Self, Self::Error> {
-        let Datum::Compound(CompoundDatum::List(list)) = datum else {
-            return Err(bs_err(4));
-        };
-        Self::try_from_list(list, false)
+        match datum {
+            Datum::Compound(CompoundDatum::List(list)) => Self::try_from_list(list, false),
+            Datum::EmptyList => Ok(Self::Proper(vec![])),
+            Datum::Compound(CompoundDatum::Vector(mut v)) => match v.last() {
+                Some(&Datum::Simple(SimpleDatum::Symbol(s))) if s == "...".into() => {
+                    v.pop();
+                    let e = v.pop().ok_or_else(|| bs_err(10))?;
+                    Ok(Self::EllipsizedVector(
+                        v.into_iter().map(Pattern::try_from).try_collect()?,
+                        Box::new(Pattern::try_from(e)?),
+                    ))
+                }
+                _ => Ok(Self::Vector(
+                    v.into_iter().map(Pattern::try_from).try_collect()?,
+                )),
+            },
+            _ => Err(bs_err(4)),
+        }
     }
 }
 
-impl ListPattern {
+impl CompoundPattern {
     fn try_from_first(datum: Datum) -> Result<Self, ParserError> {
         let Datum::Compound(CompoundDatum::List(list)) = datum else {
             return Err(bs_err(4));
@@ -179,54 +205,41 @@ impl ListPattern {
                     return Err(bs_err(7));
                 };
             }
-            Ok(li)
+            li.map(Pattern::try_from).collect::<Result<Vec<_>, _>>()
         };
         match list {
-            ListKind::Proper(l) => match l.last() {
-                Some(Datum::Simple(SimpleDatum::Symbol(s))) if s == &"...".into() => {
-                    Ok(ListPattern::Ellipsized(
-                        f(l)?
-                            .rev()
-                            .skip(1)
-                            .rev()
-                            .map(Pattern::try_from)
-                            .collect::<Result<Vec<_>, _>>()?,
-                    ))
+            ListKind::Proper(mut l) => match l.last() {
+                Some(&Datum::Simple(SimpleDatum::Symbol(s))) if s == "...".into() => {
+                    l.pop();
+                    let e = l.pop().ok_or_else(|| bs_err(9))?;
+                    Ok(Self::Ellipsized(f(l)?, Box::new(Pattern::try_from(e)?)))
                 }
-                Some(_) => Ok(ListPattern::Proper(
-                    f(l)?
-                        .map(Pattern::try_from)
-                        .collect::<Result<Vec<_>, _>>()?,
-                )),
+                Some(_) => Ok(Self::Proper(f(l)?)),
                 None => Err(bs_err(5)),
             },
-            ListKind::Improper(l, e) => Ok(ListPattern::Improper(
-                f(l)?
-                    .map(Pattern::try_from)
-                    .collect::<Result<Vec<_>, _>>()?,
-                Box::new(Pattern::try_from(*e)?),
-            )),
+            ListKind::Improper(l, e) => Ok(Self::Improper(f(l)?, Box::new(Pattern::try_from(*e)?))),
         }
     }
 
     fn contains_var(&self, name: Symbol) -> bool {
         let pred = |p: &Pattern| p.contains_var(name);
         match self {
-            ListPattern::Proper(l) => l.iter().any(pred),
-            ListPattern::Improper(l, e) => l.iter().any(pred) || pred(e),
-            ListPattern::Ellipsized(l) => l.iter().any(pred),
+            Self::Proper(l) | Self::Vector(l) => l.iter().any(pred),
+            Self::Improper(l, e) | Self::Ellipsized(l, e) | Self::EllipsizedVector(l, e) => {
+                l.iter().any(pred) || pred(e)
+            }
         }
     }
 
     fn match_operands<'a>(
         &self,
-        operands: &'a ListKind,
+        operands: Compound<'a>,
         literals: &HashSet<Symbol>,
         env_use: &SynEnv,
         env_def: &SynEnv,
     ) -> Option<HashMap<Symbol, &'a Datum>> {
         match (self, operands) {
-            (ListPattern::Proper(l), ListKind::Proper(os)) => {
+            (Self::Proper(l), Compound::Proper(os)) | (Self::Vector(l), Compound::Vector(os)) => {
                 if l.len() != os.len() {
                     return None;
                 }
@@ -237,8 +250,45 @@ impl ListPattern {
                         acc
                     })
             }
-            (ListPattern::Improper(_, _), _) => todo!(),
-            (ListPattern::Ellipsized(_), _) => todo!(),
+            (Self::Improper(l, t), Compound::Proper(os) | Compound::Improper(os, _)) => {
+                let n = l.len();
+                if os.len() < n {
+                    return None;
+                }
+                let tail = match operands {
+                    Compound::Proper(os) => Compound::Proper(&os[n..]),
+                    Compound::Improper(os, ot) => Compound::Improper(&os[n..], ot),
+                    _ => unreachable!(),
+                };
+                std::iter::zip(l, &os[..n])
+                    .map(|(p, o)| p.match_operand(o, literals, env_use, env_def))
+                    .fold_options(HashMap::new(), |mut acc, s| {
+                        acc.extend(s);
+                        acc
+                    })
+                    .and_then(|mut subst| {
+                        t.match_operands(tail, literals, env_use, env_def)
+                            .map(|tail_subst| {
+                                subst.extend(tail_subst);
+                                subst
+                            })
+                    })
+            }
+            (Self::Ellipsized(l, e), Compound::Proper(os))
+            | (Self::EllipsizedVector(l, e), Compound::Vector(os)) => {
+                let n = l.len();
+                if os.len() < n {
+                    return None;
+                }
+                l.iter()
+                    .chain(std::iter::repeat(e.as_ref()))
+                    .zip(os)
+                    .map(|(p, o)| p.match_operand(o, literals, env_use, env_def))
+                    .fold_options(HashMap::new(), |mut acc, s| {
+                        acc.extend(s);
+                        acc
+                    })
+            }
             _ => None,
         }
     }
@@ -247,7 +297,7 @@ impl ListPattern {
 #[derive(Debug)]
 enum Pattern {
     Simple(SimpleDatum),
-    List(ListPattern),
+    List(CompoundPattern),
 }
 
 impl TryFrom<Datum> for Pattern {
@@ -265,9 +315,9 @@ impl TryFrom<Datum> for Pattern {
 impl Pattern {
     fn contains_var(&self, name: Symbol) -> bool {
         match self {
-            Pattern::Simple(SimpleDatum::Symbol(s)) => *s == name,
-            Pattern::Simple(_) => false,
-            Pattern::List(l) => l.contains_var(name),
+            Self::Simple(SimpleDatum::Symbol(s)) => *s == name,
+            Self::Simple(_) => false,
+            Self::List(l) => l.contains_var(name),
         }
     }
 
@@ -279,16 +329,32 @@ impl Pattern {
         env_def: &SynEnv,
     ) -> Option<HashMap<Symbol, &'a Datum>> {
         match (self, operand) {
-            (Pattern::Simple(SimpleDatum::Symbol(s)), Datum::Simple(SimpleDatum::Symbol(o)))
+            (Self::Simple(SimpleDatum::Symbol(s)), Datum::Simple(SimpleDatum::Symbol(o)))
                 if s == o && literals.contains(s) =>
             {
                 (env_use.get(*s) == env_def.get(*s)).then(HashMap::new)
             }
-            (Pattern::Simple(SimpleDatum::Symbol(s)), _) => Some([(*s, operand)].into()),
-            (Pattern::List(l), Datum::Compound(CompoundDatum::List(o))) => {
-                l.match_operands(o, literals, env_use, env_def)
+            (Self::Simple(SimpleDatum::Symbol(s)), _) => Some([(*s, operand)].into()),
+            (Self::List(l), Datum::Compound(o)) => {
+                l.match_operands(o.into(), literals, env_use, env_def)
             }
-            (Pattern::Simple(sd), Datum::Simple(o)) => (sd == o).then(HashMap::new),
+            (Self::List(l), Datum::EmptyList) => {
+                l.match_operands(Compound::Proper(&[]), literals, env_use, env_def)
+            }
+            (Self::Simple(sd), Datum::Simple(o)) => (sd == o).then(HashMap::new),
+            _ => None,
+        }
+    }
+
+    fn match_operands<'a>(
+        &self,
+        operands: Compound<'a>,
+        literals: &HashSet<Symbol>,
+        env_use: &SynEnv,
+        env_def: &SynEnv,
+    ) -> Option<HashMap<Symbol, &'a Datum>> {
+        match self {
+            Self::List(l) => l.match_operands(operands, literals, env_use, env_def),
             _ => None,
         }
     }
@@ -306,8 +372,8 @@ impl TryFrom<Datum> for Template {
     fn try_from(datum: Datum) -> Result<Self, Self::Error> {
         match datum {
             Datum::Simple(SimpleDatum::Symbol(s)) if s == "...".into() => Err(bs_err(7)),
-            Datum::Simple(s) => Ok(Template::Simple(s)),
-            compound => Ok(Template::List(compound.try_into()?)),
+            Datum::Simple(s) => Ok(Self::Simple(s)),
+            compound => Ok(Self::List(compound.try_into()?)),
         }
     }
 }
@@ -315,22 +381,22 @@ impl TryFrom<Datum> for Template {
 impl Template {
     fn map_symbols(&mut self, f: &mut impl FnMut(Symbol) -> Symbol) {
         match self {
-            Template::Simple(SimpleDatum::Symbol(s)) => {
+            Self::Simple(SimpleDatum::Symbol(s)) => {
                 *s = f(*s);
             }
-            Template::Simple(_) => {}
-            Template::List(l) => l.map_symbols(f),
+            Self::Simple(_) => {}
+            Self::List(l) => l.map_symbols(f),
         }
     }
 
     fn expand(&self, subst: &HashMap<Symbol, &Datum>) -> Datum {
         match self {
-            Template::Simple(sd @ SimpleDatum::Symbol(s)) => subst
+            Self::Simple(sd @ SimpleDatum::Symbol(s)) => subst
                 .get(s)
                 .map(|&d| d.clone())
                 .unwrap_or_else(|| Datum::Simple(sd.clone())),
-            Template::Simple(sd) => Datum::Simple(sd.clone()),
-            Template::List(l) => l.expand(subst),
+            Self::Simple(sd) => Datum::Simple(sd.clone()),
+            Self::List(l) => l.expand(subst),
         }
     }
 }
@@ -367,11 +433,8 @@ impl TryFrom<Datum> for ListTemplate {
             })
         }
         match e {
-            Some(e) => Ok(ListTemplate::Improper(
-                elements,
-                Box::new(Template::try_from(*e)?),
-            )),
-            None => Ok(ListTemplate::Proper(elements)),
+            Some(e) => Ok(Self::Improper(elements, Box::new(Template::try_from(*e)?))),
+            None => Ok(Self::Proper(elements)),
         }
     }
 }
@@ -379,12 +442,12 @@ impl TryFrom<Datum> for ListTemplate {
 impl ListTemplate {
     fn map_symbols(&mut self, f: &mut impl FnMut(Symbol) -> Symbol) {
         match self {
-            ListTemplate::Proper(elements) => {
+            Self::Proper(elements) => {
                 for element in elements {
                     element.template.map_symbols(f);
                 }
             }
-            ListTemplate::Improper(elements, template) => {
+            Self::Improper(elements, template) => {
                 for element in elements {
                     element.template.map_symbols(f);
                 }
@@ -395,7 +458,7 @@ impl ListTemplate {
 
     fn expand(&self, subst: &HashMap<Symbol, &Datum>) -> Datum {
         match self {
-            ListTemplate::Proper(elements) => {
+            Self::Proper(elements) => {
                 let list = elements
                     .iter()
                     .map(|element| {
@@ -407,7 +470,7 @@ impl ListTemplate {
                     .collect();
                 Datum::Compound(CompoundDatum::List(ListKind::Proper(list)))
             }
-            ListTemplate::Improper(elements, template) => {
+            Self::Improper(elements, template) => {
                 let list = elements
                     .iter()
                     .map(|element| element.template.expand(subst))

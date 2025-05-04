@@ -1000,9 +1000,10 @@ pub fn parse(datum: Datum, env: &Rc<SynEnv>) -> Result<ExprOrDef, ParserError> {
                     if let Some(&Datum::Simple(SimpleDatum::Symbol(symb))) = list.first() {
                         match env.get(symb) {
                             EnvBinding::Macro(mac) => {
-                                let (expanded, env) = mac.expand(list, env).ok_or(ParserError {
-                                    kind: ParserErrorKind::BadSyntax(symb),
-                                })?;
+                                let (expanded, env) =
+                                    mac.expand(&list, env).ok_or(ParserError {
+                                        kind: ParserErrorKind::BadSyntax(symb),
+                                    })?;
                                 return parse(expanded, &env);
                             }
                             EnvBinding::Ident(kw) if is_keyword(kw) => {
