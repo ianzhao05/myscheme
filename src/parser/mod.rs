@@ -46,8 +46,12 @@ fn revert_name(fresh: Symbol) -> Symbol {
         .unwrap_or(fresh)
 }
 
-fn lookup_name(env: &SynEnv, symb: Symbol) -> Result<Symbol, ParserError> {
-    match env.get(symb) {
+fn lookup_name(env: &SynEnv, symb: Symbol, root: bool) -> Result<Symbol, ParserError> {
+    match if root {
+        env.get_root(symb)
+    } else {
+        env.get(symb)
+    } {
         EnvBinding::Ident(kw) if is_keyword(kw) => Err(ParserError {
             kind: ParserErrorKind::BadSyntax(kw),
         }),
@@ -56,6 +60,14 @@ fn lookup_name(env: &SynEnv, symb: Symbol) -> Result<Symbol, ParserError> {
             kind: ParserErrorKind::BadSyntax(symb),
         }),
     }
+}
+
+fn lookup_curr(env: &SynEnv, symb: Symbol) -> Result<Symbol, ParserError> {
+    lookup_name(env, symb, false)
+}
+
+fn lookup_root(env: &SynEnv, symb: Symbol) -> Result<Symbol, ParserError> {
+    lookup_name(env, symb, true)
 }
 
 fn create_proc<B>(
@@ -252,7 +264,7 @@ fn process_proc<I: DoubleEndedIterator<Item = Datum>>(
 
 fn process_define<I: DoubleEndedIterator<Item = Datum>>(
     var: Datum,
-    mut body: I,
+    body: I,
     env: &Rc<SynEnv>,
 ) -> Result<Rc<Definition>, ParserError> {
     let bs_err = || ParserError {
@@ -260,14 +272,13 @@ fn process_define<I: DoubleEndedIterator<Item = Datum>>(
     };
     match var {
         Datum::Simple(SimpleDatum::Symbol(s)) => {
-            let expr = parse_expr(body.next().ok_or_else(bs_err)?, env)?;
-            if body.next().is_none() {
-                let name = freshen_name(s);
-                env.insert_ident(s, name);
-                Ok(Rc::new(Definition::Variable { name, value: expr }))
-            } else {
-                Err(bs_err())
-            }
+            let expr = body
+                .exactly_one()
+                .map_err(|_| bs_err())
+                .and_then(|b| parse_expr(b, env))?;
+            let name = freshen_name(s);
+            env.insert_ident(s, name);
+            Ok(Rc::new(Definition::Variable { name, value: expr }))
         }
         Datum::Compound(CompoundDatum::List(list)) => {
             let (name, proc_data) = process_proc(list, body, true, env)?;
@@ -410,7 +421,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             let (variable, value) = operands.collect_tuple().ok_or_else(bs_err)?;
             Ok(ExprOrDef::new_expr(Expr::Assignment {
                 variable: match variable {
-                    Datum::Simple(SimpleDatum::Symbol(symb)) => lookup_name(env, symb)?,
+                    Datum::Simple(SimpleDatum::Symbol(symb)) => lookup_curr(env, symb)?,
                     _ => return Err(bs_err()),
                 },
                 value: parse_expr(value, env)?,
@@ -587,7 +598,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                     Datum::Compound(CompoundDatum::List(ListKind::Proper(_))) => {
                         acc = Some(Rc::new(Expr::Conditional {
                             test: Rc::new(Expr::ProcCall {
-                                operator: Rc::new(Expr::Variable("memv".into())),
+                                operator: Rc::new(Expr::Variable(lookup_root(env, "memv".into())?)),
                                 operands: vec![
                                     Rc::new(Expr::Variable(temp)),
                                     Rc::new(Expr::Literal(LiteralKind::Quotation(first))),
@@ -796,7 +807,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                     let Datum::Simple(SimpleDatum::Symbol(name)) = pi.next().unwrap() else {
                         return Err(bs_err());
                     };
-                    let name = lookup_name(env, name)?;
+                    let name = lookup_curr(env, name)?;
                     inits.push(parse_expr(pi.next().unwrap(), env)?);
                     let step = pi
                         .next()
@@ -845,27 +856,25 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             }))
         }
         _ if kw == "delay".into() => {
-            let expr = parse_expr(operands.next().ok_or_else(bs_err)?, env)?;
-            if operands.next().is_none() {
-                Ok(ExprOrDef::new_expr(Expr::ProcCall {
-                    operator: Rc::new(Expr::Variable("make-promise".into())),
-                    operands: vec![Rc::new(Expr::Lambda(Rc::new(ProcData {
-                        args: vec![],
-                        rest: None,
-                        body: vec![ExprOrDef::Expr(expr)],
-                    })))],
-                }))
-            } else {
-                Err(bs_err())
-            }
+            let expr = operands
+                .exactly_one()
+                .map_err(|_| bs_err())
+                .and_then(parse_expr_with_env)?;
+            Ok(ExprOrDef::new_expr(Expr::ProcCall {
+                operator: Rc::new(Expr::Variable(lookup_root(env, "make-promise".into())?)),
+                operands: vec![Rc::new(Expr::Lambda(Rc::new(ProcData {
+                    args: vec![],
+                    rest: None,
+                    body: vec![ExprOrDef::Expr(expr)],
+                })))],
+            }))
         }
         _ if kw == "quasiquote".into() => {
-            let template = quasiquote::process_qq(operands.next().ok_or_else(bs_err)?, 0, env)?;
-            if operands.next().is_none() {
-                Ok(ExprOrDef::Expr(template))
-            } else {
-                Err(bs_err())
-            }
+            let template = operands
+                .exactly_one()
+                .map_err(|_| bs_err())
+                .and_then(|op| quasiquote::process_qq(op, 0, env))?;
+            Ok(ExprOrDef::Expr(template))
         }
         _ if kw == "unquote".into() => Err(ParserError {
             kind: ParserErrorKind::IllegalUnquote,
@@ -965,7 +974,7 @@ pub fn parse(datum: Datum, env: &Rc<SynEnv>) -> Result<ExprOrDef, ParserError> {
                 LiteralKind::SelfEvaluating(SelfEvaluatingKind::String(s)),
             ))),
             SimpleDatum::Symbol(symb) => {
-                Ok(ExprOrDef::new_expr(Expr::Variable(lookup_name(env, symb)?)))
+                Ok(ExprOrDef::new_expr(Expr::Variable(lookup_curr(env, symb)?)))
             }
         },
         Datum::Compound(compound) => match compound {
