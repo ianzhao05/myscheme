@@ -11,20 +11,29 @@ pub(super) enum EnvBinding {
     Ident(Symbol),
 }
 
+impl PartialEq for EnvBinding {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Macro(m1), Self::Macro(m2)) => Rc::ptr_eq(m1, m2),
+            (Self::Ident(s1), Self::Ident(s2)) => s1 == s2,
+            _ => false,
+        }
+    }
+}
+
+pub(super) type SynEnvMap = HashMap<Symbol, EnvBinding>;
+
 #[derive(Debug, Clone)]
 struct SynEnvInner {
     parent: Option<Rc<SynEnv>>,
-    bindings: HashMap<Symbol, EnvBinding>,
+    bindings: SynEnvMap,
 }
 
 #[derive(Debug, Clone)]
 pub struct SynEnv(RefCell<SynEnvInner>);
 
 impl SynEnv {
-    pub(super) fn new(
-        parent: Option<Rc<SynEnv>>,
-        bindings: HashMap<Symbol, EnvBinding>,
-    ) -> Rc<Self> {
+    pub(super) fn new(parent: Option<Rc<SynEnv>>, bindings: SynEnvMap) -> Rc<Self> {
         Rc::new(Self(RefCell::new(SynEnvInner { parent, bindings })))
     }
 
@@ -32,13 +41,13 @@ impl SynEnv {
         Self::new(None, HashMap::new())
     }
 
-    pub(super) fn get(&self, name: Symbol) -> Option<EnvBinding> {
+    pub(super) fn get(&self, name: Symbol) -> EnvBinding {
         let inner = self.0.borrow();
         match inner.bindings.get(&name) {
-            Some(binding) => Some(binding.clone()),
+            Some(binding) => binding.clone(),
             None => match &inner.parent {
                 Some(parent) => parent.get(name),
-                None => None,
+                None => EnvBinding::Ident(name),
             },
         }
     }
