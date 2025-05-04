@@ -58,15 +58,4 @@ impl SynEnv {
             .bindings
             .insert(name, EnvBinding::Macro(mac));
     }
-
-    pub(super) fn get_root(&self, name: Symbol) -> EnvBinding {
-        let inner = self.0.borrow();
-        match &inner.parent {
-            Some(parent) => parent.get_root(name),
-            None => match inner.bindings.get(&name) {
-                Some(binding) => binding.clone(),
-                None => EnvBinding::Ident(name),
-            },
-        }
-    }
 }
