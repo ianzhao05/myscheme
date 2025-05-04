@@ -272,12 +272,12 @@ fn process_define<I: DoubleEndedIterator<Item = Datum>>(
     };
     match var {
         Datum::Simple(SimpleDatum::Symbol(s)) => {
+            let name = freshen_name(s);
+            env.insert_ident(s, name);
             let expr = body
                 .exactly_one()
                 .map_err(|_| bs_err())
                 .and_then(|b| parse_expr(b, env))?;
-            let name = freshen_name(s);
-            env.insert_ident(s, name);
             Ok(Rc::new(Definition::Variable { name, value: expr }))
         }
         Datum::Compound(CompoundDatum::List(list)) => {

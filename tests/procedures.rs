@@ -20,6 +20,11 @@ fn recursive_procs() {
     );
 
     assert_eval_eq!(
+        "(define fact (lambda (n) (if (zero? n) 1 (* n (fact (- n 1)))))) (fact 8)",
+        "40320"
+    );
+
+    assert_eval_eq!(
         "(define (fib n) (if (< n 2) 1 (+ (fib (- n 1)) (fib (- n 2))))) (fib 10)",
         "89"
     );
