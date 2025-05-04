@@ -27,7 +27,7 @@ fn process_qq_list(
             {
                 if !curr.is_empty() {
                     parts.push(Rc::new(Expr::ProcCall {
-                        operator: Rc::new(Expr::Variable("list".into())),
+                        operator: Rc::new(Expr::Variable(lookup_root(env, "list".into())?)),
                         operands: curr,
                     }));
                     curr = vec![];
@@ -79,14 +79,15 @@ fn process_qq_list(
     }
     if !curr.is_empty() {
         parts.push(Rc::new(Expr::ProcCall {
-            operator: Rc::new(Expr::Variable(
-                (if list_type == ListType::Vector && parts.is_empty() {
+            operator: Rc::new(Expr::Variable(lookup_root(
+                env,
+                if list_type == ListType::Vector && parts.is_empty() {
                     "vector"
                 } else {
                     "list"
-                })
+                }
                 .into(),
-            )),
+            )?)),
             operands: curr,
         }));
     }
@@ -109,14 +110,13 @@ pub(super) fn process_qq(
         }
         Datum::Compound(CompoundDatum::List(list)) => match list {
             ListKind::Proper(list) => {
-                if let Some(Datum::Simple(SimpleDatum::Symbol(s))) = list.first() {
+                if let Some(&Datum::Simple(SimpleDatum::Symbol(s))) = list.first() {
                     let (is_unquote, is_unquote_splicing, is_quasiquote) = (
-                        *s == "unquote".into(),
-                        *s == "unquote-splicing".into(),
-                        *s == "quasiquote".into(),
+                        s == "unquote".into(),
+                        s == "unquote-splicing".into(),
+                        s == "quasiquote".into(),
                     );
                     if is_unquote || is_unquote_splicing || is_quasiquote {
-                        let s = *s;
                         let mut li = list.into_iter().skip(1);
                         if qq_level == 0 && !is_quasiquote {
                             let arg = li.next().ok_or(ParserError {
@@ -137,7 +137,7 @@ pub(super) fn process_qq(
                         let args: Vec<_> = li.collect();
                         let valid = args.len() == 1;
                         return Ok(Rc::new(Expr::ProcCall {
-                            operator: Rc::new(Expr::Variable("cons".into())),
+                            operator: Rc::new(Expr::Variable(lookup_root(env, "cons".into())?)),
                             operands: vec![
                                 Rc::new(Expr::Literal(LiteralKind::Quotation(Datum::Simple(
                                     SimpleDatum::Symbol(s),
@@ -168,7 +168,7 @@ pub(super) fn process_qq(
                         ))));
                     }
                     Ok(Rc::new(Expr::ProcCall {
-                        operator: Rc::new(Expr::Variable("append".into())),
+                        operator: Rc::new(Expr::Variable(lookup_root(env, "append".into())?)),
                         operands: parts,
                     }))
                 }
@@ -178,7 +178,7 @@ pub(super) fn process_qq(
                     process_qq_list(list.into_iter(), qq_level, ListType::Improper, env)?;
                 parts.push(process_qq(*last, qq_level, env)?);
                 Ok(Rc::new(Expr::ProcCall {
-                    operator: Rc::new(Expr::Variable("append".into())),
+                    operator: Rc::new(Expr::Variable(lookup_root(env, "append".into())?)),
                     operands: parts,
                 }))
             }
@@ -193,9 +193,9 @@ pub(super) fn process_qq(
                     Datum::EmptyList,
                 ))));
                 Ok(Rc::new(Expr::ProcCall {
-                    operator: Rc::new(Expr::Variable("list->vector".into())),
+                    operator: Rc::new(Expr::Variable(lookup_root(env, "list->vector".into())?)),
                     operands: vec![Rc::new(Expr::ProcCall {
-                        operator: Rc::new(Expr::Variable("append".into())),
+                        operator: Rc::new(Expr::Variable(lookup_root(env, "append".into())?)),
                         operands: parts,
                     })],
                 }))
