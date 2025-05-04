@@ -1017,7 +1017,7 @@ mod tests {
     use crate::test_util::*;
 
     fn parse(datum: Datum) -> Result<ExprOrDef, ParserError> {
-        super::parse(datum, &SynEnv::builtin())
+        super::parse(datum, &SynEnv::new_empty(None))
     }
 
     #[test]
@@ -1094,7 +1094,7 @@ mod tests {
                 int_datum!(42),
             ]),
             Ok(ExprOrDef::new_def(Definition::Variable {
-                name: "x".into(),
+                name: "x#fresh".into(),
                 value: Rc::new(int_expr!(42)),
             }))
         );
@@ -1102,7 +1102,7 @@ mod tests {
         assert_eq!(
             parse_expr(
                 proper_list_datum![symbol_datum!("define"), symbol_datum!("x"), int_datum!(42),],
-                &SynEnv::builtin()
+                &SynEnv::new_empty(None)
             ),
             Err(ParserError {
                 kind: ParserErrorKind::IllegalDefine,
@@ -1117,18 +1117,18 @@ mod tests {
                 proper_list_datum![symbol_datum!("+"), symbol_datum!("x"), symbol_datum!("y")],
             ]),
             Ok(ExprOrDef::new_def(Definition::Procedure {
-                name: "f".into(),
+                name: "f#fresh".into(),
                 data: Rc::new(ProcData {
                     args: vec!["x#fresh".into()],
                     rest: None,
                     body: vec![
                         ExprOrDef::new_def(Definition::Variable {
-                            name: "y".into(),
+                            name: "y#fresh".into(),
                             value: Rc::new(int_expr!(1)),
                         }),
                         ExprOrDef::new_expr(Expr::ProcCall {
                             operator: Rc::new(var_expr!("+")),
-                            operands: vec_rc![var_expr!("x#fresh"), var_expr!("y")],
+                            operands: vec_rc![var_expr!("x#fresh"), var_expr!("y#fresh")],
                         }),
                     ],
                 })
@@ -1147,7 +1147,7 @@ mod tests {
                 symbol_datum!("z"),
             ]),
             Ok(ExprOrDef::new_def(Definition::Procedure {
-                name: "f".into(),
+                name: "f#fresh".into(),
                 data: Rc::new(ProcData {
                     args: vec!["x#fresh".into(), "y#fresh".into()],
                     rest: Some("z#fresh".into()),
@@ -1271,7 +1271,7 @@ mod tests {
                 rest: Some("z#fresh".into()),
                 body: vec![
                     ExprOrDef::new_def(Definition::Variable {
-                        name: "a".into(),
+                        name: "a#fresh".into(),
                         value: Rc::new(int_expr!(42)),
                     }),
                     ExprOrDef::new_expr(Expr::ProcCall {
@@ -1462,7 +1462,7 @@ mod tests {
             ]),
             Ok(ExprOrDef::MixedBegin(vec![
                 ExprOrDef::new_def(Definition::Variable {
-                    name: "x".into(),
+                    name: "x#fresh".into(),
                     value: Rc::new(int_expr!(42))
                 }),
                 ExprOrDef::new_expr(str_expr!("hello")),
@@ -1480,11 +1480,11 @@ mod tests {
             ]),
             Ok(ExprOrDef::new_def(Definition::Begin(vec_rc![
                 Definition::Variable {
-                    name: "x".into(),
+                    name: "x#fresh".into(),
                     value: Rc::new(int_expr!(42)),
                 },
                 Definition::Variable {
-                    name: "y".into(),
+                    name: "y#fresh".into(),
                     value: Rc::new(int_expr!(43)),
                 },
             ])))
@@ -1733,12 +1733,12 @@ mod tests {
                     rest: None,
                     body: vec![
                         ExprOrDef::new_def(Definition::Variable {
-                            name: "y".into(),
+                            name: "y#fresh".into(),
                             value: Rc::new(int_expr!(2)),
                         }),
                         ExprOrDef::new_expr(Expr::ProcCall {
                             operator: Rc::new(var_expr!("+")),
-                            operands: vec_rc![var_expr!("x#fresh"), var_expr!("y")],
+                            operands: vec_rc![var_expr!("x#fresh"), var_expr!("y#fresh")],
                         }),
                     ],
                 }))),

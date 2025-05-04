@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::cont::{Acc, Cont, State};
-use crate::env::Env;
+use crate::env::{primitive_env, Env};
 use crate::evaler::{EvalError, EvalErrorKind};
 use crate::expr::ExprOrDef;
 use crate::object::{EnvSpec, ObjectRef};
@@ -28,7 +28,7 @@ fn eval(state: State) -> Bouncer {
     let Ok(datum) = (&rib[0]).try_into() else {
         return Bouncer::Land(Err(expr_cv(&rib[0])));
     };
-    let expr = match parse(datum, &SynEnv::builtin()) {
+    let expr = match parse(datum, &SynEnv::new_empty(None)) {
         Ok(ExprOrDef::Expr(expr)) => expr,
         Ok(_) => return Bouncer::Land(Err(expr_cv(&rib[0]))),
         Err(e) => return Bouncer::Land(Err(EvalError::new(EvalErrorKind::ParserError(e)))),
@@ -37,7 +37,7 @@ fn eval(state: State) -> Bouncer {
         acc: Acc::Expr(expr),
         cont: Rc::new(Cont::Return),
         env: match env_spec {
-            EnvSpec::SchemeReport => Env::primitives(),
+            EnvSpec::SchemeReport => primitive_env().0,
             EnvSpec::Null => Env::new_empty(None),
         },
         rib: vec![],

@@ -1,10 +1,9 @@
 use wasm_bindgen::prelude::wasm_bindgen;
 
-use myscheme::env::Env;
+use myscheme::env::primitive_env;
 use myscheme::err::SchemeError;
 use myscheme::eval_str;
 use myscheme::object::ObjectRef;
-use myscheme::parser::syn_env::SynEnv;
 
 #[cfg(target_arch = "wasm32")]
 use myscheme::port::web::OutBuffer;
@@ -55,5 +54,5 @@ impl StringResult {
 
 #[wasm_bindgen]
 pub fn eval_expr(s: &str) -> StringResult {
-    StringResult::new(eval_str(s, &Env::primitives(), &SynEnv::builtin()))
+    StringResult::new(eval_str(s, &primitive_env()))
 }
