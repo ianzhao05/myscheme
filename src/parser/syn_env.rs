@@ -52,6 +52,13 @@ impl SynEnv {
         }
     }
 
+    pub(super) fn insert_ident(&self, name: Symbol, ident: Symbol) {
+        self.0
+            .borrow_mut()
+            .bindings
+            .insert(name, EnvBinding::Ident(ident));
+    }
+
     pub(super) fn insert_macro(&self, name: Symbol, mac: Rc<Macro>) {
         self.0
             .borrow_mut()

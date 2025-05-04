@@ -205,7 +205,11 @@ fn process_proc<I: DoubleEndedIterator<Item = Datum>>(
                 kind: ParserErrorKind::IllegalEmptyList,
             })?;
             name = match first {
-                Datum::Simple(SimpleDatum::Symbol(s)) => Some(s),
+                Datum::Simple(SimpleDatum::Symbol(s)) => {
+                    let name = freshen_name(s);
+                    env.insert_ident(s, name);
+                    Some(name)
+                }
                 _ => return Err(bs_err()),
             };
         }
@@ -257,12 +261,10 @@ fn process_define<I: DoubleEndedIterator<Item = Datum>>(
     match var {
         Datum::Simple(SimpleDatum::Symbol(s)) => {
             let expr = parse_expr(body.next().ok_or_else(bs_err)?, env)?;
-
             if body.next().is_none() {
-                Ok(Rc::new(Definition::Variable {
-                    name: s,
-                    value: expr,
-                }))
+                let name = freshen_name(s);
+                env.insert_ident(s, name);
+                Ok(Rc::new(Definition::Variable { name, value: expr }))
             } else {
                 Err(bs_err())
             }
