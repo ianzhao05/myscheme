@@ -429,7 +429,9 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                     kind: ParserErrorKind::IllegalEmptyList,
                 })?;
                 match first {
-                    Datum::Simple(SimpleDatum::Symbol(s)) if s == "else".into() => {
+                    Datum::Simple(SimpleDatum::Symbol(s))
+                        if env.get(s) == EnvBinding::Ident("else".into()) =>
+                    {
                         if acc.is_some() {
                             return Err(bs_err());
                         }
@@ -463,7 +465,9 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                             continue;
                         };
                         match second {
-                            Datum::Simple(SimpleDatum::Symbol(s)) if s == "=>".into() => {
+                            Datum::Simple(SimpleDatum::Symbol(s))
+                                if env.get(s) == EnvBinding::Ident("=>".into()) =>
+                            {
                                 let third = pi.next().ok_or_else(bs_err)?;
                                 if pi.next().is_some() {
                                     return Err(bs_err());
@@ -567,7 +571,9 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                     return Err(bs_err());
                 }
                 match first {
-                    Datum::Simple(SimpleDatum::Symbol(s)) if s == "else".into() => {
+                    Datum::Simple(SimpleDatum::Symbol(s))
+                        if env.get(s) == EnvBinding::Ident("else".into()) =>
+                    {
                         if acc.is_some() {
                             return Err(bs_err());
                         }
