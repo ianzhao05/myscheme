@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
+use itertools::Itertools;
+
 use crate::datum::SimpleDatum;
 use crate::evaler::{EvalError, EvalErrorKind};
 use crate::number::{Number, RealKind};
@@ -22,7 +24,7 @@ fn make_string(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
 
 fn string(args: &[ObjectRef]) -> Result<ObjectRef, EvalError> {
     Ok(ObjectRef::new_string(
-        args.iter().map(get_char).collect::<Result<String, _>>()?,
+        args.iter().map(get_char).try_collect()?,
     ))
 }
 

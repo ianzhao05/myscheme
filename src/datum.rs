@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use std::fmt;
 
+use itertools::Itertools;
+
 use crate::interner::Symbol;
 use crate::number::Number;
 use crate::object::{Object, ObjectRef};
@@ -123,10 +125,7 @@ impl TryFrom<&ObjectRef> for Datum {
                     }
                 }))),
                 Object::Vector(v) => Ok(Datum::Compound(CompoundDatum::Vector(
-                    v.borrow()
-                        .iter()
-                        .map(Datum::try_from)
-                        .collect::<Result<_, _>>()?,
+                    v.borrow().iter().map(Datum::try_from).try_collect()?,
                 ))),
                 _ => Err(()),
             },
