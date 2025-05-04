@@ -2,6 +2,7 @@ pub mod macros;
 mod quasiquote;
 pub mod syn_env;
 
+use std::cell::RefCell;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
@@ -25,33 +26,47 @@ fn gen_temp_name() -> Symbol {
     }
 }
 
+thread_local! {
+    static INV_FRESH: RefCell<HashMap<Symbol, Symbol>> = RefCell::new(HashMap::new());
+}
+
 fn freshen_name(name: Symbol) -> Symbol {
-    if cfg!(test) {
+    let fresh = if cfg!(test) {
         format!("{name}#fresh").into()
     } else {
         format!("{name}#{}", Uuid::new_v4().simple()).into()
-    }
+    };
+    INV_FRESH.with_borrow_mut(|inv| inv.insert(fresh, name));
+    fresh
+}
+
+fn revert_name(fresh: Symbol) -> Symbol {
+    INV_FRESH
+        .with_borrow(|inv| inv.get(&fresh).copied())
+        .unwrap_or(fresh)
 }
 
 fn lookup_name(env: &SynEnv, symb: Symbol) -> Result<Symbol, ParserError> {
     match env.get(symb) {
-        Some(EnvBinding::Ident(name)) => Ok(name),
-        Some(EnvBinding::Macro(_)) => Err(ParserError {
+        EnvBinding::Ident(kw) if is_keyword(kw) => Err(ParserError {
+            kind: ParserErrorKind::BadSyntax(kw),
+        }),
+        EnvBinding::Ident(name) => Ok(name),
+        EnvBinding::Macro(_) => Err(ParserError {
             kind: ParserErrorKind::BadSyntax(symb),
         }),
-        None if is_keyword(symb) => Err(ParserError {
-            kind: ParserErrorKind::BadSyntax(symb),
-        }),
-        None => Ok(symb),
     }
 }
 
-fn create_proc(
+fn create_proc<B>(
     env: Rc<SynEnv>,
     mut args: Vec<Symbol>,
     mut rest: Option<Symbol>,
-    body: impl FnOnce(Rc<SynEnv>, &[Symbol], Option<&Symbol>) -> Result<Vec<ExprOrDef>, ParserError>,
-) -> Result<ProcData, ParserError> {
+    body: B,
+) -> Result<ProcData, ParserError>
+where
+    B: FnOnce(Rc<SynEnv>, &[Symbol], Option<&Symbol>) -> Result<Vec<ExprOrDef>, ParserError>,
+{
     let mut bindings = HashMap::new();
     for arg in args.iter_mut().chain(&mut rest) {
         match bindings.entry(*arg) {
@@ -71,12 +86,15 @@ fn create_proc(
     Ok(ProcData { args, rest, body })
 }
 
-fn create_let(
+fn create_let<B>(
     env: Rc<SynEnv>,
     arg: Symbol,
     value: Rc<Expr>,
-    body: impl FnOnce(Rc<SynEnv>, Symbol) -> Result<Vec<ExprOrDef>, ParserError>,
-) -> Result<Expr, ParserError> {
+    body: B,
+) -> Result<Expr, ParserError>
+where
+    B: FnOnce(Rc<SynEnv>, Symbol) -> Result<Vec<ExprOrDef>, ParserError>,
+{
     let arg_fresh = freshen_name(arg);
     let bindings = [(arg, EnvBinding::Ident(arg_fresh))].into();
     let env = SynEnv::new(Some(env), bindings);
@@ -90,7 +108,6 @@ fn create_let(
 #[derive(Debug, PartialEq)]
 pub enum ParserErrorKind {
     BadSyntax(Symbol),
-    UnboundIdentifier(Symbol),
     DuplicateArgument(Symbol),
     IllegalEmptyList,
     IllegalVector,
@@ -115,9 +132,6 @@ impl fmt::Display for ParserError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.kind {
             ParserErrorKind::BadSyntax(s) => write!(f, "Bad syntax {s}"),
-            ParserErrorKind::UnboundIdentifier(s) => {
-                write!(f, "Unbound identifier {s}")
-            }
             ParserErrorKind::DuplicateArgument(s) => {
                 write!(f, "Duplicate argument {s}")
             }
@@ -324,8 +338,9 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             Ok(ExprOrDef::Definition(process_define(var, operands, env)?))
         }
         _ if kw == "quote".into() => {
-            let operand = operands.next().ok_or_else(bs_err)?;
+            let mut operand = operands.next().ok_or_else(bs_err)?;
             if operands.next().is_none() {
+                operand.map_symbols(&mut revert_name);
                 Ok(ExprOrDef::new_expr(Expr::Literal(LiteralKind::Quotation(
                     operand,
                 ))))
@@ -697,10 +712,13 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                     operands: vec![],
                 })),
                 Some((arg, val)) => {
-                    fn rec<I: DoubleEndedIterator<Item = Datum>>(
+                    fn rec<
+                        I: Iterator<Item = Datum>,
+                        B: Iterator<Item = Result<(Symbol, Datum), ParserError>>,
+                    >(
                         env: Rc<SynEnv>,
                         operands: I,
-                        mut bindings: impl Iterator<Item = Result<(Symbol, Datum), ParserError>>,
+                        mut bindings: B,
                     ) -> Result<Vec<ExprOrDef>, ParserError> {
                         match bindings.next().transpose()? {
                             None => process_body(operands, &env),
@@ -948,14 +966,10 @@ pub fn parse_top_level(datum: Datum, env: &Rc<SynEnv>) -> ParserResult {
             else {
                 return ParserResult(Err(bs_err()));
             };
-            let transformer = macros::Transformer::try_from(rules);
-            match transformer {
-                Ok(transformer) => {
-                    env.insert_macro(name, Rc::new(Macro::new(transformer, Rc::clone(env))));
-                    ParserResult(Ok(ParserOutput::SyntaxDefinition))
-                }
-                Err(e) => ParserResult(Err(e)),
-            }
+            ParserResult((|| {
+                env.insert_macro(name, Rc::new(Macro::new(rules, Rc::clone(env))?));
+                Ok(ParserOutput::SyntaxDefinition)
+            })())
         }
         other => ParserResult(parse(other, env).map(ParserOutput::ExprOrDef)),
     }
@@ -983,19 +997,24 @@ pub fn parse(datum: Datum, env: &Rc<SynEnv>) -> Result<ExprOrDef, ParserError> {
         Datum::Compound(compound) => match compound {
             CompoundDatum::List(list) => match list {
                 ListKind::Proper(list) => {
+                    if let Some(&Datum::Simple(SimpleDatum::Symbol(symb))) = list.first() {
+                        match env.get(symb) {
+                            EnvBinding::Macro(mac) => {
+                                let (expanded, env) = mac.expand(list, env).ok_or(ParserError {
+                                    kind: ParserErrorKind::BadSyntax(symb),
+                                })?;
+                                return parse(expanded, &env);
+                            }
+                            EnvBinding::Ident(kw) if is_keyword(kw) => {
+                                return process_keyword(kw, list.into_iter().skip(1), env);
+                            }
+                            _ => {}
+                        }
+                    }
                     let mut li = list.into_iter();
                     let first = li.next().ok_or(ParserError {
                         kind: ParserErrorKind::IllegalEmptyList,
                     })?;
-                    if let Datum::Simple(SimpleDatum::Symbol(symb)) = first {
-                        match env.get(symb) {
-                            Some(EnvBinding::Macro(mac)) => {
-                                return parse(mac.expand(li)?, env);
-                            }
-                            None if is_keyword(symb) => return process_keyword(symb, li, env),
-                            _ => {}
-                        }
-                    }
                     let operator = parse_expr(first, env)?;
                     let rest = li
                         .map(|e| parse_expr(e, env))

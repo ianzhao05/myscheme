@@ -136,6 +136,35 @@ impl TryFrom<&ObjectRef> for Datum {
     }
 }
 
+impl Datum {
+    pub(crate) fn map_symbols(&mut self, f: &mut impl FnMut(Symbol) -> Symbol) {
+        match self {
+            Datum::Simple(SimpleDatum::Symbol(s)) => *s = f(*s),
+            Datum::Compound(c) => match c {
+                CompoundDatum::List(l) => match l {
+                    ListKind::Proper(l) => {
+                        for d in l {
+                            d.map_symbols(f);
+                        }
+                    }
+                    ListKind::Improper(l, t) => {
+                        for d in l {
+                            d.map_symbols(f);
+                        }
+                        t.map_symbols(f);
+                    }
+                },
+                CompoundDatum::Vector(v) => {
+                    for d in v {
+                        d.map_symbols(f);
+                    }
+                }
+            },
+            _ => {}
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
