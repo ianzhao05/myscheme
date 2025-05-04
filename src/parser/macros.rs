@@ -127,10 +127,10 @@ impl TryFrom<(Datum, &SynEnv)> for SyntaxRule {
         else {
             return Err(bs_err(2));
         };
-        let mut it = pattern_template_datum.into_iter();
-        let (Some(pattern), Some(template), None) = (it.next(), it.next(), it.next()) else {
-            return Err(bs_err(3));
-        };
+        let (pattern, template) = pattern_template_datum
+            .into_iter()
+            .collect_tuple()
+            .ok_or_else(|| bs_err(3))?;
         let pattern = CompoundPattern::try_from_first(pattern)?;
         let mut template = Template::try_from(template)?;
         let mut rewrites = HashMap::new();
@@ -205,7 +205,7 @@ impl CompoundPattern {
                     return Err(bs_err(7));
                 };
             }
-            li.map(Pattern::try_from).collect::<Result<Vec<_>, _>>()
+            li.map(Pattern::try_from).try_collect()
         };
         match list {
             ListKind::Proper(mut l) => match l.last() {

@@ -215,7 +215,7 @@ fn process_proc<I: DoubleEndedIterator<Item = Datum>>(
                 Datum::Simple(SimpleDatum::Symbol(s)) => Ok(s),
                 _ => Err(bs_err()),
             })
-            .collect::<Result<Vec<_>, _>>()?,
+            .try_collect()?,
         ))
     };
     match list {
@@ -338,15 +338,11 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             Ok(ExprOrDef::Definition(process_define(var, operands, env)?))
         }
         _ if kw == "quote".into() => {
-            let mut operand = operands.next().ok_or_else(bs_err)?;
-            if operands.next().is_none() {
-                operand.map_symbols(&mut revert_name);
-                Ok(ExprOrDef::new_expr(Expr::Literal(LiteralKind::Quotation(
-                    operand,
-                ))))
-            } else {
-                Err(bs_err())
-            }
+            let mut operand = operands.exactly_one().map_err(|_| bs_err())?;
+            operand.map_symbols(&mut revert_name);
+            Ok(ExprOrDef::new_expr(Expr::Literal(LiteralKind::Quotation(
+                operand,
+            ))))
         }
         _ if kw == "lambda".into() => {
             let formals = operands.next().ok_or_else(bs_err)?;
@@ -409,33 +405,23 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             }
         }
         _ if kw == "set!".into() => {
-            let variable = operands.next().ok_or_else(bs_err)?;
-            let value = operands.next().ok_or_else(bs_err)?;
-            if operands.next().is_none() {
-                Ok(ExprOrDef::new_expr(Expr::Assignment {
-                    variable: match variable {
-                        Datum::Simple(SimpleDatum::Symbol(symb)) => lookup_name(env, symb)?,
-                        _ => return Err(bs_err()),
-                    },
-                    value: parse_expr(value, env)?,
-                }))
-            } else {
-                Err(bs_err())
-            }
+            let (variable, value) = operands.collect_tuple().ok_or_else(bs_err)?;
+            Ok(ExprOrDef::new_expr(Expr::Assignment {
+                variable: match variable {
+                    Datum::Simple(SimpleDatum::Symbol(symb)) => lookup_name(env, symb)?,
+                    _ => return Err(bs_err()),
+                },
+                value: parse_expr(value, env)?,
+            }))
         }
         _ if kw == "if".into() => {
-            let test = operands.next().ok_or_else(bs_err)?;
-            let consequent = operands.next().ok_or_else(bs_err)?;
-            let alternate = operands.next();
-            if operands.next().is_none() {
-                Ok(ExprOrDef::new_expr(Expr::Conditional {
-                    test: parse_expr(test, env)?,
-                    consequent: parse_expr(consequent, env)?,
-                    alternate: alternate.map(parse_expr_with_env).transpose()?,
-                }))
-            } else {
-                Err(bs_err())
-            }
+            let (test, consequent) = operands.next_tuple().ok_or_else(bs_err)?;
+            let alternate = operands.at_most_one().map_err(|_| bs_err())?;
+            Ok(ExprOrDef::new_expr(Expr::Conditional {
+                test: parse_expr(test, env)?,
+                consequent: parse_expr(consequent, env)?,
+                alternate: alternate.map(parse_expr_with_env).transpose()?,
+            }))
         }
         _ if kw == "cond".into() => {
             let mut acc: Option<Rc<Expr>> = None;
@@ -452,7 +438,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                         if acc.is_some() {
                             return Err(bs_err());
                         }
-                        let seq = pi.map(parse_expr_with_env).collect::<Result<Vec<_>, _>>()?;
+                        let seq: Vec<_> = pi.map(parse_expr_with_env).try_collect()?;
                         if seq.is_empty() {
                             return Err(bs_err());
                         }
@@ -464,8 +450,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                     }
                     _ => {
                         let test = parse_expr(first, env)?;
-                        let second = pi.next();
-                        if second.is_none() {
+                        let Some(second) = pi.next() else {
                             if acc.is_some() {
                                 let temp = gen_temp_name();
                                 acc = Some(Rc::new(Expr::SimpleLet {
@@ -481,8 +466,8 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                                 acc = Some(test);
                             }
                             continue;
-                        }
-                        match second.unwrap() {
+                        };
+                        match second {
                             Datum::Simple(SimpleDatum::Symbol(s)) if s == "=>".into() => {
                                 let third = pi.next().ok_or_else(bs_err)?;
                                 if pi.next().is_some() {
@@ -504,13 +489,10 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                                 }));
                             }
                             second => {
-                                let seq = std::iter::once(second)
+                                let seq: Vec<_> = std::iter::once(second)
                                     .chain(pi)
                                     .map(parse_expr_with_env)
-                                    .collect::<Result<Vec<_>, _>>()?;
-                                if seq.is_empty() {
-                                    return Err(bs_err());
-                                }
+                                    .try_collect()?;
                                 acc = Some(Rc::new(Expr::Conditional {
                                     test,
                                     consequent: if seq.len() == 1 {
@@ -530,45 +512,33 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 None => Err(bs_err()),
             }
         }
-        _ if kw == "and".into() => {
-            let ops = operands
-                .rev()
-                .map(parse_expr_with_env)
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(ExprOrDef::Expr(if ops.is_empty() {
-                Rc::new(Expr::Literal(LiteralKind::SelfEvaluating(
-                    SelfEvaluatingKind::Boolean(true),
-                )))
-            } else {
-                let mut oi = ops.into_iter();
-                let mut acc = oi.next().unwrap();
-                for op in oi {
-                    acc = Rc::new(Expr::Conditional {
+        _ if kw == "and".into() => operands
+            .rev()
+            .map(parse_expr_with_env)
+            .process_results(|ops| {
+                ops.reduce(|acc, op| {
+                    Rc::new(Expr::Conditional {
                         test: op,
                         consequent: acc,
                         alternate: Some(Rc::new(Expr::Literal(LiteralKind::SelfEvaluating(
                             SelfEvaluatingKind::Boolean(false),
                         )))),
-                    });
-                }
-                acc
-            }))
-        }
-        _ if kw == "or".into() => {
-            let ops = operands
-                .rev()
-                .map(parse_expr_with_env)
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(ExprOrDef::Expr(if ops.is_empty() {
-                Rc::new(Expr::Literal(LiteralKind::SelfEvaluating(
-                    SelfEvaluatingKind::Boolean(false),
-                )))
-            } else {
-                let mut oi = ops.into_iter();
-                let mut acc = oi.next().unwrap();
-                for op in oi {
+                    })
+                })
+                .unwrap_or_else(|| {
+                    Rc::new(Expr::Literal(LiteralKind::SelfEvaluating(
+                        SelfEvaluatingKind::Boolean(true),
+                    )))
+                })
+            })
+            .map(ExprOrDef::Expr),
+        _ if kw == "or".into() => operands
+            .rev()
+            .map(parse_expr_with_env)
+            .process_results(|ops| {
+                ops.reduce(|acc, op| {
                     let temp = gen_temp_name();
-                    acc = Rc::new(Expr::SimpleLet {
+                    Rc::new(Expr::SimpleLet {
                         arg: temp,
                         value: op,
                         body: vec![ExprOrDef::new_expr(Expr::Conditional {
@@ -576,11 +546,15 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                             consequent: Rc::new(Expr::Variable(temp)),
                             alternate: Some(acc),
                         })],
-                    });
-                }
-                acc
-            }))
-        }
+                    })
+                })
+                .unwrap_or_else(|| {
+                    Rc::new(Expr::Literal(LiteralKind::SelfEvaluating(
+                        SelfEvaluatingKind::Boolean(false),
+                    )))
+                })
+            })
+            .map(ExprOrDef::Expr),
         _ if kw == "case".into() => {
             let key = parse_expr(operands.next().ok_or_else(bs_err)?, env)?;
             let temp = gen_temp_name();
@@ -593,7 +567,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 let first = pi.next().ok_or(ParserError {
                     kind: ParserErrorKind::IllegalEmptyList,
                 })?;
-                let seq = pi.map(parse_expr_with_env).collect::<Result<Vec<_>, _>>()?;
+                let seq: Vec<_> = pi.map(parse_expr_with_env).try_collect()?;
                 if seq.is_empty() {
                     return Err(bs_err());
                 }
@@ -788,7 +762,7 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                                 operands: vals
                                     .into_iter()
                                     .map(|v| parse_expr(v, &env))
-                                    .collect::<Result<_, _>>()?,
+                                    .try_collect()?,
                             }),
                         );
                         Ok(body)
@@ -838,10 +812,8 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             };
             let mut ei = term.into_iter().map(parse_expr_with_env);
             let test = ei.next().ok_or_else(bs_err)??;
-            let seq = ei.collect::<Result<Vec<_>, _>>()?;
-            let mut body = operands
-                .map(parse_expr_with_env)
-                .collect::<Result<Vec<_>, _>>()?;
+            let seq = ei.try_collect()?;
+            let mut body: Vec<_> = operands.map(parse_expr_with_env).try_collect()?;
             let temp = gen_temp_name();
             body.push(Rc::new(Expr::ProcCall {
                 operator: Rc::new(Expr::Variable(temp)),
@@ -1017,9 +989,7 @@ pub fn parse(datum: Datum, env: &Rc<SynEnv>) -> Result<ExprOrDef, ParserError> {
                         kind: ParserErrorKind::IllegalEmptyList,
                     })?;
                     let operator = parse_expr(first, env)?;
-                    let rest = li
-                        .map(|e| parse_expr(e, env))
-                        .collect::<Result<Vec<_>, _>>()?;
+                    let rest = li.map(|e| parse_expr(e, env)).try_collect()?;
                     Ok(ExprOrDef::new_expr(Expr::ProcCall {
                         operator,
                         operands: rest,
