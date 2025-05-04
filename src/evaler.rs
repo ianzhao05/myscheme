@@ -562,6 +562,7 @@ pub fn eval(eod: ExprOrDef, env: Rc<Env>) -> Result<ObjectRef, EvalError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::env::primitive_env;
     use crate::test_util::*;
 
     #[test]
@@ -620,7 +621,7 @@ mod tests {
 
     #[test]
     fn primitive_calls() {
-        let env = Env::primitives();
+        let (env, _) = primitive_env();
 
         assert_eq!(
             eval(

@@ -37,8 +37,8 @@ impl SynEnv {
         Rc::new(Self(RefCell::new(SynEnvInner { parent, bindings })))
     }
 
-    pub fn builtin() -> Rc<Self> {
-        Self::new(None, HashMap::new())
+    pub fn new_empty(parent: Option<Rc<SynEnv>>) -> Rc<Self> {
+        Self::new(parent, HashMap::new())
     }
 
     pub(super) fn get(&self, name: Symbol) -> EnvBinding {

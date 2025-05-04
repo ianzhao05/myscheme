@@ -25,19 +25,6 @@ impl Env {
         Self::new(parent, HashMap::new())
     }
 
-    pub fn primitives() -> Rc<Self> {
-        thread_local! {
-            static PRIMITIVES_ENV: Rc<Env> = {
-                let env = Env::new(None, primitives());
-                eval_str(PRELUDE, &env, &SynEnv::builtin()).unwrap_or_else(|e| {
-                    panic!("Error while evaluating prelude: {e}");
-                });
-                env
-            }
-        }
-        PRIMITIVES_ENV.with(|env| Rc::new(Self::clone(env)))
-    }
-
     pub fn get(&self, name: Symbol) -> Option<ObjectRef> {
         let inner = self.0.borrow();
         match inner.bindings.get(&name) {
@@ -65,4 +52,24 @@ impl Env {
             }
         }
     }
+}
+
+pub type CombinedEnv = (Rc<Env>, Rc<SynEnv>);
+
+pub fn primitive_env() -> CombinedEnv {
+    thread_local! {
+        static PRIMITIVES_ENV: CombinedEnv = {
+            let env = (Env::new(None, primitives()), SynEnv::new_empty(None));
+            eval_str(PRELUDE, &env).unwrap_or_else(|e| {
+                panic!("Error while evaluating prelude: {e}");
+            });
+            env
+        }
+    }
+    PRIMITIVES_ENV.with(|(env, syn_env)| {
+        (
+            Rc::new(Env::clone(env)),
+            SynEnv::new_empty(Some(Rc::clone(syn_env))),
+        )
+    })
 }
