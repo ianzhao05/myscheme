@@ -17,7 +17,7 @@ jobs:
         working-directory: ./myscheme-wasm
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
@@ -32,7 +32,7 @@ jobs:
           tar -rvf "$RUNNER_TEMP/artifact.tar" ./*.{js,wasm}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: github-pages
           path: ${{ runner.temp }}/artifact.tar
@@ -55,4 +55,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v2
+        uses: actions/deploy-pages@v4
