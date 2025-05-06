@@ -1,13 +1,15 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use super::macros::Macro;
+use super::{Datum, ParserError};
 use crate::interner::Symbol;
 
 #[derive(Debug, Clone)]
 pub(super) enum EnvBinding {
     Macro(Rc<Macro>),
+    MacroSelf(Weak<Macro>),
     Ident(Symbol),
 }
 
@@ -15,6 +17,9 @@ impl PartialEq for EnvBinding {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Macro(m1), Self::Macro(m2)) => Rc::ptr_eq(m1, m2),
+            (Self::MacroSelf(m1), Self::MacroSelf(m2)) => Weak::ptr_eq(m1, m2),
+            (Self::Macro(m1), Self::MacroSelf(m2)) => Weak::ptr_eq(&Rc::downgrade(m1), m2),
+            (Self::MacroSelf(m1), Self::Macro(m2)) => Weak::ptr_eq(m1, &Rc::downgrade(m2)),
             (Self::Ident(s1), Self::Ident(s2)) => s1 == s2,
             _ => false,
         }
@@ -52,10 +57,17 @@ impl SynEnv {
         }
     }
 
-    pub(super) fn insert_macro(&self, name: Symbol, mac: Rc<Macro>) {
+    pub(super) fn insert_macro(
+        self: &Rc<Self>,
+        name: Symbol,
+        rules: Datum,
+        rec: bool,
+    ) -> Result<(), ParserError> {
+        let mac = Macro::new(name, rules, self.clone(), rec)?;
         self.0
             .borrow_mut()
             .bindings
             .insert(name, EnvBinding::Macro(mac));
+        Ok(())
     }
 }
