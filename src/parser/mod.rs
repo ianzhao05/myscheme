@@ -119,6 +119,10 @@ pub enum ParserErrorKind {
     IllegalSyntaxRules,
     IllegalDefineSyntax,
     MissingSyntaxRules,
+    DuplicatePatternVar(Symbol),
+    IncompatibleEllipsisCounts(usize, usize),
+    InsufficientEllipses(Symbol),
+    ExtraEllipses,
 }
 
 #[derive(Debug, PartialEq)]
@@ -130,29 +134,42 @@ impl Error for ParserError {}
 
 impl fmt::Display for ParserError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use ParserErrorKind::*;
         match &self.kind {
-            ParserErrorKind::BadSyntax(s) => write!(f, "Bad syntax {s}"),
-            ParserErrorKind::DuplicateArgument(s) => {
+            BadSyntax(s) => write!(f, "Bad syntax {s}"),
+            DuplicateArgument(s) => {
                 write!(f, "Duplicate argument {s}")
             }
-            ParserErrorKind::IllegalEmptyList => write!(f, "Illegal empty list"),
-            ParserErrorKind::IllegalVector => write!(f, "Vector must be quoted"),
-            ParserErrorKind::IllegalImproperList => write!(f, "Illegal improper list"),
-            ParserErrorKind::IllegalDefine => write!(f, "Definition not allowed here"),
-            ParserErrorKind::IllegalUnquote => write!(f, "unquote not allowed here"),
-            ParserErrorKind::IllegalUnquoteSplicing => {
+            IllegalEmptyList => write!(f, "Illegal empty list"),
+            IllegalVector => write!(f, "Vector must be quoted"),
+            IllegalImproperList => write!(f, "Illegal improper list"),
+            IllegalDefine => write!(f, "Definition not allowed here"),
+            IllegalUnquote => write!(f, "unquote not allowed here"),
+            IllegalUnquoteSplicing => {
                 write!(f, "unquote-splicing not allowed here")
             }
-            ParserErrorKind::IllegalDefineSyntax => {
+            MissingExpression => write!(f, "Missing expression"),
+            IllegalDefineSyntax => {
                 write!(f, "define-syntax only allowed on top level")
             }
-            ParserErrorKind::IllegalSyntaxRules => {
+            IllegalSyntaxRules => {
                 write!(f, "syntax-rules not allowed here")
             }
-            ParserErrorKind::MissingSyntaxRules => {
+            MissingSyntaxRules => {
                 write!(f, "Expected syntax-rules for macro definition")
             }
-            ParserErrorKind::MissingExpression => write!(f, "Missing expression"),
+            DuplicatePatternVar(s) => {
+                write!(f, "Duplicate pattern variable {s}")
+            }
+            IncompatibleEllipsisCounts(x, y) => {
+                write!(f, "Incompatible ellipsis counts {x} vs. {y}")
+            }
+            InsufficientEllipses(s) => {
+                write!(f, "Insufficient ellipses for pattern variable {s}")
+            }
+            ExtraEllipses => {
+                write!(f, "Extra ellipses in template")
+            }
         }
     }
 }
@@ -938,7 +955,7 @@ pub fn parse_top_level(datum: Datum, env: &Rc<SynEnv>) -> ParserResult {
                 return ParserResult(Err(bs_err()));
             };
             ParserResult((|| {
-                env.insert_macro(name, Rc::new(Macro::new(rules, Rc::clone(env))?));
+                env.insert_macro(name, Rc::new(Macro::new(name, rules, Rc::clone(env))?));
                 Ok(ParserOutput::SyntaxDefinition)
             })())
         }
@@ -971,10 +988,7 @@ pub fn parse(datum: Datum, env: &Rc<SynEnv>) -> Result<ExprOrDef, ParserError> {
                     if let Some(&Datum::Simple(SimpleDatum::Symbol(symb))) = list.first() {
                         match env.get(symb) {
                             EnvBinding::Macro(mac) => {
-                                let (expanded, env) =
-                                    mac.expand(&list, env).ok_or(ParserError {
-                                        kind: ParserErrorKind::BadSyntax(symb),
-                                    })?;
+                                let (expanded, env) = mac.expand(&list, env)?;
                                 return parse(expanded, &env);
                             }
                             EnvBinding::Ident(kw) if is_keyword(kw) => {

@@ -11,22 +11,32 @@ use super::{ParserError, ParserErrorKind};
 
 #[derive(Debug)]
 pub struct Macro {
+    name: Symbol,
     transformer: Transformer,
     env_def: Rc<SynEnv>,
 }
 
 impl Macro {
-    pub fn new(rules: Datum, env: Rc<SynEnv>) -> Result<Self, ParserError> {
+    pub fn new(name: Symbol, rules: Datum, env: Rc<SynEnv>) -> Result<Self, ParserError> {
         let transformer = Transformer::try_from((rules, env.as_ref()))?;
         Ok(Self {
+            name,
             transformer,
             env_def: env,
         })
     }
 
-    pub fn expand(&self, operands: &[Datum], env_use: &Rc<SynEnv>) -> Option<(Datum, Rc<SynEnv>)> {
+    pub fn expand(
+        &self,
+        operands: &[Datum],
+        env_use: &Rc<SynEnv>,
+    ) -> Result<(Datum, Rc<SynEnv>), ParserError> {
         self.transformer
             .transcribe(&operands[1..], env_use, &self.env_def)
+            .transpose()?
+            .ok_or(ParserError {
+                kind: ParserErrorKind::BadSyntax(self.name),
+            })
     }
 }
 
@@ -85,10 +95,10 @@ impl TryFrom<(Datum, &SynEnv)> for Transformer {
             Some(Datum::EmptyList) => Default::default(),
             _ => return Err(bs_err(0)),
         };
-        Ok(Self {
-            literals,
-            rules: it.map(|r| SyntaxRule::try_from((r, env))).try_collect()?,
-        })
+        let rules = it
+            .map(|r| SyntaxRule::try_from((r, env, &literals)))
+            .try_collect()?;
+        Ok(Self { literals, rules })
     }
 }
 
@@ -98,16 +108,18 @@ impl Transformer {
         operands: &[Datum],
         env_use: &Rc<SynEnv>,
         env_def: &SynEnv,
-    ) -> Option<(Datum, Rc<SynEnv>)> {
+    ) -> Option<Result<(Datum, Rc<SynEnv>), ParserError>> {
         let list = Compound::Proper(operands);
         self.rules.iter().find_map(|rule| {
             let subst = rule
                 .pattern
                 .match_operands(list, &self.literals, env_use, env_def)?;
-            Some((
-                rule.template.expand(&subst),
-                SynEnv::new(Some(env_use.clone()), rule.env_new.clone()),
-            ))
+            Some((|| {
+                Ok((
+                    rule.template.expand(&subst, &mut Vec::new())?,
+                    SynEnv::new(Some(env_use.clone()), rule.env_new.clone()),
+                ))
+            })())
         })
     }
 }
@@ -119,10 +131,12 @@ struct SyntaxRule {
     env_new: SynEnvMap,
 }
 
-impl TryFrom<(Datum, &SynEnv)> for SyntaxRule {
+impl TryFrom<(Datum, &SynEnv, &HashSet<Symbol>)> for SyntaxRule {
     type Error = ParserError;
 
-    fn try_from((datum, env): (Datum, &SynEnv)) -> Result<Self, Self::Error> {
+    fn try_from(
+        (datum, env, literals): (Datum, &SynEnv, &HashSet<Symbol>),
+    ) -> Result<Self, Self::Error> {
         let Datum::Compound(CompoundDatum::List(ListKind::Proper(pattern_template_datum))) = datum
         else {
             return Err(bs_err(2));
@@ -132,11 +146,23 @@ impl TryFrom<(Datum, &SynEnv)> for SyntaxRule {
             .collect_tuple()
             .ok_or_else(|| bs_err(3))?;
         let pattern = CompoundPattern::try_from_first(pattern)?;
+        let mut pattern_vars = HashSet::new();
+        let mut duplicate = None;
+        pattern.iter_vars(&mut |s| {
+            if !literals.contains(&s) && !pattern_vars.insert(s) {
+                duplicate.get_or_insert(s);
+            }
+        });
+        if let Some(s) = duplicate {
+            return Err(ParserError {
+                kind: ParserErrorKind::DuplicatePatternVar(s),
+            });
+        }
         let mut template = Template::try_from(template)?;
         let mut rewrites = HashMap::new();
         let mut env_new = SynEnvMap::new();
         template.map_symbols(&mut |s| {
-            if pattern.contains_var(s) {
+            if pattern_vars.contains(&s) {
                 return s;
             }
             if let Some(&sf) = rewrites.get(&s) {
@@ -189,6 +215,65 @@ impl TryFrom<Datum> for CompoundPattern {
     }
 }
 
+enum Subst<'a> {
+    Ellipsized(Vec<Subst<'a>>),
+    Datum(&'a Datum),
+}
+
+struct SubstMap<'a>(HashMap<Symbol, Subst<'a>>);
+
+impl<'a> SubstMap<'a> {
+    fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    fn single(s: Symbol, d: &'a Datum) -> Self {
+        Self([(s, Subst::Datum(d))].into())
+    }
+
+    fn merge(mut acc: Self, s: Self) -> Self {
+        acc.0.extend(s.0);
+        acc
+    }
+
+    fn populate_ellipsis(&mut self, s: Symbol) {
+        self.0.insert(s, Subst::Ellipsized(vec![]));
+    }
+
+    fn merge_ellipsis(mut acc: Self, s: Self) -> Self {
+        for (k, v) in s.0 {
+            match acc.0.get_mut(&k) {
+                Some(Subst::Ellipsized(vs)) => vs.push(v),
+                _ => panic!("expected map to be populated for ellipsized for {k}"),
+            }
+        }
+        acc
+    }
+
+    fn get(&self, s: Symbol, idx: &[usize]) -> Option<Result<&'a Datum, ParserError>> {
+        use std::ops::ControlFlow::*;
+        match idx.iter().try_fold(self.0.get(&s)?, |acc, &i| match acc {
+            Subst::Datum(_) => Break(acc),
+            Subst::Ellipsized(vs) => Continue(vs.get(i).expect("idx bounded by get_size")),
+        }) {
+            Break(Subst::Datum(d)) | Continue(Subst::Datum(d)) => Some(Ok(d)),
+            _ => Some(Err(ParserError {
+                kind: ParserErrorKind::InsufficientEllipses(s),
+            })),
+        }
+    }
+
+    fn get_size(&self, s: Symbol, idx: &[usize]) -> Option<usize> {
+        match idx.iter().try_fold(self.0.get(&s)?, |acc, &i| match acc {
+            Subst::Datum(_) => None,
+            Subst::Ellipsized(vs) => Some(vs.get(i).expect("idx bounded by get_size")),
+        })? {
+            Subst::Datum(_) => None,
+            Subst::Ellipsized(vs) => Some(vs.len()),
+        }
+    }
+}
+
 impl CompoundPattern {
     fn try_from_first(datum: Datum) -> Result<Self, ParserError> {
         let Datum::Compound(CompoundDatum::List(list)) = datum else {
@@ -221,12 +306,13 @@ impl CompoundPattern {
         }
     }
 
-    fn contains_var(&self, name: Symbol) -> bool {
-        let pred = |p: &Pattern| p.contains_var(name);
+    fn iter_vars(&self, f: &mut impl FnMut(Symbol)) {
+        let mut g = |p: &Pattern| p.iter_vars(f);
         match self {
-            Self::Proper(l) | Self::Vector(l) => l.iter().any(pred),
+            Self::Proper(l) | Self::Vector(l) => l.iter().for_each(g),
             Self::Improper(l, e) | Self::Ellipsized(l, e) | Self::EllipsizedVector(l, e) => {
-                l.iter().any(pred) || pred(e)
+                l.iter().for_each(&mut g);
+                g(e);
             }
         }
     }
@@ -237,7 +323,7 @@ impl CompoundPattern {
         literals: &HashSet<Symbol>,
         env_use: &SynEnv,
         env_def: &SynEnv,
-    ) -> Option<HashMap<Symbol, &'a Datum>> {
+    ) -> Option<SubstMap<'a>> {
         match (self, operands) {
             (Self::Proper(l), Compound::Proper(os)) | (Self::Vector(l), Compound::Vector(os)) => {
                 if l.len() != os.len() {
@@ -245,10 +331,7 @@ impl CompoundPattern {
                 }
                 std::iter::zip(l, os)
                     .map(|(p, o)| p.match_operand(o, literals, env_use, env_def))
-                    .fold_options(HashMap::new(), |mut acc, s| {
-                        acc.extend(s);
-                        acc
-                    })
+                    .fold_options(SubstMap::new(), SubstMap::merge)
             }
             (Self::Improper(l, t), Compound::Proper(os) | Compound::Improper(os, _)) => {
                 let n = l.len();
@@ -262,17 +345,10 @@ impl CompoundPattern {
                 };
                 std::iter::zip(l, &os[..n])
                     .map(|(p, o)| p.match_operand(o, literals, env_use, env_def))
-                    .fold_options(HashMap::new(), |mut acc, s| {
-                        acc.extend(s);
-                        acc
-                    })
-                    .and_then(|mut subst| {
-                        t.match_operands(tail, literals, env_use, env_def)
-                            .map(|tail_subst| {
-                                subst.extend(tail_subst);
-                                subst
-                            })
-                    })
+                    .chain(std::iter::once(
+                        t.match_operands(tail, literals, env_use, env_def),
+                    ))
+                    .fold_options(SubstMap::new(), SubstMap::merge)
             }
             (Self::Ellipsized(l, e), Compound::Proper(os))
             | (Self::EllipsizedVector(l, e), Compound::Vector(os)) => {
@@ -280,14 +356,17 @@ impl CompoundPattern {
                 if os.len() < n {
                     return None;
                 }
-                l.iter()
-                    .chain(std::iter::repeat(e.as_ref()))
-                    .zip(os)
+                let mut subst = std::iter::zip(l, &os[..n])
                     .map(|(p, o)| p.match_operand(o, literals, env_use, env_def))
-                    .fold_options(HashMap::new(), |mut acc, s| {
-                        acc.extend(s);
-                        acc
-                    })
+                    .fold_options(SubstMap::new(), SubstMap::merge)?;
+                e.iter_vars(&mut |s| {
+                    if !literals.contains(&s) {
+                        subst.populate_ellipsis(s);
+                    }
+                });
+                std::iter::zip(std::iter::repeat(e.as_ref()), &os[n..])
+                    .map(|(p, o)| p.match_operand(o, literals, env_use, env_def))
+                    .fold_options(subst, SubstMap::merge_ellipsis)
             }
             _ => None,
         }
@@ -313,11 +392,11 @@ impl TryFrom<Datum> for Pattern {
 }
 
 impl Pattern {
-    fn contains_var(&self, name: Symbol) -> bool {
+    fn iter_vars(&self, f: &mut impl FnMut(Symbol)) {
         match self {
-            Self::Simple(SimpleDatum::Symbol(s)) => *s == name,
-            Self::Simple(_) => false,
-            Self::List(l) => l.contains_var(name),
+            Self::Simple(SimpleDatum::Symbol(s)) => f(*s),
+            Self::Simple(_) => {}
+            Self::List(l) => l.iter_vars(f),
         }
     }
 
@@ -327,21 +406,21 @@ impl Pattern {
         literals: &HashSet<Symbol>,
         env_use: &SynEnv,
         env_def: &SynEnv,
-    ) -> Option<HashMap<Symbol, &'a Datum>> {
+    ) -> Option<SubstMap<'a>> {
         match (self, operand) {
             (Self::Simple(SimpleDatum::Symbol(s)), Datum::Simple(SimpleDatum::Symbol(o)))
                 if s == o && literals.contains(s) =>
             {
-                (env_use.get(*s) == env_def.get(*s)).then(HashMap::new)
+                (env_use.get(*s) == env_def.get(*s)).then(SubstMap::new)
             }
-            (Self::Simple(SimpleDatum::Symbol(s)), _) => Some([(*s, operand)].into()),
+            (Self::Simple(SimpleDatum::Symbol(s)), _) => Some(SubstMap::single(*s, operand)),
             (Self::List(l), Datum::Compound(o)) => {
                 l.match_operands(o.into(), literals, env_use, env_def)
             }
             (Self::List(l), Datum::EmptyList) => {
                 l.match_operands(Compound::Proper(&[]), literals, env_use, env_def)
             }
-            (Self::Simple(sd), Datum::Simple(o)) => (sd == o).then(HashMap::new),
+            (Self::Simple(sd), Datum::Simple(o)) => (sd == o).then(SubstMap::new),
             _ => None,
         }
     }
@@ -352,7 +431,7 @@ impl Pattern {
         literals: &HashSet<Symbol>,
         env_use: &SynEnv,
         env_def: &SynEnv,
-    ) -> Option<HashMap<Symbol, &'a Datum>> {
+    ) -> Option<SubstMap<'a>> {
         match self {
             Self::List(l) => l.match_operands(operands, literals, env_use, env_def),
             _ => None,
@@ -363,7 +442,7 @@ impl Pattern {
 #[derive(Debug)]
 enum Template {
     Simple(SimpleDatum),
-    List(ListTemplate),
+    List(CompoundTemplate),
 }
 
 impl TryFrom<Datum> for Template {
@@ -389,34 +468,42 @@ impl Template {
         }
     }
 
-    fn expand(&self, subst: &HashMap<Symbol, &Datum>) -> Datum {
+    fn expand(&self, subst: &SubstMap, idx: &mut Vec<usize>) -> Result<Datum, ParserError> {
         match self {
             Self::Simple(sd @ SimpleDatum::Symbol(s)) => subst
-                .get(s)
-                .map(|&d| d.clone())
-                .unwrap_or_else(|| Datum::Simple(sd.clone())),
-            Self::Simple(sd) => Datum::Simple(sd.clone()),
-            Self::List(l) => l.expand(subst),
+                .get(*s, idx)
+                .transpose()
+                .map(|d| d.cloned().unwrap_or_else(|| Datum::Simple(sd.clone()))),
+            Self::Simple(sd) => Ok(Datum::Simple(sd.clone())),
+            Self::List(l) => l.expand(subst, idx),
+        }
+    }
+
+    fn get_size(&self, subst: &SubstMap, idx: &[usize]) -> Result<Option<usize>, ParserError> {
+        match self {
+            Self::Simple(SimpleDatum::Symbol(s)) => Ok(subst.get_size(*s, idx)),
+            Self::Simple(_) => Ok(None),
+            Self::List(l) => l.get_size(subst, idx),
         }
     }
 }
 
 #[derive(Debug)]
-enum ListTemplate {
+enum CompoundTemplate {
     Proper(Vec<Element>),
     Improper(Vec<Element>, Box<Template>),
+    Vector(Vec<Element>),
 }
 
-impl TryFrom<Datum> for ListTemplate {
+impl TryFrom<Datum> for CompoundTemplate {
     type Error = ParserError;
 
     fn try_from(datum: Datum) -> Result<Self, Self::Error> {
-        let Datum::Compound(CompoundDatum::List(list)) = datum else {
-            return Err(bs_err(8));
-        };
-        let (l, e) = match list {
-            ListKind::Proper(l) => (l, None),
-            ListKind::Improper(l, e) => (l, Some(e)),
+        let (l, e, is_vec) = match datum {
+            Datum::Compound(CompoundDatum::List(ListKind::Proper(l))) => (l, None, false),
+            Datum::Compound(CompoundDatum::List(ListKind::Improper(l, e))) => (l, Some(e), false),
+            Datum::Compound(CompoundDatum::Vector(v)) => (v, None, true),
+            _ => return Err(bs_err(8)),
         };
         let mut it = l.into_iter().peekable();
         let mut elements = Vec::new();
@@ -434,54 +521,64 @@ impl TryFrom<Datum> for ListTemplate {
         }
         match e {
             Some(e) => Ok(Self::Improper(elements, Box::new(Template::try_from(*e)?))),
-            None => Ok(Self::Proper(elements)),
+            None => Ok(if is_vec { Self::Vector } else { Self::Proper }(elements)),
         }
     }
 }
 
-impl ListTemplate {
+impl CompoundTemplate {
     fn map_symbols(&mut self, f: &mut impl FnMut(Symbol) -> Symbol) {
         match self {
-            Self::Proper(elements) => {
-                for element in elements {
-                    element.template.map_symbols(f);
+            Self::Proper(elems) | Self::Vector(elems) => {
+                for elem in elems {
+                    elem.template.map_symbols(f);
                 }
             }
-            Self::Improper(elements, template) => {
-                for element in elements {
-                    element.template.map_symbols(f);
+            Self::Improper(elems, tail) => {
+                for elem in elems {
+                    elem.template.map_symbols(f);
                 }
-                template.map_symbols(f);
+                tail.map_symbols(f);
             }
         }
     }
 
-    fn expand(&self, subst: &HashMap<Symbol, &Datum>) -> Datum {
+    fn expand(&self, subst: &SubstMap, idx: &mut Vec<usize>) -> Result<Datum, ParserError> {
+        let mut expand_list = |elems: &[Element]| {
+            elems
+                .iter()
+                .map(|elem| elem.expand(subst, idx))
+                .process_results(|i| i.flatten().collect())
+        };
         match self {
-            Self::Proper(elements) => {
-                let list = elements
-                    .iter()
-                    .map(|element| {
-                        if element.ellipsized {
-                            todo!()
-                        }
-                        element.template.expand(subst)
-                    })
-                    .collect();
-                Datum::Compound(CompoundDatum::List(ListKind::Proper(list)))
-            }
-            Self::Improper(elements, template) => {
-                let list = elements
-                    .iter()
-                    .map(|element| element.template.expand(subst))
-                    .collect();
-                let tail = template.expand(subst);
-                Datum::Compound(CompoundDatum::List(ListKind::Improper(
-                    list,
-                    Box::new(tail),
-                )))
+            Self::Proper(l) => Ok(Datum::Compound(CompoundDatum::List(ListKind::Proper(
+                expand_list(l)?,
+            )))),
+            Self::Improper(l, t) => Ok(Datum::Compound(CompoundDatum::List(ListKind::Improper(
+                expand_list(l)?,
+                Box::new(t.expand(subst, idx)?),
+            )))),
+            Self::Vector(l) => Ok(Datum::Compound(CompoundDatum::Vector(expand_list(l)?))),
+        }
+    }
+
+    fn get_size(&self, subst: &SubstMap, idx: &[usize]) -> Result<Option<usize>, ParserError> {
+        match self {
+            Self::Proper(l) | Self::Improper(l, _) | Self::Vector(l) => {
+                l.iter().map(|e| e.get_size(subst, idx))
             }
         }
+        .chain(match self {
+            Self::Improper(_, t) => Some(t.get_size(subst, idx)),
+            _ => None,
+        })
+        .process_results(|it| match it.flatten().all_equal_value() {
+            Ok(sz) => Ok(Some(sz)),
+            Err(None) => Ok(None),
+            Err(Some((x, y))) => Err(ParserError {
+                kind: ParserErrorKind::IncompatibleEllipsisCounts(x, y),
+            }),
+        })?
     }
 }
 
@@ -489,4 +586,28 @@ impl ListTemplate {
 struct Element {
     template: Template,
     ellipsized: bool,
+}
+
+impl Element {
+    fn expand(&self, subst: &SubstMap, idx: &mut Vec<usize>) -> Result<Vec<Datum>, ParserError> {
+        if self.ellipsized {
+            let sz = self.template.get_size(subst, idx)?.ok_or(ParserError {
+                kind: ParserErrorKind::ExtraEllipses,
+            })?;
+            (0..sz)
+                .map(|i| {
+                    idx.push(i);
+                    let res = self.template.expand(subst, idx);
+                    idx.pop();
+                    res
+                })
+                .try_collect()
+        } else {
+            self.template.expand(subst, idx).map(|d| vec![d])
+        }
+    }
+
+    fn get_size(&self, subst: &SubstMap, idx: &[usize]) -> Result<Option<usize>, ParserError> {
+        self.template.get_size(subst, idx)
+    }
 }
