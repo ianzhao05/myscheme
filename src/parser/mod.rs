@@ -85,22 +85,52 @@ where
     Ok(ProcData { args, rest, body })
 }
 
-fn create_let<B>(
+fn call_with(val: Rc<Expr>) -> impl FnOnce(ProcData) -> Expr {
+    |proc| Expr::ProcCall {
+        operator: Rc::new(Expr::Lambda(Rc::new(proc))),
+        operands: vec![val],
+    }
+}
+
+fn augment_env(env: Rc<SynEnv>, arg: Option<Symbol>) -> (Rc<SynEnv>, Symbol) {
+    match arg {
+        Some(arg) => {
+            let arg_fresh = freshen_name(arg);
+            (
+                SynEnv::new(Some(env), [(arg, EnvBinding::Ident(arg_fresh))].into()),
+                arg_fresh,
+            )
+        }
+        None => (env, gen_temp_name()),
+    }
+}
+
+fn try_create_let<B>(
     env: Rc<SynEnv>,
-    arg: Symbol,
+    arg: Option<Symbol>,
     value: Rc<Expr>,
     body: B,
 ) -> Result<Expr, ParserError>
 where
     B: FnOnce(Rc<SynEnv>, Symbol) -> Result<Vec<ExprOrDef>, ParserError>,
 {
-    let arg_fresh = freshen_name(arg);
-    let bindings = [(arg, EnvBinding::Ident(arg_fresh))].into();
-    let env = SynEnv::new(Some(env), bindings);
-    Ok(Expr::SimpleLet {
-        arg: arg_fresh,
-        value,
-        body: body(env, arg_fresh)?,
+    let (env, arg) = augment_env(env, arg);
+    Ok(call_with(value)(ProcData {
+        args: vec![arg],
+        rest: None,
+        body: body(env, arg)?,
+    }))
+}
+
+fn create_let<B>(env: Rc<SynEnv>, arg: Option<Symbol>, value: Rc<Expr>, body: B) -> Expr
+where
+    B: FnOnce(Rc<SynEnv>, Symbol) -> Vec<ExprOrDef>,
+{
+    let (env, arg) = augment_env(env, arg);
+    call_with(value)(ProcData {
+        args: vec![arg],
+        rest: None,
+        body: body(env, arg),
     })
 }
 
@@ -465,16 +495,14 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                         let test = parse_expr(first, env)?;
                         let Some(second) = pi.next() else {
                             if acc.is_some() {
-                                let temp = gen_temp_name();
-                                acc = Some(Rc::new(Expr::SimpleLet {
-                                    arg: temp,
-                                    value: test,
-                                    body: vec![ExprOrDef::new_expr(Expr::Conditional {
-                                        test: Rc::new(Expr::Variable(temp)),
-                                        consequent: Rc::new(Expr::Variable(temp)),
-                                        alternate: acc,
-                                    })],
-                                }));
+                                acc =
+                                    Some(Rc::new(create_let(env.clone(), None, test, |_, temp| {
+                                        vec![ExprOrDef::new_expr(Expr::Conditional {
+                                            test: Rc::new(Expr::Variable(temp)),
+                                            consequent: Rc::new(Expr::Variable(temp)),
+                                            alternate: acc,
+                                        })]
+                                    })))
                             } else {
                                 acc = Some(test);
                             }
@@ -489,19 +517,21 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                                     return Err(bs_err());
                                 }
                                 let recipient = parse_expr(third, env)?;
-                                let temp = gen_temp_name();
-                                acc = Some(Rc::new(Expr::SimpleLet {
-                                    arg: temp,
-                                    value: test,
-                                    body: vec![ExprOrDef::new_expr(Expr::Conditional {
-                                        test: Rc::new(Expr::Variable(temp)),
-                                        consequent: Rc::new(Expr::ProcCall {
-                                            operator: recipient,
-                                            operands: vec![Rc::new(Expr::Variable(temp))],
-                                        }),
-                                        alternate: acc,
-                                    })],
-                                }));
+                                acc = Some(Rc::new(create_let(
+                                    env.clone(),
+                                    None,
+                                    test,
+                                    |_, temp| {
+                                        vec![ExprOrDef::new_expr(Expr::Conditional {
+                                            test: Rc::new(Expr::Variable(temp)),
+                                            consequent: Rc::new(Expr::ProcCall {
+                                                operator: recipient,
+                                                operands: vec![Rc::new(Expr::Variable(temp))],
+                                            }),
+                                            alternate: acc,
+                                        })]
+                                    },
+                                )));
                             }
                             second => {
                                 let seq: Vec<_> = std::iter::once(second)
@@ -552,16 +582,13 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             .map(parse_expr_with_env)
             .process_results(|ops| {
                 ops.reduce(|acc, op| {
-                    let temp = gen_temp_name();
-                    Rc::new(Expr::SimpleLet {
-                        arg: temp,
-                        value: op,
-                        body: vec![ExprOrDef::new_expr(Expr::Conditional {
+                    Rc::new(create_let(env.clone(), None, op, |_, temp| {
+                        vec![ExprOrDef::new_expr(Expr::Conditional {
                             test: Rc::new(Expr::Variable(temp)),
                             consequent: Rc::new(Expr::Variable(temp)),
                             alternate: Some(acc),
-                        })],
-                    })
+                        })]
+                    }))
                 })
                 .unwrap_or_else(|| {
                     Rc::new(Expr::Literal(LiteralKind::SelfEvaluating(
@@ -572,60 +599,59 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             .map(ExprOrDef::Expr),
         _ if kw == "case".into() => {
             let key = parse_expr(operands.next().ok_or_else(bs_err)?, env)?;
-            let temp = gen_temp_name();
-            let mut acc: Option<Rc<Expr>> = None;
-            for clause in operands.rev() {
-                let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = clause else {
-                    return Err(bs_err());
-                };
-                let mut pi = parts.into_iter();
-                let first = pi.next().ok_or(ParserError {
-                    kind: ParserErrorKind::IllegalEmptyList,
-                })?;
-                let seq: Vec<_> = pi.map(parse_expr_with_env).try_collect()?;
-                if seq.is_empty() {
-                    return Err(bs_err());
-                }
-                match first {
-                    Datum::Simple(SimpleDatum::Symbol(s))
-                        if env.get(s) == EnvBinding::Ident("else".into()) =>
-                    {
-                        if acc.is_some() {
-                            return Err(bs_err());
-                        }
-                        acc = Some(if seq.len() == 1 {
-                            seq.into_iter().next().unwrap()
-                        } else {
-                            Rc::new(Expr::Begin(seq))
-                        });
+            let body = |env: Rc<SynEnv>, temp| {
+                let mut acc: Option<Rc<Expr>> = None;
+                for clause in operands.rev() {
+                    let Datum::Compound(CompoundDatum::List(ListKind::Proper(parts))) = clause
+                    else {
+                        return Err(bs_err());
+                    };
+                    let mut pi = parts.into_iter();
+                    let first = pi.next().ok_or(ParserError {
+                        kind: ParserErrorKind::IllegalEmptyList,
+                    })?;
+                    let seq: Vec<_> = pi.map(parse_expr_with_env).try_collect()?;
+                    if seq.is_empty() {
+                        return Err(bs_err());
                     }
-                    Datum::Compound(CompoundDatum::List(ListKind::Proper(_))) => {
-                        acc = Some(Rc::new(Expr::Conditional {
-                            test: Rc::new(Expr::ProcCall {
-                                operator: Rc::new(Expr::Variable("memv".into())),
-                                operands: vec![
-                                    Rc::new(Expr::Variable(temp)),
-                                    Rc::new(Expr::Literal(LiteralKind::Quotation(first))),
-                                ],
-                            }),
-                            consequent: if seq.len() == 1 {
+                    match first {
+                        Datum::Simple(SimpleDatum::Symbol(s))
+                            if env.get(s) == EnvBinding::Ident("else".into()) =>
+                        {
+                            if acc.is_some() {
+                                return Err(bs_err());
+                            }
+                            acc = Some(if seq.len() == 1 {
                                 seq.into_iter().next().unwrap()
                             } else {
                                 Rc::new(Expr::Begin(seq))
-                            },
-                            alternate: acc,
-                        }));
-                    }
-                    _ => {
-                        return Err(bs_err());
+                            });
+                        }
+                        Datum::Compound(CompoundDatum::List(ListKind::Proper(_))) => {
+                            acc = Some(Rc::new(Expr::Conditional {
+                                test: Rc::new(Expr::ProcCall {
+                                    operator: Rc::new(Expr::Variable("memv".into())),
+                                    operands: vec![
+                                        Rc::new(Expr::Variable(temp)),
+                                        Rc::new(Expr::Literal(LiteralKind::Quotation(first))),
+                                    ],
+                                }),
+                                consequent: if seq.len() == 1 {
+                                    seq.into_iter().next().unwrap()
+                                } else {
+                                    Rc::new(Expr::Begin(seq))
+                                },
+                                alternate: acc,
+                            }));
+                        }
+                        _ => {
+                            return Err(bs_err());
+                        }
                     }
                 }
-            }
-            Ok(ExprOrDef::new_expr(Expr::SimpleLet {
-                arg: temp,
-                value: key,
-                body: vec![ExprOrDef::Expr(acc.ok_or_else(bs_err)?)],
-            }))
+                Ok(vec![ExprOrDef::Expr(acc.ok_or_else(bs_err)?)])
+            };
+            try_create_let(env.clone(), None, key, body).map(ExprOrDef::new_expr)
         }
         _ if kw == "let".into() => {
             let mut first = operands.next().ok_or_else(bs_err)?;
@@ -649,9 +675,9 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                 _ => return Err(bs_err()),
             };
             match name {
-                Some(n) => Ok(ExprOrDef::new_expr(create_let(
+                Some(n) => Ok(ExprOrDef::new_expr(try_create_let(
                     env.clone(),
-                    n,
+                    Some(n),
                     Rc::new(Expr::Undefined),
                     |env, nf| {
                         Ok(vec![
@@ -715,14 +741,19 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
                             None => process_body(operands, &env),
                             Some((arg, val)) => {
                                 let val = parse_expr(val, &env)?;
-                                create_let(env, arg, val, |env, _| rec(env, operands, bindings))
-                                    .map(|l| vec![ExprOrDef::new_expr(l)])
+                                create_proc(env, vec![arg], None, |env, _, _| {
+                                    rec(env, operands, bindings)
+                                })
+                                .map(call_with(val))
+                                .map(|e| vec![ExprOrDef::new_expr(e)])
                             }
                         }
                     }
-                    create_let(env.clone(), arg, parse_expr(val, env)?, |env, _| {
+                    let val = parse_expr(val, env)?;
+                    create_proc(env.clone(), vec![arg], None, |env, _, _| {
                         rec(env, operands, bindings)
                     })
+                    .map(call_with(val))
                     .map(ExprOrDef::new_expr)
                 }
             }
@@ -831,33 +862,35 @@ fn process_keyword<I: DoubleEndedIterator<Item = Datum>>(
             let test = ei.next().ok_or_else(bs_err)??;
             let seq = ei.try_collect()?;
             let mut body: Vec<_> = operands.map(parse_expr_with_env).try_collect()?;
-            let temp = gen_temp_name();
-            body.push(Rc::new(Expr::ProcCall {
-                operator: Rc::new(Expr::Variable(temp)),
-                operands: steps,
-            }));
-            Ok(ExprOrDef::new_expr(Expr::SimpleLet {
-                arg: temp,
-                value: Rc::new(Expr::Undefined),
-                body: vec![
-                    ExprOrDef::new_expr(Expr::Assignment {
-                        variable: temp,
-                        value: Rc::new(Expr::Lambda(Rc::new(ProcData {
-                            args: vars,
-                            rest: None,
-                            body: vec![ExprOrDef::new_expr(Expr::Conditional {
-                                test,
-                                consequent: Rc::new(Expr::Begin(seq)),
-                                alternate: Some(Rc::new(Expr::Begin(body))),
-                            })],
-                        }))),
-                    }),
-                    ExprOrDef::new_expr(Expr::ProcCall {
+            Ok(ExprOrDef::new_expr(try_create_let(
+                env.clone(),
+                None,
+                Rc::new(Expr::Undefined),
+                |_, temp| {
+                    body.push(Rc::new(Expr::ProcCall {
                         operator: Rc::new(Expr::Variable(temp)),
-                        operands: inits,
-                    }),
-                ],
-            }))
+                        operands: steps,
+                    }));
+                    Ok(vec![
+                        ExprOrDef::new_expr(Expr::Assignment {
+                            variable: temp,
+                            value: Rc::new(Expr::Lambda(Rc::new(ProcData {
+                                args: vars,
+                                rest: None,
+                                body: vec![ExprOrDef::new_expr(Expr::Conditional {
+                                    test,
+                                    consequent: Rc::new(Expr::Begin(seq)),
+                                    alternate: Some(Rc::new(Expr::Begin(body))),
+                                })],
+                            }))),
+                        }),
+                        ExprOrDef::new_expr(Expr::ProcCall {
+                            operator: Rc::new(Expr::Variable(temp)),
+                            operands: inits,
+                        }),
+                    ])
+                },
+            )?))
         }
         _ if kw == "delay".into() => {
             let expr = operands
@@ -1523,6 +1556,21 @@ mod tests {
         )
     }
 
+    fn let_call(arg: &str, val: Expr, body: Expr) -> Expr {
+        let_call_body(arg, val, vec![ExprOrDef::new_expr(body)])
+    }
+
+    fn let_call_body(arg: &str, val: Expr, body: Vec<ExprOrDef>) -> Expr {
+        Expr::ProcCall {
+            operator: Rc::new(Expr::Lambda(Rc::new(ProcData {
+                args: vec![arg.into()],
+                rest: None,
+                body,
+            }))),
+            operands: vec![Rc::new(val)],
+        }
+    }
+
     #[test]
     fn conds() {
         assert_eq!(
@@ -1550,21 +1598,21 @@ mod tests {
                         operands: vec_rc![int_expr!(1), int_expr!(2)]
                     }),
                     consequent: Rc::new(Expr::Begin(vec_rc![int_expr!(3), int_expr!(4)])),
-                    alternate: Some(Rc::new(Expr::SimpleLet {
-                        arg: "#temp_var".into(),
-                        value: Rc::new(Expr::ProcCall {
+                    alternate: Some(Rc::new(let_call(
+                        "#temp_var",
+                        Expr::ProcCall {
                             operator: Rc::new(var_expr!("cons")),
                             operands: vec_rc![int_expr!(5), int_expr!(6)]
-                        }),
-                        body: vec![ExprOrDef::new_expr(Expr::Conditional {
+                        },
+                        Expr::Conditional {
                             test: Rc::new(var_expr!("#temp_var")),
                             consequent: Rc::new(Expr::ProcCall {
                                 operator: Rc::new(var_expr!("car")),
                                 operands: vec_rc![var_expr!("#temp_var")]
                             }),
                             alternate: Some(Rc::new(int_expr!(3))),
-                        })]
-                    }))
+                        }
+                    )))
                 })),
             }))
         );
@@ -1633,15 +1681,15 @@ mod tests {
                 int_datum!(1),
                 bool_datum!(true),
             ]),
-            Ok(ExprOrDef::new_expr(Expr::SimpleLet {
-                arg: "#temp_var".into(),
-                value: Rc::new(int_expr!(1)),
-                body: vec![ExprOrDef::new_expr(Expr::Conditional {
+            Ok(ExprOrDef::new_expr(let_call(
+                "#temp_var",
+                int_expr!(1),
+                Expr::Conditional {
                     test: Rc::new(var_expr!("#temp_var")),
                     consequent: Rc::new(var_expr!("#temp_var")),
                     alternate: Some(Rc::new(bool_expr!(true))),
-                })]
-            }))
+                }
+            )))
         );
     }
 
@@ -1658,10 +1706,10 @@ mod tests {
                 ],
                 proper_list_datum![symbol_datum!("else"), int_datum!(6)],
             ]),
-            Ok(ExprOrDef::new_expr(Expr::SimpleLet {
-                arg: "#temp_var".into(),
-                value: Rc::new(int_expr!(42)),
-                body: vec![ExprOrDef::new_expr(Expr::Conditional {
+            Ok(ExprOrDef::new_expr(let_call(
+                "#temp_var",
+                int_expr!(42),
+                Expr::Conditional {
                     test: Rc::new(Expr::ProcCall {
                         operator: Rc::new(var_expr!("memv")),
                         operands: vec_rc![
@@ -1686,8 +1734,8 @@ mod tests {
                         consequent: Rc::new(int_expr!(5)),
                         alternate: Some(Rc::new(int_expr!(6))),
                     })),
-                })]
-            }))
+                }
+            )))
         );
 
         assert_eq!(
@@ -1768,15 +1816,11 @@ mod tests {
                 ],
                 symbol_datum!("y"),
             ]),
-            Ok(ExprOrDef::new_expr(Expr::SimpleLet {
-                arg: "x#fresh".into(),
-                value: Rc::new(int_expr!(1)),
-                body: vec![ExprOrDef::new_expr(Expr::SimpleLet {
-                    arg: "y#fresh".into(),
-                    value: Rc::new(var_expr!("x#fresh")),
-                    body: vec![ExprOrDef::new_expr(var_expr!("y#fresh"))],
-                })]
-            }))
+            Ok(ExprOrDef::new_expr(let_call(
+                "x#fresh",
+                int_expr!(1),
+                let_call("y#fresh", var_expr!("x#fresh"), var_expr!("y#fresh"),)
+            )))
         );
 
         assert_eq!(
@@ -1815,10 +1859,10 @@ mod tests {
                 proper_list_datum![proper_list_datum![symbol_datum!("x"), int_datum!(1)]],
                 proper_list_datum![symbol_datum!("foo"), symbol_datum!("x")],
             ]),
-            Ok(ExprOrDef::new_expr(Expr::SimpleLet {
-                arg: "foo#fresh".into(),
-                value: Rc::new(Expr::Undefined),
-                body: vec![
+            Ok(ExprOrDef::new_expr(let_call_body(
+                "foo#fresh",
+                Expr::Undefined,
+                vec![
                     ExprOrDef::new_expr(Expr::Assignment {
                         variable: "foo#fresh".into(),
                         value: Rc::new(Expr::Lambda(Rc::new(ProcData {
@@ -1835,7 +1879,7 @@ mod tests {
                         operands: vec_rc![int_expr!(1)]
                     })
                 ]
-            }))
+            )))
         );
 
         assert_eq!(
@@ -1894,10 +1938,10 @@ mod tests {
                     proper_list_datum![symbol_datum!("+"), symbol_datum!("x"), symbol_datum!("y")],
                 ],
             ]),
-            Ok(ExprOrDef::new_expr(Expr::SimpleLet {
-                arg: "#temp_var".into(),
-                value: Rc::new(Expr::Undefined),
-                body: vec![
+            Ok(ExprOrDef::new_expr(let_call_body(
+                "#temp_var",
+                Expr::Undefined,
+                vec![
                     ExprOrDef::new_expr(Expr::Assignment {
                         variable: "#temp_var".into(),
                         value: Rc::new(Expr::Lambda(Rc::new(ProcData {
@@ -1930,7 +1974,7 @@ mod tests {
                         operands: vec_rc![int_expr!(1), int_expr!(5)]
                     })
                 ]
-            }))
+            )))
         );
 
         assert_eq!(
@@ -1940,10 +1984,10 @@ mod tests {
                 proper_list_datum![bool_datum!(false)],
                 proper_list_datum![symbol_datum!("f")],
             ]),
-            Ok(ExprOrDef::new_expr(Expr::SimpleLet {
-                arg: "#temp_var".into(),
-                value: Rc::new(Expr::Undefined),
-                body: vec![
+            Ok(ExprOrDef::new_expr(let_call_body(
+                "#temp_var",
+                Expr::Undefined,
+                vec![
                     ExprOrDef::new_expr(Expr::Assignment {
                         variable: "#temp_var".into(),
                         value: Rc::new(Expr::Lambda(Rc::new(ProcData {
@@ -1970,7 +2014,7 @@ mod tests {
                         operands: vec_rc![]
                     })
                 ]
-            }))
+            )))
         );
     }
 

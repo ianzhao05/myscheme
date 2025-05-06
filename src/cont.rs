@@ -111,10 +111,6 @@ pub enum Cont {
         next: Rc<Expr>,
         cont: Rc<Cont>,
     },
-    SimpleLet {
-        arg: Symbol,
-        cont: Rc<Cont>,
-    },
     Conditional {
         consequent: Rc<Expr>,
         alternate: Option<Rc<Expr>>,

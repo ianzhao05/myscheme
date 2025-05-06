@@ -52,11 +52,6 @@ pub enum Expr {
         value: Rc<Expr>,
     },
     Begin(Vec<Rc<Expr>>),
-    SimpleLet {
-        arg: Symbol,
-        value: Rc<Expr>,
-        body: Vec<ExprOrDef>,
-    },
     Undefined,
 }
 

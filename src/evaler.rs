@@ -227,17 +227,6 @@ pub(crate) fn eval_expr(state: State) -> Bouncer {
                         winds,
                     }),
                 },
-                Expr::SimpleLet { arg, value, body } => Bouncer::Bounce(State {
-                    acc: Acc::Expr(value.clone()),
-                    cont: Rc::new(Cont::SimpleLet {
-                        arg: *arg,
-                        cont: Cont::from_body(body, Some(cont)),
-                    }),
-                    env,
-                    rib,
-                    stack,
-                    winds,
-                }),
                 Expr::Undefined => Bouncer::Bounce(State {
                     acc: Acc::Obj(Ok(ObjectRef::Undefined)),
                     cont,
@@ -305,17 +294,6 @@ pub(crate) fn eval_expr(state: State) -> Bouncer {
                     rib.push(obj);
                     Bouncer::Bounce(State {
                         acc: Acc::Expr(next.clone()),
-                        cont: cont.clone(),
-                        env,
-                        rib,
-                        stack,
-                        winds,
-                    })
-                }
-                Cont::SimpleLet { arg, cont } => {
-                    env.insert(*arg, obj);
-                    Bouncer::Bounce(State {
-                        acc: Acc::Obj(Ok(ObjectRef::Undefined)),
                         cont: cont.clone(),
                         env,
                         rib,
