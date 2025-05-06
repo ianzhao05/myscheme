@@ -5,10 +5,10 @@ A Scheme interpreter written in Rust, with the aim of becoming mostly compliant 
 ## Running
 
 ```bash
-$ git clone https://github.com/ianzhao05/myscheme.git && cd myscheme
-$ cargo run # start a REPL
-$ cargo run -- file.scm # run a file
-$ cargo run -- -i file.scm # run a file followed by a REPL
+git clone https://github.com/ianzhao05/myscheme.git && cd myscheme
+cargo run # start a REPL
+cargo run -- file.scm # run a file
+cargo run -- -i file.scm # run a file followed by a REPL
 ```
 
 A WebAssembly version of the interpreter is available at [ianzhao05.github.io/myscheme](https://ianzhao05.github.io/myscheme/).
@@ -22,10 +22,11 @@ A WebAssembly version of the interpreter is available at [ianzhao05.github.io/my
 - Proper tail recursion, as required by R5RS
 - First-class continuations (with `call-with-current-continuation` and `dynamic-wind`)
 - Implementation of all required primitive functions
+- Hygienic, referentially transparent macros
 
 ### Not Yet Implemented
 
-- Hygienic macros
+- `let-syntax`, `letrec-syntax`
 - Complex numbers
 
 ## Examples
@@ -92,12 +93,14 @@ For instance:
 - The `cond` special form is parsed into an expression using only simple conditionals (`if`s), e.g., `(cond ((> x 0) 1) ((< x 0) -1) (else 0))` is equivalent to `(if (> x 0) 1 (if (< x 0) -1 0))` and will be transformed as such.
 - Expressions involving `quasiquote` are transformed into `list`, `cons`, `append`, `vector` and `list->vector` calls, e.g., `` `(1 ,(+ 1 2) ,@(list 4 5))`` is parsed as `(append (list 1 (+ 1 2)) (list 4 5))`.
 - Some forms, like `letrec` are more complex. `(letrec ((x (lambda () x))) (x))` is parsed similarly to
+
   ```scheme
   (let ((x <undefined>))
     (let ((<temp_name> (lambda () x)))
       (set! x <temp_name>))
     (x))
   ```
+
   The intermediate `let` is necessary to prevent the bindings from referencing each other before initialization.
 - The other derived special forms are similarly transformed while they are parsed. The transformations were mostly taken from section 7.3 of the R5RS specification.
 
