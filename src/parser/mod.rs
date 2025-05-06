@@ -15,7 +15,6 @@ use crate::interner::Symbol;
 use itertools::Itertools;
 use uuid::Uuid;
 
-use self::macros::Macro;
 use self::syn_env::{EnvBinding, SynEnv};
 
 fn gen_temp_name() -> Symbol {
@@ -52,7 +51,7 @@ fn lookup_name(env: &SynEnv, symb: Symbol) -> Result<Symbol, ParserError> {
             kind: ParserErrorKind::BadSyntax(kw),
         }),
         EnvBinding::Ident(name) => Ok(name),
-        EnvBinding::Macro(_) => Err(ParserError {
+        EnvBinding::Macro(_) | EnvBinding::MacroSelf(_) => Err(ParserError {
             kind: ParserErrorKind::BadSyntax(symb),
         }),
     }
@@ -940,7 +939,7 @@ impl Iterator for ParserResultIntoIter {
 }
 
 pub fn parse_top_level(datum: Datum, env: &Rc<SynEnv>) -> ParserResult {
-    match datum {
+    let aux = || match datum {
         Datum::Compound(CompoundDatum::List(ListKind::Proper(list)))
             if list.first()
                 == Some(&Datum::Simple(SimpleDatum::Symbol("define-syntax".into()))) =>
@@ -948,19 +947,16 @@ pub fn parse_top_level(datum: Datum, env: &Rc<SynEnv>) -> ParserResult {
             let bs_err = || ParserError {
                 kind: ParserErrorKind::BadSyntax("define-syntax".into()),
             };
-            let mut it = list.into_iter().skip(1);
-            let (Some(Datum::Simple(SimpleDatum::Symbol(name))), Some(rules), None) =
-                (it.next(), it.next(), it.next())
-            else {
-                return ParserResult(Err(bs_err()));
+            let it = list.into_iter().skip(1);
+            let Some((Datum::Simple(SimpleDatum::Symbol(name)), rules)) = it.collect_tuple() else {
+                return Err(bs_err());
             };
-            ParserResult((|| {
-                env.insert_macro(name, Rc::new(Macro::new(name, rules, Rc::clone(env))?));
-                Ok(ParserOutput::SyntaxDefinition)
-            })())
+            env.insert_macro(name, rules, true)?;
+            Ok(ParserOutput::SyntaxDefinition)
         }
-        other => ParserResult(parse(other, env).map(ParserOutput::ExprOrDef)),
-    }
+        other => parse(other, env).map(ParserOutput::ExprOrDef),
+    };
+    ParserResult(aux())
 }
 
 pub fn parse(datum: Datum, env: &Rc<SynEnv>) -> Result<ExprOrDef, ParserError> {
@@ -988,6 +984,12 @@ pub fn parse(datum: Datum, env: &Rc<SynEnv>) -> Result<ExprOrDef, ParserError> {
                     if let Some(&Datum::Simple(SimpleDatum::Symbol(symb))) = list.first() {
                         match env.get(symb) {
                             EnvBinding::Macro(mac) => {
+                                let (expanded, env) = mac.expand(&list, env)?;
+                                return parse(expanded, &env);
+                            }
+                            EnvBinding::MacroSelf(mac) => {
+                                let mac =
+                                    mac.upgrade().expect("macro self-reference should be alive");
                                 let (expanded, env) = mac.expand(&list, env)?;
                                 return parse(expanded, &env);
                             }

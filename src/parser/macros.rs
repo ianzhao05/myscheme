@@ -1,12 +1,13 @@
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
+use std::mem::MaybeUninit;
+use std::rc::{Rc, Weak};
 
 use itertools::Itertools;
 
 use crate::datum::{CompoundDatum, Datum, ListKind, SimpleDatum};
 use crate::interner::Symbol;
 
-use super::syn_env::{SynEnv, SynEnvMap};
+use super::syn_env::{EnvBinding, SynEnv, SynEnvMap};
 use super::{ParserError, ParserErrorKind};
 
 #[derive(Debug)]
@@ -17,13 +18,45 @@ pub struct Macro {
 }
 
 impl Macro {
-    pub fn new(name: Symbol, rules: Datum, env: Rc<SynEnv>) -> Result<Self, ParserError> {
-        let transformer = Transformer::try_from((rules, env.as_ref()))?;
-        Ok(Self {
-            name,
-            transformer,
-            env_def: env,
-        })
+    pub fn new(
+        name: Symbol,
+        rules: Datum,
+        env: Rc<SynEnv>,
+        rec: bool,
+    ) -> Result<Rc<Self>, ParserError> {
+        if rec {
+            // idea from https://github.com/multiversx/rc-new-cyclic-fallible
+            let mut res = Ok(());
+            let me_uninit = Rc::new_cyclic(|me_weak| {
+                let me_weak = unsafe {
+                    // SAFETY: MaybeUninit is repr(transparent)
+                    std::mem::transmute::<&Weak<MaybeUninit<Self>>, &Weak<Self>>(me_weak)
+                };
+                match Transformer::new(rules, env.as_ref(), Some((name, me_weak))) {
+                    Ok(transformer) => MaybeUninit::new(Self {
+                        name,
+                        transformer,
+                        env_def: env,
+                    }),
+                    Err(e) => {
+                        res = Err(e);
+                        MaybeUninit::uninit()
+                    }
+                }
+            });
+            res?;
+            Ok(unsafe {
+                // SAFETY: MaybeUninit is repr(transparent)
+                std::mem::transmute::<Rc<MaybeUninit<Self>>, Rc<Self>>(me_uninit)
+            })
+        } else {
+            let transformer = Transformer::new(rules, env.as_ref(), None)?;
+            Ok(Rc::new(Self {
+                name,
+                transformer,
+                env_def: env,
+            }))
+        }
     }
 
     pub fn expand(
@@ -69,10 +102,12 @@ struct Transformer {
     rules: Vec<SyntaxRule>,
 }
 
-impl TryFrom<(Datum, &SynEnv)> for Transformer {
-    type Error = ParserError;
-
-    fn try_from((rules, env): (Datum, &SynEnv)) -> Result<Self, Self::Error> {
+impl Transformer {
+    fn new(
+        rules: Datum,
+        env: &SynEnv,
+        me: Option<(Symbol, &Weak<Macro>)>,
+    ) -> Result<Self, ParserError> {
         let Datum::Compound(CompoundDatum::List(ListKind::Proper(rules))) = rules else {
             return Err(ParserError {
                 kind: ParserErrorKind::MissingSyntaxRules,
@@ -96,13 +131,11 @@ impl TryFrom<(Datum, &SynEnv)> for Transformer {
             _ => return Err(bs_err(0)),
         };
         let rules = it
-            .map(|r| SyntaxRule::try_from((r, env, &literals)))
+            .map(|r| SyntaxRule::new(r, env, &literals, me))
             .try_collect()?;
         Ok(Self { literals, rules })
     }
-}
 
-impl Transformer {
     fn transcribe(
         &self,
         operands: &[Datum],
@@ -131,12 +164,13 @@ struct SyntaxRule {
     env_new: SynEnvMap,
 }
 
-impl TryFrom<(Datum, &SynEnv, &HashSet<Symbol>)> for SyntaxRule {
-    type Error = ParserError;
-
-    fn try_from(
-        (datum, env, literals): (Datum, &SynEnv, &HashSet<Symbol>),
-    ) -> Result<Self, Self::Error> {
+impl SyntaxRule {
+    fn new(
+        datum: Datum,
+        env: &SynEnv,
+        literals: &HashSet<Symbol>,
+        me: Option<(Symbol, &Weak<Macro>)>,
+    ) -> Result<Self, ParserError> {
         let Datum::Compound(CompoundDatum::List(ListKind::Proper(pattern_template_datum))) = datum
         else {
             return Err(bs_err(2));
@@ -170,7 +204,12 @@ impl TryFrom<(Datum, &SynEnv, &HashSet<Symbol>)> for SyntaxRule {
             }
             let sf = super::freshen_name(s);
             rewrites.insert(s, sf);
-            env_new.insert(sf, env.get(s));
+            match me {
+                Some((name, me)) if s == name => {
+                    env_new.insert(sf, EnvBinding::MacroSelf(me.clone()))
+                }
+                _ => env_new.insert(sf, env.get(s)),
+            };
             sf
         });
         Ok(Self {
