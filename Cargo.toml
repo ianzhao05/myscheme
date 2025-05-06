@@ -8,13 +8,8 @@ exclude = ["myscheme-wasm"]
 [dependencies]
 num = "0.4"
 regex = "1.11.1"
-getrandom = { version = "0.3", features = ["wasm_js"] }
 const_format = "0.2.34"
 itertools = "0.14.0"
-
-[dependencies.uuid]
-version = "1.16.0"
-features = ["v4", "fast-rng", "macro-diagnostics"]
 
 [dev-dependencies]
 assert_fs = "1.1.3"

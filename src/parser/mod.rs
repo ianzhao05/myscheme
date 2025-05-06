@@ -3,25 +3,27 @@ mod quasiquote;
 pub mod syn_env;
 
 use std::cell::RefCell;
-use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::collections::{HashMap, HashSet, hash_map::Entry};
 use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::datum::*;
 use crate::expr::*;
 use crate::interner::Symbol;
 
 use itertools::Itertools;
-use uuid::Uuid;
 
 use self::syn_env::{EnvBinding, SynEnv};
+
+static NEXT_TEMP: AtomicUsize = AtomicUsize::new(0);
 
 fn gen_temp_name() -> Symbol {
     if cfg!(test) {
         "#temp_var".into()
     } else {
-        format!("#{}", Uuid::new_v4().simple()).into()
+        format!("#{}", NEXT_TEMP.fetch_add(1, Ordering::Relaxed)).into()
     }
 }
 
@@ -33,7 +35,7 @@ fn freshen_name(name: Symbol) -> Symbol {
     let fresh = if cfg!(test) {
         format!("{name}#fresh").into()
     } else {
-        format!("{name}#{}", Uuid::new_v4().simple()).into()
+        format!("{name}#{}", NEXT_TEMP.fetch_add(1, Ordering::Relaxed)).into()
     };
     INV_FRESH.with_borrow_mut(|inv| inv.insert(fresh, name));
     fresh
@@ -72,7 +74,7 @@ where
             Entry::Occupied(_) => {
                 return Err(ParserError {
                     kind: ParserErrorKind::DuplicateArgument(*arg),
-                })
+                });
             }
             Entry::Vacant(e) => {
                 *arg = freshen_name(*arg);
@@ -337,7 +339,7 @@ fn process_body<I: Iterator<Item = Datum>>(
             ExprOrDef::MixedBegin(_) => {
                 return Err(ParserError {
                     kind: ParserErrorKind::IllegalDefine,
-                })
+                });
             }
         }
         eods.push(eod);
